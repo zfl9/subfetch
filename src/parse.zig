@@ -435,6 +435,6 @@ test "compile-check" {
     _ = &grpcOpts;
     _ = &yamlAlpn;
     _ = &alpnFromString;
-    // local decls inside function bodies (e.g. getStr in jsonNodeToNode/clashObjToNode)
+    // local decls inside function bodies (e.g. getStr in jsonNodeToNode)
     // cannot be referenced from outside due to Zig scoping; covered by behavioral tests
 }
