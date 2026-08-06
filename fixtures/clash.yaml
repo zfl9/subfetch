@@ -1,0 +1,41 @@
+# 模拟机场的 clash 格式订阅
+proxies:
+  - name: TW-01
+    type: trojan
+    server: tw1.example.com
+    port: 443
+    password: tw-pass-123
+    sni: tw1.example.com
+    udp: true
+  - name: SG-01
+    type: ss
+    server: sg1.example.com
+    port: 8388
+    cipher: aes-256-gcm
+    password: ss-pass-456
+    udp: true
+  - name: DE-01
+    type: vmess
+    server: de1.example.com
+    port: 443
+    uuid: 11111111-2222-3333-4444-555555555555
+    alterId: 0
+    cipher: auto
+    tls: true
+    servername: de1.example.com
+    network: ws
+    ws-opts:
+      path: /vmess
+      headers:
+        Host: de1.example.com
+  - name: SOCKS-测试
+    type: socks5
+    server: 1.2.3.4
+    port: 1080
+    udp: false
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: [TW-01]
+rules:
+  - MATCH,PROXY
