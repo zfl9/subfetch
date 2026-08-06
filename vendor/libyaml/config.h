@@ -1,4 +1,4 @@
-/* 静态 config.h（替代构建系统生成版本），供捆绑编译使用 */
+/* static config.h (replaces the build-system-generated one), used for bundled compilation */
 #define YAML_VERSION_MAJOR 0
 #define YAML_VERSION_MINOR 2
 #define YAML_VERSION_PATCH 5

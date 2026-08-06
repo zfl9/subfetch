@@ -1,10 +1,12 @@
-# libyaml (vendor)
+# libyaml (vendored)
 
-[yaml/libyaml](https://github.com/yaml/libyaml) **0.2.5**（2020-06-01，MIT License），仅保留构建所需文件：
+[yaml/libyaml](https://github.com/yaml/libyaml) **0.2.5** (2020-06-01, MIT License),
+trimmed to the files required for building:
 
-- `include/yaml.h` — 公共头文件
-- `src/` — 8 个 C 源文件 + yaml_private.h
-- `config.h` — 静态配置（版本宏），构建参数 `-DHAVE_CONFIG_H=1` 需要
-- `License` — MIT 许可原文
+- `include/yaml.h` — public header
+- `src/` — 8 C sources + yaml_private.h
+- `config.h` — static config (version macros), required by `-DHAVE_CONFIG_H=1`
+- `License` — MIT license text
 
-由 subfetch 捆绑静态编译（见 `build.zig` 的 `addLibyaml`），无需系统安装 libyaml。
+Bundled and statically compiled by subfetch (see `addLibyaml` in `build.zig`);
+no system libyaml installation needed.
