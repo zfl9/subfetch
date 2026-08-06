@@ -1,7 +1,7 @@
-# 用户配置（从 subscriptions.example.zon 复制，含真实订阅 token，勿提交）
+# user config (copy from subscriptions.example.zon; contains real subscription tokens, never commit)
 subscriptions.zon
 
-# 测试产物
+# test artifacts
 test-output.yaml
 test-output.yaml.bak
 secret.txt
@@ -11,5 +11,5 @@ secret.txt
 .zig-cache/
 zig-out/
 
-# 测试用客户端二进制（GitHub release 下载）
+# test client binaries (downloaded from GitHub releases)
 bin/
