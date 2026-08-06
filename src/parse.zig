@@ -66,27 +66,9 @@ pub fn parseSubscription(
                     }
                 }
             },
-            .object => |obj| {
-                if (obj.get("proxies")) |pv| {
-                    const arr = switch (pv) {
-                        .array => |a| a,
-                        else => return error.UnknownFormat,
-                    };
-                    for (arr.items) |item| {
-                        const om = switch (item) {
-                            .object => |o| o,
-                            else => {
-                                skipped += 1;
-                                continue;
-                            },
-                        };
-                        nodes.append(arena, clashObjToNode(arena, om, sub_name, sep) catch {
-                            skipped += 1;
-                            continue;
-                        }) catch return error.OutOfMemory;
-                    }
-                } else return error.UnknownFormat;
-            },
+            // JSON object with a proxies key (clash JSON) does not exist in the wild:
+            // clash subscriptions are always YAML, so unsupported
+            .object => return error.UnknownFormat,
             else => return error.UnknownFormat,
         },
         .clash => |root| {
@@ -277,27 +259,6 @@ fn yamlAlpn(arena: std.mem.Allocator, v: ?yaml.YamlValue) ParseError!?[]const []
     return @as(?[]const []const u8, try out.toOwnedSlice(arena));
 }
 
-/// JSON alpn field (array or comma-separated string) -> list
-fn jsonAlpn(arena: std.mem.Allocator, v: ?std.json.Value) ParseError!?[]const []const u8 {
-    const val = v orelse return null;
-    return switch (val) {
-        .string => |str| alpnFromString(arena, str),
-        .array => |arr| blk: {
-            if (arr.items.len == 0) break :blk null;
-            var out: std.ArrayListUnmanaged([]const u8) = .empty;
-            for (arr.items) |item| {
-                const str = switch (item) {
-                    .string => |x| x,
-                    else => continue,
-                };
-                try out.append(arena, str);
-            }
-            break :blk if (out.items.len > 0) @as(?[]const []const u8, try out.toOwnedSlice(arena)) else null;
-        },
-        else => null,
-    };
-}
-
 /// comma-separated string -> alpn list
 fn alpnFromString(arena: std.mem.Allocator, s: []const u8) ParseError!?[]const []const u8 {
     if (s.len == 0) return null;
@@ -345,83 +306,6 @@ fn jsonNodeToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_name: [
 }
 
 /// clash JSON object (type/server fields) -> Node (reuses yaml conversion field semantics)
-fn clashObjToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_name: []const u8, sep: []const u8) ParseError!node.Node {
-    const getStr = struct {
-        fn get(o: std.json.ObjectMap, key: []const u8) ?[]const u8 {
-            const v = o.get(key) orelse return null;
-            return switch (v) {
-                .string => |s| s,
-                else => null,
-            };
-        }
-    }.get;
-
-    const type_str = getStr(obj, "type") orelse return error.UnsupportedType;
-    const server = getStr(obj, "server") orelse return error.MissingField;
-    const port = try parsePort(getStr(obj, "port") orelse return error.MissingField);
-    const raw_name = getStr(obj, "name") orelse "";
-    const name = try nameFor(arena, raw_name, sub_name, sep, server, port);
-
-    if (std.mem.eql(u8, type_str, "trojan")) {
-        return .{ .trojan = .{
-            .name = name,
-            .server = server,
-            .port = port,
-            .password = getStr(obj, "password") orelse return error.MissingField,
-            .servername = getStr(obj, "servername") orelse getStr(obj, "sni"),
-            .skip_cert_verify = yBool(getStr(obj, "skip-cert-verify")),
-            .alpn = null,
-            .network = .tcp,
-            .ws = null,
-            .grpc = null,
-        } };
-    }
-    if (std.mem.eql(u8, type_str, "ss")) {
-        return .{ .ss = .{
-            .name = name,
-            .server = server,
-            .port = port,
-            .cipher = getStr(obj, "cipher") orelse return error.MissingField,
-            .password = getStr(obj, "password") orelse return error.MissingField,
-        } };
-    }
-    if (std.mem.eql(u8, type_str, "vmess") or std.mem.eql(u8, type_str, "vless")) {
-        const net = parseNet(getStr(obj, "network")) catch .tcp;
-        if (std.mem.eql(u8, type_str, "vmess")) {
-            return .{ .vmess = .{
-                .name = name,
-                .server = server,
-                .port = port,
-                .uuid = getStr(obj, "uuid") orelse return error.MissingField,
-                .alter_id = if (getStr(obj, "alterId")) |v| std.fmt.parseInt(u16, v, 10) catch 0 else 0,
-                .network = net,
-                .tls = yBool(getStr(obj, "tls")),
-                .servername = getStr(obj, "servername"),
-                .fingerprint = getStr(obj, "client-fingerprint"),
-                .ws = if (net == .ws) .{ .path = getStr(obj, "path") orelse "/", .host = getStr(obj, "host") } else null,
-                .grpc = if (net == .grpc) .{ .service_name = getStr(obj, "grpc-service-name") orelse "" } else null,
-            } };
-        }
-        return .{ .vless = .{
-            .name = name,
-            .server = server,
-            .port = port,
-            .uuid = getStr(obj, "uuid") orelse return error.MissingField,
-            .network = net,
-            .tls = yBool(getStr(obj, "tls")),
-            .reality = null,
-            .flow = getStr(obj, "flow"),
-            .servername = getStr(obj, "servername"),
-            .fingerprint = getStr(obj, "client-fingerprint"),
-            .skip_cert_verify = yBool(getStr(obj, "skip-cert-verify")),
-            .alpn = try jsonAlpn(arena, obj.get("alpn")),
-            .ws = if (net == .ws) .{ .path = getStr(obj, "path") orelse "/", .host = getStr(obj, "host") } else null,
-            .grpc = if (net == .grpc) .{ .service_name = getStr(obj, "grpc-service-name") orelse "" } else null,
-        } };
-    }
-    return error.UnsupportedType;
-}
-
 fn parseNet(s: ?[]const u8) ParseError!node.Network {
     const v = s orelse return .tcp;
     if (std.mem.eql(u8, v, "tcp")) return .tcp;
@@ -543,7 +427,6 @@ test "compile-check" {
     _ = &parseSubscription;
     _ = &clashYamlToNode;
     _ = &jsonNodeToNode;
-    _ = &clashObjToNode;
     _ = &parseNet;
     _ = &parsePort;
     _ = &yBool;
@@ -551,7 +434,6 @@ test "compile-check" {
     _ = &wsOpts;
     _ = &grpcOpts;
     _ = &yamlAlpn;
-    _ = &jsonAlpn;
     _ = &alpnFromString;
     // local decls inside function bodies (e.g. getStr in jsonNodeToNode/clashObjToNode)
     // cannot be referenced from outside due to Zig scoping; covered by behavioral tests
