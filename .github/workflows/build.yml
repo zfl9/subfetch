@@ -22,7 +22,7 @@ jobs:
           - target: riscv64-linux-musl
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Zig 0.15.2 (official)
         run: |
           wget -q https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz
@@ -58,7 +58,7 @@ jobs:
             cp "$f" "dist/$name"
           done
           ls -la dist/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: subfetch-${{ matrix.target }}
           path: dist/
@@ -70,7 +70,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
