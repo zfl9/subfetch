@@ -7,7 +7,7 @@ const node_mod = @import("node.zig");
 const render_mod = @import("render.zig");
 const install_mod = @import("install.zig");
 
-const version = "0.2.0";
+const version = "0.1.0";
 
 const Options = struct {
     config: []const u8 = "subscriptions.zon",
