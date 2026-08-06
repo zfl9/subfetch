@@ -20,6 +20,8 @@ jobs:
           - target: arm-linux-musleabi
             cpu: arm1176jz_s
           - target: riscv64-linux-musl
+          # mipsel: MIPS32 rel2 (mips32r2) 小端，OpenWrt 老路由存量（MT7620/MT7621 等，24kc）
+          - target: mipsel-linux-musleabi
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -44,6 +46,7 @@ jobs:
             aarch64*) QEMU=qemu-aarch64-static ;;
             arm*)     QEMU=qemu-arm-static ;;
             riscv64*) QEMU=qemu-riscv64-static ;;
+            mipsel*) QEMU=qemu-mipsel-static ;;
           esac
           $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out clash --dry-run | grep -E "OK:|done" | tail -9
           $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out singbox --dry-run | grep "done"
