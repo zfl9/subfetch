@@ -4,10 +4,6 @@ test-output.yaml.bak
 secret.txt
 *.bak
 
-# Python (legacy)
-__pycache__/
-*.pyc
-
 # Zig
 .zig-cache/
 zig-out/
