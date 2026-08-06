@@ -1,0 +1,16 @@
+# 测试产物
+test-output.yaml
+test-output.yaml.bak
+secret.txt
+*.bak
+
+# Python (legacy)
+__pycache__/
+*.pyc
+
+# Zig
+.zig-cache/
+zig-out/
+
+# 测试用客户端二进制（GitHub release 下载）
+bin/

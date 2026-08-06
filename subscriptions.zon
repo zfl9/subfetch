@@ -1,0 +1,21 @@
+.{
+    // subfetch subscription config
+    // one .{...} per subscription; name/url required; ua/enable optional
+    //   name   : subscription name (node name prefix, Chinese OK, length <= 32)
+    //   url    : subscription URL (https://) or a local file path / file://
+    //   ua     : custom User-Agent (optional, overrides default_ua / CLI --ua)
+    //   enable : false temporarily disables the subscription (optional, default true)
+    .default_ua = "clash-verge/v2.2.3",
+    .subscriptions = .{
+        .{
+            .name = "香港机场",
+            .url = "https://example.com/api/v1/client/subscribe?token=REPLACE_ME",
+        },
+        .{
+            .name = "美西节点",
+            .url = "/etc/sub.txt",
+            // .ua = "custom-ua/1.0",
+            // .enable = false,
+        },
+    },
+}

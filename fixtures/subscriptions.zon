@@ -1,0 +1,14 @@
+.{
+    .default_ua = "clash-verge/v2.2.3",
+    .subscriptions = .{
+        .{ .name = "base64-trojan", .url = "fixtures/base64_trojan.txt" },
+        .{ .name = "clash-yaml", .url = "fixtures/clash.yaml" },
+        .{ .name = "vmess-json", .url = "fixtures/vmess_json.txt" },
+        .{ .name = "vless-reality", .url = "fixtures/vless_reality.txt" },
+        .{ .name = "plain-mixed", .url = "fixtures/plain_uris.txt" },
+        .{ .name = "ss-sip002", .url = "fixtures/ss_sip002.txt" },
+        .{ .name = "ssr", .url = "fixtures/ssr.txt" },
+        .{ .name = "v2rayn-json", .url = "fixtures/v2rayn.json" },
+        .{ .name = "html-error", .url = "fixtures/html_error.html" },
+    },
+}
