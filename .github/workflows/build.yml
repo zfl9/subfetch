@@ -1,0 +1,80 @@
+name: build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  # Linux-only targets (ss-tproxy toolchain positioning: splitless client configs;
+  # L4/DNS splitting is handled by ss-tproxy itself). Cross-compiled on a linux runner.
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-linux-musl
+          - target: aarch64-linux-musl
+          # arm: soft-float + ARMv6 baseline (covers everything from the RPi 1 onward, incl. no-VFP chips).
+          # note: zig has no generic alias; the arm baseline is v7; ARMv5 cannot link (no byte-atomic instructions).
+          - target: arm-linux-musleabi
+            cpu: arm1176jz_s
+          - target: riscv64-linux-musl
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Zig 0.15.2 (official)
+        run: |
+          wget -q https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz
+          tar xJf zig-x86_64-linux-0.15.2.tar.xz
+          echo "$PWD/zig-x86_64-linux-0.15.2" >> "$GITHUB_PATH"
+          "$PWD/zig-x86_64-linux-0.15.2/zig" version  # GITHUB_PATH only applies to later steps; use the full path here
+      - name: Build
+        run: zig build -Drelease=true -Dtarget=${{ matrix.target }} ${{ matrix.cpu && format('-Dcpu={0}', matrix.cpu) || '' }}
+      - name: Test
+        # only the native-arch target can run unit tests (musl static binary runs on ubuntu)
+        if: matrix.target == 'x86_64-linux-musl'
+        run: zig build test --summary all
+      - name: Smoke test (qemu)
+        # cross linux targets run for real under qemu-user: full fixtures smoke test (8 subscriptions + render + verify)
+        if: startsWith(matrix.target, 'linux') && matrix.target != 'x86_64-linux-musl'
+        run: |
+          sudo apt-get install -y -qq qemu-user-static
+          case "${{ matrix.target }}" in
+            aarch64*) QEMU=qemu-aarch64-static ;;
+            arm*)     QEMU=qemu-arm-static ;;
+            riscv64*) QEMU=qemu-riscv64-static ;;
+          esac
+          $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out clash --dry-run | grep -E "OK:|done" | tail -9
+          $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out singbox --dry-run | grep "done"
+          $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out xray --dry-run | grep "dry-run verify passed" || true
+      - name: Package
+        run: |
+          mkdir -p dist
+          for f in zig-out/bin/subfetch*; do
+            base=$(basename "$f")
+            name="subfetch-${{ matrix.target }}"
+            if [[ "$base" == *.exe ]]; then name="$name.exe"; fi
+            cp "$f" "dist/$name"
+          done
+          ls -la dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: subfetch-${{ matrix.target }}
+          path: dist/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
