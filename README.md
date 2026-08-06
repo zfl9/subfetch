@@ -30,7 +30,8 @@ zig build test                          # 单元测试（84 个）
 ## 快速开始
 
 ```sh
-# 1. 编辑订阅列表（名称/URL/UA/开关）
+# 1. 复制模板并编辑订阅列表（名称/URL/UA/开关）
+cp subscriptions.example.zon subscriptions.zon
 vim subscriptions.zon
 
 # 2. 预览（dry-run：打印配置并校验，不写文件）
@@ -41,7 +42,7 @@ subfetch --config subscriptions.zon --out clash \
     -o /etc/clash/config.yaml --reload-cmd "systemctl restart clash"
 ```
 
-## 配置（subscriptions.zon）
+## 配置（subscriptions.example.zon → subscriptions.zon）
 
 ```zig
 .{
