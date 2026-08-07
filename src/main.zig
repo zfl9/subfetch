@@ -26,7 +26,6 @@ const Options = struct {
     mixed_port: u16 = 65500,
     controller: []const u8 = "127.0.0.1:65501",
     secret: ?[]const u8 = null,
-    current: ?[]const u8 = null,
     no_clash_api: bool = false,
     no_verify: bool = false,
     no_reload: bool = false,
@@ -147,7 +146,6 @@ pub fn main() !void {
         .mixed_port = opts.mixed_port,
         .controller = opts.controller,
         .secret = secret,
-        .current = opts.current,
         .enable_clash_api = !opts.no_clash_api,
     };
 
@@ -407,9 +405,6 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
             opts.controller = v;
         } else if (takeValue(&i, args, a, "--secret", null)) |v| {
             opts.secret = v;
-        } else if (takeValue(&i, args, a, "--current", null)) |v| {
-            if (v.len == 0) return error.BadArg;
-            opts.current = v;
         } else {
             errPrint("unknown argument: {s}\n", .{a});
             return error.BadArg;
@@ -457,7 +452,6 @@ fn printUsage() void {
         \\      --mixed-port <n>   clash mixed-port (default 65500)
         \\      --controller <a:p> clash/singbox external-controller (default 127.0.0.1:65501)
         \\      --secret <str>     API secret (auto-generated UUID if omitted)
-        \\      --current <name>   current node for native formats (default first)
         \\      --no-clash-api     disable clash_api in sing-box
         \\      --no-verify        skip verification
         \\      --no-reload        skip reload after install

@@ -265,7 +265,7 @@ fn ssrJson(arena: std.mem.Allocator, v: node.SSR, opts: Options) !JsonValue {
     return .{ .object = o };
 }
 
-/// render native client configs: one file per node + current.json (metadata) + current.conf.* (active node config copy)
+/// render native client configs: one file per node (service scripts manage the active one)
 fn renderNative(
     arena: std.mem.Allocator,
     nodes: []const node.Node,
@@ -273,7 +273,6 @@ fn renderNative(
     comptime kind: enum { trojan, hysteria, hysteria2, xray, ss, ssr },
 ) ![]const render.File {
     var files: std.ArrayListUnmanaged(render.File) = .empty;
-    var current_name: ?[]const u8 = opts.current;
 
     for (nodes) |n| {
         const fname = try safeFileName(arena, n.name());
@@ -308,30 +307,8 @@ fn renderNative(
             },
         };
         try files.append(arena, .{ .path = path, .content = content });
-        if (current_name == null) current_name = n.name();
     }
-    if (current_name == null) return error.NoSupportedNodes;
-
-    // current.json: records the current selection (for service switching scripts)
-    const cur_json = try std.fmt.allocPrint(arena, "{{\"current\": \"{s}\"}}\n", .{current_name.?});
-    try files.append(arena, .{ .path = "current.json", .content = cur_json });
-
-    // current.conf.*: full config copy of the current node (service points directly at this file)
-    const cur_conf = switch (kind) {
-        .hysteria2 => "current.conf.yaml",
-        else => "current.conf.json",
-    };
-    const cur_fname = try std.fmt.allocPrint(arena, "{s}.{s}", .{
-        try safeFileName(arena, current_name.?),
-        if (kind == .hysteria2) "yaml" else "json",
-    });
-    for (files.items) |f| {
-        if (std.mem.eql(u8, f.path, cur_fname)) {
-            try files.append(arena, .{ .path = cur_conf, .content = f.content });
-            break;
-        }
-    }
-
+    if (files.items.len == 0) return error.NoSupportedNodes;
     return files.toOwnedSlice(arena);
 }
 
@@ -443,9 +420,9 @@ test "render trojan files" {
     defer arena.deinit();
     const a = arena.allocator();
     const nodes = [_]node.Node{ trojan_node, trojan_ws_node };
-    const files = try renderTrojan(a, &nodes, .{ .current = "日本1/WS" });
+    const files = try renderTrojan(a, &nodes, .{});
 
-    try std.testing.expectEqual(@as(usize, 4), files.len); // 2 nodes + current.json + current.conf.json
+    try std.testing.expectEqual(@as(usize, 2), files.len); // one file per node
     try std.testing.expectEqualStrings("香港1.json", files[0].path);
     try std.testing.expectEqualStrings("日本1_WS.json", files[1].path);
 
@@ -465,11 +442,6 @@ test "render trojan files" {
     try std.testing.expectEqual(true, ws.get("enabled").?.bool);
     try std.testing.expectEqualStrings("/ws", ws.get("path").?.string);
 
-    // current metadata + config copy
-    try std.testing.expectEqualStrings("current.json", files[2].path);
-    try std.testing.expect(std.mem.indexOf(u8, files[2].content, "日本1/WS") != null);
-    try std.testing.expectEqualStrings("current.conf.json", files[3].path);
-    try std.testing.expectEqualStrings(files[1].content, files[3].content); // active node config copy
 }
 
 test "render hysteria files" {
@@ -478,7 +450,7 @@ test "render hysteria files" {
     const a = arena.allocator();
     const nodes = [_]node.Node{hy1_node};
     const files = try renderHysteria(a, &nodes, .{});
-    try std.testing.expectEqual(@as(usize, 3), files.len);
+    try std.testing.expectEqual(@as(usize, 1), files.len);
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, files[0].content, .{});
     const o = v.object;
     try std.testing.expectEqualStrings("hy1.example.com:36712", o.get("server").?.string);
@@ -493,7 +465,7 @@ test "render hysteria2 files" {
     const a = arena.allocator();
     const nodes = [_]node.Node{hy2_node};
     const files = try renderHysteria2(a, &nodes, .{});
-    try std.testing.expectEqual(@as(usize, 3), files.len);
+    try std.testing.expectEqual(@as(usize, 1), files.len);
     try std.testing.expectEqualStrings("香港2-hy2.yaml", files[0].path);
     const text = files[0].content;
     try std.testing.expect(std.mem.indexOf(u8, text, "server: hk2.example.com:443") != null);
@@ -507,8 +479,8 @@ test "render xray files" {
     const a = arena.allocator();
     const nodes = [_]node.Node{ vless_reality_node, hy2_node };
     const files = try renderXray(a, &nodes, .{});
-    // only the vless node + current.json + current.conf.json
-    try std.testing.expectEqual(@as(usize, 3), files.len);
+    // only the vless node is rendered (hy2 skipped)
+    try std.testing.expectEqual(@as(usize, 1), files.len);
     try std.testing.expectEqualStrings("韩国1-Reality.json", files[0].path);
 
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, files[0].content, .{});
@@ -539,7 +511,7 @@ test "render ss files with plugin" {
     const a = arena.allocator();
     const nodes = [_]node.Node{ ss_plugin_node, vless_reality_node };
     const files = try renderSs(a, &nodes, .{});
-    try std.testing.expectEqual(@as(usize, 3), files.len);
+    try std.testing.expectEqual(@as(usize, 1), files.len);
 
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, files[0].content, .{});
     const o = v.object;
@@ -558,7 +530,7 @@ test "render ssr files" {
     const a = arena.allocator();
     const nodes = [_]node.Node{ssr_node};
     const files = try renderSsr(a, &nodes, .{});
-    try std.testing.expectEqual(@as(usize, 3), files.len);
+    try std.testing.expectEqual(@as(usize, 1), files.len);
 
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, files[0].content, .{});
     const o = v.object;

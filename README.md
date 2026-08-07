@@ -75,7 +75,7 @@ subfetch --config subscriptions.zon --out clash \
 | `ssr` | shadowsocksr-libev 每节点一个配置 | JSON 语法 |
 | `raw` | 节点 JSON 列表（脚本消费） | — |
 
-原生格式（多文件）输出：每节点一个配置文件 + `current.json`（当前选择元信息）+ `current.conf.*`（当前节点配置副本，服务直接指向此文件）。
+原生格式（多文件）输出：**每节点一个配置文件**（文件名即节点名，如 `香港1.json`），当前激活节点由你自己的服务脚本管理。
 
 注意：sing-box 不支持 ssr / v2ray-plugin，这些节点会被跳过并在日志提示。
 
@@ -96,7 +96,6 @@ subfetch --config subscriptions.zon --out clash \
     --mixed-port <n>   clash mixed-port（默认 65500）
     --controller <a:p> clash/singbox external-controller（默认 127.0.0.1:65501）
     --secret <str>     API secret（缺省自动生成 UUID）
-    --current <name>   原生格式当前节点（缺省第一个）
     --no-clash-api     sing-box 不启用 clash_api
     --no-verify        跳过校验
     --no-reload        安装后不热重载
