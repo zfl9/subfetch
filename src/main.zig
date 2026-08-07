@@ -5,7 +5,7 @@ const parse_mod = @import("parse.zig");
 const uri_mod = @import("uri.zig");
 const node_mod = @import("node.zig");
 const render_mod = @import("render.zig");
-const install_mod = @import("install.zig");
+const deploy_mod = @import("deploy.zig");
 
 const version = "0.1.0";
 
@@ -167,7 +167,7 @@ pub fn main() !void {
                     // raw output goes to stdout
                     try std.fs.File.stdout().writeAll(text);
                 } else {
-                    const vr = install_mod.installSingle(arena, fmt, path, text) catch |e| {
+                    const vr = deploy_mod.installSingle(arena, fmt, path, text) catch |e| {
                         errPrint("[error] install {s} failed: {s} (old config untouched)\n", .{ path, @errorName(e) });
                         std.process.exit(1);
                     };
@@ -179,15 +179,15 @@ pub fn main() !void {
                     if (!opts.no_reload) {
                         if (opts.reload_cmd) |cmd| {
                             // custom reload command takes priority (acme.sh --reloadcmd style)
-                            switch (install_mod.reloadCustom(arena, cmd)) {
+                            switch (deploy_mod.reloadCustom(arena, cmd)) {
                                 .custom => outPrint("[info] custom reload command executed\n", .{}),
                                 else => errPrint("[warn] custom reload command failed (exit != 0)\n", .{}),
                             }
                         } else {
                             const rr = switch (fmt) {
-                                .clash => install_mod.reloadClash(arena, opts.controller, ropts.secret, path),
-                                .singbox => install_mod.reloadSingbox(arena, opts.controller, ropts.secret, path),
-                                else => install_mod.ReloadResult.skipped,
+                                .clash => deploy_mod.reloadClash(arena, opts.controller, ropts.secret, path),
+                                .singbox => deploy_mod.reloadSingbox(arena, opts.controller, ropts.secret, path),
+                                else => deploy_mod.ReloadResult.skipped,
                             };
                             switch (rr) {
                                 .api => outPrint("[info] reloaded via API\n", .{}),
@@ -219,7 +219,7 @@ pub fn main() !void {
                         std.process.exit(1);
                     };
                     if (opts.no_verify) {
-                        install_mod.atomicWrite(arena, path, f.content) catch |e| {
+                        deploy_mod.atomicWrite(arena, path, f.content) catch |e| {
                             errPrint("[error] failed to write {s}: {s}\n", .{ path, @errorName(e) });
                             std.process.exit(1);
                         };
@@ -230,11 +230,11 @@ pub fn main() !void {
                             errPrint("[error] OutOfMemory\n", .{});
                             std.process.exit(1);
                         };
-                        install_mod.atomicWrite(arena, tmp, f.content) catch |e| {
+                        deploy_mod.atomicWrite(arena, tmp, f.content) catch |e| {
                             errPrint("[error] failed to write {s}: {s}\n", .{ path, @errorName(e) });
                             std.process.exit(1);
                         };
-                        const vr = install_mod.verifyContent(arena, fmt, f.content, tmp);
+                        const vr = deploy_mod.verifyContent(arena, fmt, f.content, tmp);
                         if (vr == .failed) {
                             std.fs.cwd().deleteFile(tmp) catch {};
                             errPrint("[error] verify failed, aborting: {s}\n", .{path});
@@ -249,7 +249,7 @@ pub fn main() !void {
                 outPrint("[info] wrote {d} files to {s}\n", .{ files.len, dir });
                 if (!opts.no_reload) {
                     if (opts.reload_cmd) |cmd| {
-                        switch (install_mod.reloadCustom(arena, cmd)) {
+                        switch (deploy_mod.reloadCustom(arena, cmd)) {
                             .custom => outPrint("[info] custom reload command executed\n", .{}),
                             else => errPrint("[warn] custom reload command failed (exit != 0)\n", .{}),
                         }
@@ -281,8 +281,8 @@ fn verifyDryRun(arena: std.mem.Allocator, fmt: render_mod.Format, content: []con
         .raw => "json",
     };
     const tmp = try std.fmt.allocPrint(arena, "/tmp/subfetch-dryrun.{s}", .{ext});
-    install_mod.atomicWrite(arena, tmp, content) catch return;
-    const vr = install_mod.verifyContent(arena, fmt, content, tmp);
+    deploy_mod.atomicWrite(arena, tmp, content) catch return;
+    const vr = deploy_mod.verifyContent(arena, fmt, content, tmp);
     switch (vr) {
         .ok => outPrint("[info] dry-run verify passed\n", .{}),
         .skipped => outPrint("[info] dry-run verify skipped (verifier not found)\n", .{}),
@@ -300,8 +300,8 @@ fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render_mod.Format, files: []
             else => "json",
         };
         const tmp = try std.fmt.allocPrint(arena, "/tmp/subfetch-dryrun.{s}", .{ext});
-        install_mod.atomicWrite(arena, tmp, f.content) catch continue;
-        const vr = install_mod.verifyContent(arena, fmt, f.content, tmp);
+        deploy_mod.atomicWrite(arena, tmp, f.content) catch continue;
+        const vr = deploy_mod.verifyContent(arena, fmt, f.content, tmp);
         if (vr == .failed) {
             errPrint("[error] dry-run verify failed: {s}\n", .{f.path});
             std.process.exit(1);
