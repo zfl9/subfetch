@@ -6,8 +6,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Linux-only targets (ss-tproxy toolchain positioning: splitless client configs;
-  # L4/DNS splitting is handled by ss-tproxy itself). Cross-compiled on a linux runner.
   build:
     strategy:
       fail-fast: false
@@ -16,9 +14,9 @@ jobs:
           - target: x86_64-linux-musl
           - target: aarch64-linux-musl
           # arm: soft-float + ARMv6 baseline (covers everything from the RPi 1 onward, incl. no-VFP chips).
-          # note: zig has no generic alias; the arm baseline is v7; ARMv5 cannot link (no byte-atomic instructions).
+          # note: zig's arm baseline is v7, so -Dcpu=generic+v6 is required; ARMv5 cannot link (no byte-atomic instructions).
           - target: arm-linux-musleabi
-            cpu: arm1176jz_s
+            cpu: generic+v6
           - target: riscv64-linux-musl
           # mipsel: MIPS32 rel2 little-endian, OpenWrt legacy router installed base (MT7620/MT7621, 24kc)
           - target: mipsel-linux-musleabi
@@ -45,9 +43,9 @@ jobs:
           sudo apt-get install -y -qq qemu-user-static
           case "${{ matrix.target }}" in
             aarch64*) QEMU=qemu-aarch64-static ;;
-            arm*)     QEMU=qemu-arm-static ;;
+            arm*)     QEMU=qemu-arm-static     ;;
             riscv64*) QEMU=qemu-riscv64-static ;;
-            mipsel*) QEMU=qemu-mipsel-static ;;
+            mipsel*)  QEMU=qemu-mipsel-static  ;;
           esac
           $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out clash --dry-run | grep -E "OK:|done" | tail -9
           $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out singbox --dry-run | grep "done"
