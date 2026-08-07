@@ -11,15 +11,35 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # x86_64: x86-64 baseline (SSE2), compatible with every x86_64 CPU
           - target: x86_64-linux-musl
+            cpu: x86_64
+          # aarch64: generic == ARMv8.0+neon, compatible with every ARMv8 CPU
           - target: aarch64-linux-musl
-          # arm: soft-float + ARMv6 baseline (covers everything from the RPi 1 onward, incl. no-VFP chips).
-          # note: zig's arm baseline is v7, so -Dcpu=generic+v6 is required; ARMv5 cannot link (no byte-atomic instructions).
+            cpu: generic
+          # arm: soft-float + ARMv6 (RPi 1 onward, incl. no-VFP chips); zig's arm baseline is
+          # v7 so generic+v6 is required; ARMv5 cannot link (no byte-atomic instructions)
           - target: arm-linux-musleabi
             cpu: generic+v6
+          # riscv64: baseline_rv64 = rv64imafdc; pinned explicitly (riscv 'generic' is broken,
+          # 'baseline' keyword is a moving target across zig versions)
           - target: riscv64-linux-musl
-          # mipsel: MIPS32 rel2 little-endian, OpenWrt legacy router installed base (MT7620/MT7621, 24kc)
+            cpu: baseline_rv64
+          # mipsel: MIPS32 rel1 + soft-float (widest legacy coverage: r1 chips, no-FPU SoCs;
+          # r2 chips like 24kc run r1 code fine)
           - target: mipsel-linux-musleabi
+            cpu: mips32+soft_float
+          # mips: big-endian MIPS32 rel1 + soft-float (legacy BE routers, e.g. BCM47xx)
+          - target: mips-linux-musleabi
+            cpu: mips32+soft_float
+          # mips64el: little-endian MIPS64 rel1 (n64 ABI). hard-float only: zig 0.15.2
+          # forces -mdouble-float for mips64 (no soft-float support); MIPS64 hardware
+          # (Cavium Octeon class) always has an FPU, so this is safe
+          - target: mips64el-linux-muslabi64
+            cpu: mips64
+          # mips64: big-endian MIPS64 rel1 (n64 ABI), hard-float (see mips64el note)
+          - target: mips64-linux-muslabi64
+            cpu: mips64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -30,13 +50,13 @@ jobs:
           echo "$PWD/zig-x86_64-linux-0.15.2" >> "$GITHUB_PATH"
           "$PWD/zig-x86_64-linux-0.15.2/zig" version  # GITHUB_PATH only applies to later steps; use the full path here
       - name: Build
-        run: zig build -Drelease=true -Dtarget=${{ matrix.target }} ${{ matrix.cpu && format('-Dcpu={0}', matrix.cpu) || '' }}
+        run: zig build -Drelease=true -Dtarget=${{ matrix.target }} -Dcpu=${{ matrix.cpu }}
       - name: Test
         # only the native-arch target can run unit tests (musl static binary runs on ubuntu)
         if: matrix.target == 'x86_64-linux-musl'
         run: zig build test --summary all
       - name: Smoke test (qemu)
-        # the 4 cross targets run for real under qemu-user: full fixtures smoke test (8 subscriptions + render + verify);
+        # the 7 cross targets run for real under qemu-user: full fixtures smoke test (8 subscriptions + render + verify);
         # the x86_64 native target already ran unit tests in the Test step above
         if: matrix.target != 'x86_64-linux-musl'
         run: |
@@ -46,6 +66,9 @@ jobs:
             arm*)     QEMU=qemu-arm-static     ;;
             riscv64*) QEMU=qemu-riscv64-static ;;
             mipsel*)  QEMU=qemu-mipsel-static  ;;
+            mips64el*) QEMU=qemu-mips64el-static ;;
+            mips64*)  QEMU=qemu-mips64-static  ;;
+            mips*)    QEMU=qemu-mips-static    ;;
           esac
           $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out clash --dry-run | grep -E "OK:|done" | tail -9
           $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out singbox --dry-run | grep "done"
