@@ -40,6 +40,10 @@ jobs:
           # mips64: big-endian MIPS64 rel1 (n64 ABI), hard-float (see mips64el note)
           - target: mips64-linux-muslabi64
             cpu: mips64
+          # loongarch64: baseline = loongarch64 (64-bit + double-float, lp64d ABI).
+          # Loongson 3A (only personal LoongArch hardware) always has an FPU, hard-float is safe
+          - target: loongarch64-linux-musl
+            cpu: loongarch64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -56,7 +60,7 @@ jobs:
         if: matrix.target == 'x86_64-linux-musl'
         run: zig build test --summary all
       - name: Smoke test (qemu)
-        # the 7 cross targets run for real under qemu-user: full fixtures smoke test (8 subscriptions + render + verify);
+        # the 8 cross targets run for real under qemu-user: full fixtures smoke test (8 subscriptions + render + verify);
         # the x86_64 native target already ran unit tests in the Test step above
         if: matrix.target != 'x86_64-linux-musl'
         run: |
@@ -69,6 +73,7 @@ jobs:
             mips64el*) QEMU=qemu-mips64el-static ;;
             mips64*)  QEMU=qemu-mips64-static  ;;
             mips*)    QEMU=qemu-mips-static    ;;
+            loongarch64*) QEMU=qemu-loongarch64-static ;;
           esac
           $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out clash --dry-run | grep -E "OK:|done" | tail -9
           $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out singbox --dry-run | grep "done"
