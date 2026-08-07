@@ -150,7 +150,7 @@ src/
 ├── render_singbox.zig sing-box JSON 渲染
 ├── render_native.zig  原生客户端渲染（trojan/hy1/hy2/xray/ss/ssr）
 ├── render_raw.zig     raw JSON 渲染
-└── install.zig        校验/原子安装/热重载
+└── deploy.zig        校验/原子安装/热重载
 vendor/libyaml/        libyaml（MIT，捆绑静态编译）
 ```
 
