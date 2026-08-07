@@ -38,8 +38,9 @@ jobs:
         if: matrix.target == 'x86_64-linux-musl'
         run: zig build test --summary all
       - name: Smoke test (qemu)
-        # cross linux targets run for real under qemu-user: full fixtures smoke test (8 subscriptions + render + verify)
-        if: startsWith(matrix.target, 'linux') && matrix.target != 'x86_64-linux-musl'
+        # the 4 cross targets run for real under qemu-user: full fixtures smoke test (8 subscriptions + render + verify);
+        # the x86_64 native target already ran unit tests in the Test step above
+        if: matrix.target != 'x86_64-linux-musl'
         run: |
           sudo apt-get install -y -qq qemu-user-static
           case "${{ matrix.target }}" in
