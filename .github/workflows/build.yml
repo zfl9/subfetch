@@ -40,7 +40,7 @@ jobs:
         # the x86_64 native target already ran unit tests in the Test step above
         if: matrix.target != 'x86_64-linux-musl'
         run: |
-          sudo apt-get install -y -qq qemu-user-static
+          sudo apt update && sudo apt install -qq qemu-user-static
           case "${{ matrix.target }}" in
             aarch64*) QEMU=qemu-aarch64-static ;;
             arm*)     QEMU=qemu-arm-static     ;;
