@@ -285,7 +285,7 @@ fn isPlainSafe(s: []const u8) bool {
 
 const test_nodes = [_]node.Node{
     .{ .trojan = .{
-        .name = "香港1-电信优化",
+        .name = "HK-01-CM",
         .server = "hk1.example.com",
         .port = 443,
         .password = "pass123",
@@ -293,7 +293,7 @@ const test_nodes = [_]node.Node{
         .skip_cert_verify = true,
     } },
     .{ .vless = .{
-        .name = "韩国1-Reality",
+        .name = "KR-01-Reality",
         .server = "kr1.example.com",
         .port = 443,
         .uuid = "11111111-2222-3333-4444-555555555555",
@@ -305,7 +305,7 @@ const test_nodes = [_]node.Node{
         .fingerprint = "chrome",
     } },
     .{ .ss = .{
-        .name = "新加坡3-SS",
+        .name = "SG-03-SS",
         .server = "sg3.example.com",
         .port = 8388,
         .cipher = "aes-256-gcm",
@@ -313,7 +313,7 @@ const test_nodes = [_]node.Node{
         .plugin = .{ .obfs_local = .{ .mode = "http", .host = "www.bing.com" } },
     } },
     .{ .vmess = .{
-        .name = "节点:带冒号",
+        .name = "node:with-colon",
         .server = "de1.example.com",
         .port = 443,
         .uuid = "11111111-2222-3333-4444-555555555555",
@@ -352,7 +352,7 @@ test "render clash config structure" {
     const ro = ymod.mappingOf(ymod.mappingGet(p1, "reality-opts").?).?;
     try std.testing.expectEqualStrings("abc-def", ymod.mappingGetScalar(ro, "public-key").?);
     // node name with special chars is quoted and round-trips
-    try std.testing.expectEqualStrings("节点:带冒号", ymod.mappingGetScalar(ymod.mappingOf(proxies[3]).?, "name").?);
+    try std.testing.expectEqualStrings("node:with-colon", ymod.mappingGetScalar(ymod.mappingOf(proxies[3]).?, "name").?);
 }
 
 test "yaml scalar quoting" {
@@ -370,7 +370,7 @@ test "yaml scalar quoting" {
     try std.testing.expectEqualStrings("a:b c", try q(arena.allocator(), "a:b c")); // colon without trailing space: plain is legal
     try std.testing.expectEqualStrings("\"a: b\"", try q(arena.allocator(), "a: b")); // colon + space requires quotes
     try std.testing.expectEqualStrings("\"x\\\"y\"", try q(arena.allocator(), "x\"y"));
-    try std.testing.expectEqualStrings("中文节点", try q(arena.allocator(), "中文节点")); // non-ASCII plain is safe
+    try std.testing.expectEqualStrings("café", try q(arena.allocator(), "café")); // non-ASCII plain is safe
 }
 
 test "compile-check" {

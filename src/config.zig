@@ -71,7 +71,7 @@ test "parse basic zon config" {
         \\.{
         \\    .default_ua = "clash-verge/v2.2.3",
         \\    .subscriptions = .{
-        \\        .{ .name = "香港机场", .url = "https://example.com/sub?token=abc" },
+        \\        .{ .name = "hk-airport", .url = "https://example.com/sub?token=abc" },
         \\        .{ .name = "us-airport", .url = "/etc/sub.txt", .ua = "custom/1.0", .enable = false },
         \\    },
         \\}
@@ -81,7 +81,7 @@ test "parse basic zon config" {
     const cfg = try parse(arena.allocator(), source);
     try std.testing.expectEqualStrings("clash-verge/v2.2.3", cfg.default_ua.?);
     try std.testing.expectEqual(@as(usize, 2), cfg.subscriptions.len);
-    try std.testing.expectEqualStrings("香港机场", cfg.subscriptions[0].name);
+    try std.testing.expectEqualStrings("hk-airport", cfg.subscriptions[0].name);
     try std.testing.expectEqualStrings("https://example.com/sub?token=abc", cfg.subscriptions[0].url);
     try std.testing.expect(cfg.subscriptions[0].enable);
     try std.testing.expect(cfg.subscriptions[0].ua == null);

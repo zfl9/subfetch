@@ -1,2 +1,2 @@
 vmess://eyJ2IjogIjIiLCAicHMiOiAi5pel5pysMS3kvKDnu58iLCAiYWRkIjogImpwMS5leGFtcGxlLmNvbSIsICJwb3J0IjogIjQ0MyIsICJpZCI6ICIxMTExMTExMS0yMjIyLTMzMzMtNDQ0NC01NTU1NTU1NTU1NTUiLCAiYWlkIjogIjAiLCAibmV0IjogIndzIiwgInR5cGUiOiAibm9uZSIsICJob3N0IjogImpwMS5leGFtcGxlLmNvbSIsICJwYXRoIjogIi92bWVzcyIsICJ0bHMiOiAidGxzIiwgInNuaSI6ICJqcDEuZXhhbXBsZS5jb20iLCAiYWxwbiI6ICIiLCAiZnAiOiAiY2hyb21lIn0
-vmess://22222222-3333-4444-5555-666666666666@sg1.example.com:443?encryption=auto&security=tls&type=ws&host=sg1.example.com&path=%2Fvmess&sni=sg1.example.com&fp=chrome#新加坡1-新版
+vmess://22222222-3333-4444-5555-666666666666@sg1.example.com:443?encryption=auto&security=tls&type=ws&host=sg1.example.com&path=%2Fvmess&sni=sg1.example.com&fp=chrome#SG-01-new

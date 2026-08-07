@@ -1,4 +1,4 @@
-# 模拟机场的 clash 格式订阅
+# mock clash-format subscription from an airport
 proxies:
   - name: TW-01
     type: trojan
@@ -28,7 +28,7 @@ proxies:
       path: /vmess
       headers:
         Host: de1.example.com
-  - name: SOCKS-测试
+  - name: SOCKS-test
     type: socks5
     server: 1.2.3.4
     port: 1080

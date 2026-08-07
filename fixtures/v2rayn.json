@@ -1,4 +1,4 @@
 [
-  {"ps":"台湾1-v2rayn","add":"tw2.example.com","port":"443","id":"11111111-2222-3333-4444-555555555555","aid":"0","net":"tcp","type":"none","host":"","path":"","tls":"tls","sni":"tw2.example.com","alpn":"","fp":"chrome"},
-  {"ps":"美国4-v2rayn","add":"us4.example.com","port":"443","id":"22222222-3333-4444-5555-666666666666","aid":"0","net":"ws","type":"none","host":"us4.example.com","path":"/ws","tls":"","sni":""}
+  {"ps":"TW-01-v2rayn","add":"tw2.example.com","port":"443","id":"11111111-2222-3333-4444-555555555555","aid":"0","net":"tcp","type":"none","host":"","path":"","tls":"tls","sni":"tw2.example.com","alpn":"","fp":"chrome"},
+  {"ps":"US-04-v2rayn","add":"us4.example.com","port":"443","id":"22222222-3333-4444-5555-666666666666","aid":"0","net":"ws","type":"none","host":"us4.example.com","path":"/ws","tls":"","sni":""}
 ]

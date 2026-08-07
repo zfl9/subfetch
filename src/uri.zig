@@ -584,21 +584,21 @@ pub fn parseUri(
 
 // ---------------- tests ----------------
 
-const test_ss_sip002 = "ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@sg3.example.com:8388#新加坡3-SS";
-const test_ss_obfs = "ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@us3.example.com:8388?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dwww.bing.com#美国3-obfs";
-const test_vmess_url = "vmess://22222222-3333-4444-5555-666666666666@sg1.example.com:443?encryption=auto&security=tls&type=ws&host=sg1.example.com&path=%2Fvmess&sni=sg1.example.com&fp=chrome#新加坡1-新版";
-const test_vless_reality = "vless://11111111-2222-3333-4444-555555555555@kr1.example.com:443?encryption=none&security=reality&type=tcp&flow=xtls-rprx-vision&sni=www.microsoft.com&fp=chrome&pbk=77RU9W8QFgOAX%2BPK7zhMO6uRbGYetq7E5de25HIujMc%3D&sid=ABCDEF#韩国1-Reality";
-const test_trojan = "trojan://tw-pass-123@hk1.example.com:443?sni=hk1.example.com&allowInsecure=1#香港1-电信优化";
-const test_hy2 = "hysteria2://hy2-pass@hk2.example.com:443?insecure=1&sni=hk2.example.com&obfs=salamander&obfs-password=obfs123#香港2-hy2";
-const test_hy1 = "hysteria://hy1.example.com:36712?protocol=udp&auth=hy1-auth&peer=hy1.example.com&insecure=1&upmbps=100&downmbps=200#日本2-hy1";
-const test_tuic = "tuic://11111111-2222-3333-4444-555555555555:tuic-pass@sg2.example.com:443?sni=sg2.example.com&congestion_control=bbr&udp_relay_mode=native&allow_insecure=1#新加坡2-TUIC";
+const test_ss_sip002 = "ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@sg3.example.com:8388#SG-03-SS";
+const test_ss_obfs = "ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@us3.example.com:8388?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dwww.bing.com#US-03-obfs";
+const test_vmess_url = "vmess://22222222-3333-4444-5555-666666666666@sg1.example.com:443?encryption=auto&security=tls&type=ws&host=sg1.example.com&path=%2Fvmess&sni=sg1.example.com&fp=chrome#SG-01-new";
+const test_vless_reality = "vless://11111111-2222-3333-4444-555555555555@kr1.example.com:443?encryption=none&security=reality&type=tcp&flow=xtls-rprx-vision&sni=www.microsoft.com&fp=chrome&pbk=77RU9W8QFgOAX%2BPK7zhMO6uRbGYetq7E5de25HIujMc%3D&sid=ABCDEF#KR-01-Reality";
+const test_trojan = "trojan://tw-pass-123@hk1.example.com:443?sni=hk1.example.com&allowInsecure=1#HK-01-CM";
+const test_hy2 = "hysteria2://hy2-pass@hk2.example.com:443?insecure=1&sni=hk2.example.com&obfs=salamander&obfs-password=obfs123#HK-02-hy2";
+const test_hy1 = "hysteria://hy1.example.com:36712?protocol=udp&auth=hy1-auth&peer=hy1.example.com&insecure=1&upmbps=100&downmbps=200#JP-02-hy1";
+const test_tuic = "tuic://11111111-2222-3333-4444-555555555555:tuic-pass@sg2.example.com:443?sni=sg2.example.com&congestion_control=bbr&udp_relay_mode=native&allow_insecure=1#SG-02-TUIC";
 
 test "parse ss sip002" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const n = try parseUri(arena.allocator(), test_ss_sip002, "机场A", "｜");
+    const n = try parseUri(arena.allocator(), test_ss_sip002, "airport-a", "｜");
     try std.testing.expectEqualStrings("ss", n.typeName());
-    try std.testing.expectEqualStrings("机场A｜新加坡3-SS", n.name());
+    try std.testing.expectEqualStrings("airport-a｜SG-03-SS", n.name());
     const ss = n.ss;
     try std.testing.expectEqualStrings("sg3.example.com", ss.server);
     try std.testing.expectEqual(@as(u16, 8388), ss.port);
@@ -636,7 +636,7 @@ test "parse ssr" {
     const pass = b64u.Encoder.encode(&pass_buf, "ssrpass123");
     const main = try std.fmt.allocPrint(arena.allocator(), "1.2.3.4:443:origin:aes-256-cfb:plain:{s}", .{pass});
     var remarks_buf: [64]u8 = undefined;
-    const remarks = b64u.Encoder.encode(&remarks_buf, "SSR-测试节点");
+    const remarks = b64u.Encoder.encode(&remarks_buf, "SSR-test-node");
     const link_body = try std.fmt.allocPrint(arena.allocator(), "{s}?remarks={s}", .{ main, remarks });
     var enc_buf: [512]u8 = undefined;
     const enc = b64u.Encoder.encode(&enc_buf, link_body);
@@ -649,16 +649,16 @@ test "parse ssr" {
     try std.testing.expectEqualStrings("ssrpass123", n.ssr.password);
     try std.testing.expectEqualStrings("origin", n.ssr.protocol);
     try std.testing.expectEqualStrings("plain", n.ssr.obfs);
-    try std.testing.expectEqualStrings("SSR-测试节点", n.name());
+    try std.testing.expectEqualStrings("SSR-test-node", n.name());
 }
 
 test "parse vmess legacy json" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const json = "{\"v\":\"2\",\"ps\":\"日本1-传统\",\"add\":\"jp1.example.com\",\"port\":\"443\",\"id\":\"11111111-2222-3333-4444-555555555555\",\"aid\":\"0\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"jp1.example.com\",\"path\":\"/vmess\",\"tls\":\"tls\",\"sni\":\"jp1.example.com\",\"fp\":\"chrome\"}";
+    const json = "{\"v\":\"2\",\"ps\":\"JP-01-legacy\",\"add\":\"jp1.example.com\",\"port\":\"443\",\"id\":\"11111111-2222-3333-4444-555555555555\",\"aid\":\"0\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"jp1.example.com\",\"path\":\"/vmess\",\"tls\":\"tls\",\"sni\":\"jp1.example.com\",\"fp\":\"chrome\"}";
     const link = try std.fmt.allocPrint(arena.allocator(), "vmess://{s}", .{try b64(arena.allocator(), json)});
     const n = try parseUri(arena.allocator(), link, "", "｜");
-    try std.testing.expectEqualStrings("日本1-传统", n.name());
+    try std.testing.expectEqualStrings("JP-01-legacy", n.name());
     const v = n.vmess;
     try std.testing.expectEqualStrings("jp1.example.com", v.server);
     try std.testing.expectEqual(@as(u16, 443), v.port);
@@ -673,7 +673,7 @@ test "parse vmess url style" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const n = try parseUri(arena.allocator(), test_vmess_url, "", "｜");
-    try std.testing.expectEqualStrings("新加坡1-新版", n.name());
+    try std.testing.expectEqualStrings("SG-01-new", n.name());
     const v = n.vmess;
     try std.testing.expectEqualStrings("sg1.example.com", v.server);
     try std.testing.expect(v.tls);
@@ -686,7 +686,7 @@ test "parse vless reality" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const n = try parseUri(arena.allocator(), test_vless_reality, "", "｜");
-    try std.testing.expectEqualStrings("韩国1-Reality", n.name());
+    try std.testing.expectEqualStrings("KR-01-Reality", n.name());
     const v = n.vless;
     try std.testing.expect(v.tls);
     try std.testing.expectEqualStrings("xtls-rprx-vision", v.flow.?);
@@ -701,8 +701,8 @@ test "parse vless reality" {
 test "parse trojan" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const n = try parseUri(arena.allocator(), test_trojan, "机场B", "｜");
-    try std.testing.expectEqualStrings("机场B｜香港1-电信优化", n.name());
+    const n = try parseUri(arena.allocator(), test_trojan, "airport-b", "｜");
+    try std.testing.expectEqualStrings("airport-b｜HK-01-CM", n.name());
     const t = n.trojan;
     try std.testing.expectEqualStrings("tw-pass-123", t.password);
     try std.testing.expectEqualStrings("hk1.example.com", t.servername.?);
@@ -750,7 +750,7 @@ test "parse tuic hyphenated params and default port" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     // mihomo/clash-verge ecosystem: hyphenated params + omitted port
-    const link = "tuic://11111111-2222-3333-4444-555555555555:tuic-pass@sg3.example.com?congestion-controller=bbr&udp-relay-mode=quic&skip-cert-verify=1#新加坡3-TUIC";
+    const link = "tuic://11111111-2222-3333-4444-555555555555:tuic-pass@sg3.example.com?congestion-controller=bbr&udp-relay-mode=quic&skip-cert-verify=1#SG-03-TUIC";
     const n = try parseUri(arena.allocator(), link, "", "｜");
     const t = n.tuic;
     try std.testing.expectEqual(@as(u16, 443), t.port);
@@ -762,7 +762,7 @@ test "parse tuic hyphenated params and default port" {
 test "parse trojan skip-cert-verify and default port" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const link = "trojan://pass@hk2.example.com?skip-cert-verify=1#香港2";
+    const link = "trojan://pass@hk2.example.com?skip-cert-verify=1#HK-02";
     const n = try parseUri(arena.allocator(), link, "", "｜");
     try std.testing.expectEqual(@as(u16, 443), n.trojan.port);
     try std.testing.expect(n.trojan.skip_cert_verify);
@@ -772,7 +772,7 @@ test "parse hysteria2 peer alias and obfs none" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     // peer is a sni alias; obfs=none should be ignored
-    const link = "hysteria2://pass@hk3.example.com?peer=real.example.com&obfs=none#香港3";
+    const link = "hysteria2://pass@hk3.example.com?peer=real.example.com&obfs=none#HK-03";
     const n = try parseUri(arena.allocator(), link, "", "｜");
     try std.testing.expectEqual(@as(u16, 443), n.hysteria2.port);
     try std.testing.expectEqualStrings("real.example.com", n.hysteria2.servername.?);

@@ -349,12 +349,12 @@ test "parse base64 subscription" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const plain = "trojan://pass@hk1.example.com:443?sni=hk1.example.com#香港1\ntrojan://pass@us1.example.com:443?sni=us1.example.com#美国1";
+    const plain = "trojan://pass@hk1.example.com:443?sni=hk1.example.com#HK-01\ntrojan://pass@us1.example.com:443?sni=us1.example.com#US-01";
     const enc_buf = try a.alloc(u8, std.base64.standard.Encoder.calcSize(plain.len));
     _ = std.base64.standard.Encoder.encode(enc_buf, plain);
-    const r = try parseSubscription(a, "机场A", enc_buf, "｜");
+    const r = try parseSubscription(a, "airport-a", enc_buf, "｜");
     try std.testing.expectEqual(@as(usize, 2), r.nodes.len);
-    try std.testing.expectEqualStrings("机场A｜香港1", r.nodes[0].name());
+    try std.testing.expectEqualStrings("airport-a｜HK-01", r.nodes[0].name());
 }
 
 test "parse clash yaml subscription" {
@@ -372,20 +372,20 @@ test "parse clash yaml subscription" {
         \\    server: 1.2.3.4
         \\    port: 1080
     ;
-    const r = try parseSubscription(arena.allocator(), "机场B", text, "｜");
+    const r = try parseSubscription(arena.allocator(), "airport-b", text, "｜");
     try std.testing.expectEqual(@as(usize, 1), r.nodes.len);
     try std.testing.expectEqual(@as(usize, 1), r.skipped);
-    try std.testing.expectEqualStrings("机场B｜TW-01", r.nodes[0].name());
+    try std.testing.expectEqualStrings("airport-b｜TW-01", r.nodes[0].name());
     try std.testing.expectEqualStrings("trojan", r.nodes[0].typeName());
 }
 
 test "parse v2rayn json" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const text = "[{\"ps\":\"台湾1\",\"add\":\"tw2.example.com\",\"port\":\"443\",\"id\":\"11111111-2222-3333-4444-555555555555\",\"aid\":\"0\",\"net\":\"tcp\",\"type\":\"none\",\"host\":\"\",\"path\":\"\",\"tls\":\"tls\",\"sni\":\"tw2.example.com\"}]";
-    const r = try parseSubscription(arena.allocator(), "机场C", text, "｜");
+    const text = "[{\"ps\":\"TW-01\",\"add\":\"tw2.example.com\",\"port\":\"443\",\"id\":\"11111111-2222-3333-4444-555555555555\",\"aid\":\"0\",\"net\":\"tcp\",\"type\":\"none\",\"host\":\"\",\"path\":\"\",\"tls\":\"tls\",\"sni\":\"tw2.example.com\"}]";
+    const r = try parseSubscription(arena.allocator(), "airport-c", text, "｜");
     try std.testing.expectEqual(@as(usize, 1), r.nodes.len);
-    try std.testing.expectEqualStrings("机场C｜台湾1", r.nodes[0].name());
+    try std.testing.expectEqualStrings("airport-c｜TW-01", r.nodes[0].name());
     try std.testing.expectEqualStrings("tw2.example.com", r.nodes[0].vmess.server);
     try std.testing.expect(r.nodes[0].vmess.tls);
 }
@@ -407,7 +407,7 @@ test "parse clash yaml alpn list" {
         \\      - h2
         \\      - http/1.1
     ;
-    const r = try parseSubscription(arena.allocator(), "机场D", text, "｜");
+    const r = try parseSubscription(arena.allocator(), "airport-d", text, "｜");
     try std.testing.expectEqual(@as(usize, 1), r.nodes.len);
     const alpn = r.nodes[0].vless.alpn.?;
     try std.testing.expectEqual(@as(usize, 2), alpn.len);
@@ -418,7 +418,7 @@ test "parse clash yaml alpn list" {
 test "parse errors propagate" {
     try std.testing.expectError(
         error.SniffError,
-        parseSubscription(std.testing.allocator, "机场A", "<html>error</html>", "｜"),
+        parseSubscription(std.testing.allocator, "airport-a", "<html>error</html>", "｜"),
     );
 }
 

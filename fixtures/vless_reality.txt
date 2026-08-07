@@ -1,3 +1,3 @@
-vless://11111111-2222-3333-4444-555555555555@kr1.example.com:443?encryption=none&security=reality&type=tcp&flow=xtls-rprx-vision&sni=www.microsoft.com&fp=chrome&pbk=77RU9W8QFgOAX%2BPK7zhMO6uRbGYetq7E5de25HIujMc%3D&sid=ABCDEF#韩国1-Reality
-vless://11111111-2222-3333-4444-555555555555@fr1.example.com:443?encryption=none&security=tls&type=grpc&serviceName=mygrpc&sni=fr1.example.com#法国1-gRPC
-vless://11111111-2222-3333-4444-555555555555@uk1.example.com:443?encryption=none&security=none&type=ws&path=%2Fws&host=uk1.example.com#英国1-WS
+vless://11111111-2222-3333-4444-555555555555@kr1.example.com:443?encryption=none&security=reality&type=tcp&flow=xtls-rprx-vision&sni=www.microsoft.com&fp=chrome&pbk=77RU9W8QFgOAX%2BPK7zhMO6uRbGYetq7E5de25HIujMc%3D&sid=ABCDEF#KR-01-Reality
+vless://11111111-2222-3333-4444-555555555555@fr1.example.com:443?encryption=none&security=tls&type=grpc&serviceName=mygrpc&sni=fr1.example.com#FR-01-gRPC
+vless://11111111-2222-3333-4444-555555555555@uk1.example.com:443?encryption=none&security=none&type=ws&path=%2Fws&host=uk1.example.com#UK-01-WS

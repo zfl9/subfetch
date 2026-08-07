@@ -8,11 +8,11 @@
     .default_ua = "clash-verge/v2.2.3",
     .subscriptions = .{
         .{
-            .name = "香港机场",
+            .name = "hk-airport",
             .url = "https://example.com/api/v1/client/subscribe?token=REPLACE_ME",
         },
         .{
-            .name = "美西节点",
+            .name = "us-west",
             .url = "/etc/sub.txt",
             // .ua = "custom-ua/1.0",
             // .enable = false,

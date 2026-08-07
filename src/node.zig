@@ -188,27 +188,6 @@ pub const Node = union(enum) {
 
 const max_name_len = 60;
 
-/// allocating variant: returns the decoded result (allocator-allocated) on success, otherwise the original slice.
-pub fn decodeNameAlloc(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
-    if (s.len < 8) return s;
-    const out = (try util.b64Decode(allocator, s)) orelse return s;
-    if (!isPrintableUtf8(out)) return s;
-    var has_alnum = false;
-    for (out) |ch| {
-        if (ch >= 0x80 or std.ascii.isAlphanumeric(ch)) has_alnum = true;
-    }
-    if (!has_alnum) return s;
-    return out;
-}
-
-fn isPrintableUtf8(s: []const u8) bool {
-    for (s) |ch| {
-        if (ch < 0x20 and ch != '\t') return false;
-        if (ch == 0x7f) return false;
-    }
-    return true;
-}
-
 /// sanitize a name: strip control chars, collapse whitespace, truncate overlong names.
 pub fn sanitizeName(allocator: std.mem.Allocator, n: []const u8) ![]const u8 {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
@@ -248,28 +227,13 @@ pub fn prefixed(
     sep: []const u8,
     fallback: []const u8,
 ) ![]const u8 {
-    const cleaned = try sanitizeName(allocator, try decodeNameAlloc(allocator, raw_name));
+    const cleaned = try sanitizeName(allocator, raw_name);
     const base = if (cleaned.len > 0) cleaned else fallback;
     if (sub_name.len == 0) return base;
     return std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ sub_name, sep, base });
 }
 
 // ---------------- tests ----------------
-
-test "decodeNameAlloc passthrough plain text" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const n = try decodeNameAlloc(arena.allocator(), "香港1-电信优化");
-    try std.testing.expectEqualStrings("香港1-电信优化", n);
-}
-
-test "decodeNameAlloc decodes base64" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    // base64("SSR-测试节点")（urlsafe 无 padding）
-    const n = try decodeNameAlloc(arena.allocator(), "U1NSLea1i-ivleiKgueCuQ");
-    try std.testing.expectEqualStrings("SSR-测试节点", n);
-}
 
 test "sanitizeName strips control chars and collapses spaces" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -281,10 +245,10 @@ test "sanitizeName strips control chars and collapses spaces" {
 test "prefixed with fallback" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const n1 = try prefixed(arena.allocator(), "机场A", "香港1", "｜", "1.2.3.4:443");
-    try std.testing.expectEqualStrings("机场A｜香港1", n1);
-    const n2 = try prefixed(arena.allocator(), "机场A", "", "｜", "1.2.3.4:443");
-    try std.testing.expectEqualStrings("机场A｜1.2.3.4:443", n2);
+    const n1 = try prefixed(arena.allocator(), "airport-a", "HK-01", "｜", "1.2.3.4:443");
+    try std.testing.expectEqualStrings("airport-a｜HK-01", n1);
+    const n2 = try prefixed(arena.allocator(), "airport-a", "", "｜", "1.2.3.4:443");
+    try std.testing.expectEqualStrings("airport-a｜1.2.3.4:443", n2);
 }
 
 test "node name accessor" {
@@ -299,10 +263,8 @@ test "node name accessor" {
 }
 
 test "compile-check" {
-    _ = &decodeNameAlloc;
     _ = &sanitizeName;
     _ = &prefixed;
-    _ = &isPrintableUtf8;
     _ = &Node.name;
     _ = &Node.typeName;
 }

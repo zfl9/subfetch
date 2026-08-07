@@ -20,7 +20,7 @@ jobs:
           - target: arm-linux-musleabi
             cpu: arm1176jz_s
           - target: riscv64-linux-musl
-          # mipsel: MIPS32 rel2 (mips32r2) 小端，OpenWrt 老路由存量（MT7620/MT7621 等，24kc）
+          # mipsel: MIPS32 rel2 little-endian, OpenWrt legacy router installed base (MT7620/MT7621, 24kc)
           - target: mipsel-linux-musleabi
     runs-on: ubuntu-latest
     steps:

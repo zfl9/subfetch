@@ -217,7 +217,7 @@ pub fn writeJsonString(w: anytype, s: []const u8) !void {
 
 const sample_nodes = [_]node.Node{
     .{ .trojan = .{
-        .name = "香港1",
+        .name = "HK-01",
         .server = "hk1.example.com",
         .port = 443,
         .password = "pass123",
@@ -226,7 +226,7 @@ const sample_nodes = [_]node.Node{
     } },
     .{
         .trojan = .{
-            .name = "香港1", // duplicate-name test
+            .name = "HK-01", // duplicate-name test
             .server = "hk2.example.com",
             .port = 443,
             .password = "pass456",
@@ -248,11 +248,11 @@ test "uniqueNames dedupe and reserved" {
     defer arena.deinit();
     const out = try uniqueNames(arena.allocator(), &sample_nodes);
     try std.testing.expectEqual(@as(usize, 3), out.len);
-    try std.testing.expectEqualStrings("香港1", out[0].name());
-    try std.testing.expectEqualStrings("香港1-2", out[1].name());
+    try std.testing.expectEqualStrings("HK-01", out[0].name());
+    try std.testing.expectEqualStrings("HK-01-2", out[1].name());
     try std.testing.expectEqualStrings("AUTO-1", out[2].name());
     // original node name is unaffected
-    try std.testing.expectEqualStrings("香港1", sample_nodes[1].name());
+    try std.testing.expectEqualStrings("HK-01", sample_nodes[1].name());
 }
 
 test "format parse" {

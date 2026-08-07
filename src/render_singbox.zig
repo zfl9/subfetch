@@ -319,7 +319,7 @@ fn mbps(arena: std.mem.Allocator, v: ?[]const u8) ![]const u8 {
 
 const test_nodes = [_]node.Node{
     .{ .trojan = .{
-        .name = "香港1",
+        .name = "HK-01",
         .server = "hk1.example.com",
         .port = 443,
         .password = "pass123",
@@ -327,7 +327,7 @@ const test_nodes = [_]node.Node{
         .skip_cert_verify = true,
     } },
     .{ .vless = .{
-        .name = "韩国1",
+        .name = "KR-01",
         .server = "kr1.example.com",
         .port = 443,
         .uuid = "11111111-2222-3333-4444-555555555555",
@@ -352,7 +352,7 @@ const test_nodes = [_]node.Node{
         },
     },
     .{ .hysteria2 = .{
-        .name = "香港2",
+        .name = "HK-02",
         .server = "hk2.example.com",
         .port = 443,
         .password = "hy2-pass",

@@ -44,9 +44,9 @@ test "b64Decode standard with padding" {
 test "b64Decode urlsafe no padding" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    // urlsafe no-padding encoding of "SSR-测试节点"
-    const out = (try b64Decode(arena.allocator(), "U1NSLea1i-ivleiKgueCuQ")).?;
-    try std.testing.expectEqualStrings("SSR-测试节点", out);
+    // urlsafe no-padding encoding of "SSR-test-node"
+    const out = (try b64Decode(arena.allocator(), "U1NSLXRlc3Qtbm9kZQ")).?;
+    try std.testing.expectEqualStrings("SSR-test-node", out);
 }
 
 test "b64Decode rejects garbage" {

@@ -16,8 +16,8 @@ pub fn renderRaw(arena: std.mem.Allocator, nodes: []const node.Node) ![]const u8
     return out.toOwnedSlice(arena);
 }
 
-/// 字段命名以 mihomo/clash YAML 为准（mihomo 覆盖全部 8 协议，无需原生兜底）。
-/// 输出完整字段（空值省略），供下游脚本消费。
+/// field names follow mihomo/clash YAML naming (mihomo covers all 8 protocols; no native fallback needed).
+/// full field coverage (empty optional values omitted) for downstream scripts.
 fn nodeToJson(arena: std.mem.Allocator, n: node.Node) !JsonValue {
     var o = ObjectMap.init(arena);
     try o.put("type", .{ .string = n.typeName() });
@@ -105,7 +105,7 @@ fn nodeToJson(arena: std.mem.Allocator, n: node.Node) !JsonValue {
     return .{ .object = o };
 }
 
-/// ss plugin：mihomo 的 plugin + plugin-opts（嵌套对象）
+/// ss plugin: mihomo plugin + plugin-opts (nested object)
 fn putSsPlugin(arena: std.mem.Allocator, o: *ObjectMap, plugin: ?node.SsPlugin) !void {
     const p = plugin orelse return;
     switch (p) {
@@ -136,7 +136,7 @@ fn putSsPlugin(arena: std.mem.Allocator, o: *ObjectMap, plugin: ?node.SsPlugin) 
     }
 }
 
-/// ws/grpc 传输层：mihomo 的 ws-opts / grpc-opts（嵌套对象）
+/// ws/grpc transport: mihomo ws-opts / grpc-opts (nested objects)
 fn putWsGrpc(arena: std.mem.Allocator, o: *ObjectMap, network: node.Network, ws: ?node.WsOpts, grpc: ?node.GrpcOpts) !void {
     switch (network) {
         .ws => {
@@ -162,7 +162,7 @@ fn putWsGrpc(arena: std.mem.Allocator, o: *ObjectMap, network: node.Network, ws:
     }
 }
 
-/// alpn 数组
+/// alpn array
 fn putAlpn(arena: std.mem.Allocator, o: *ObjectMap, alpn: ?[]const []const u8) !void {
     const list = alpn orelse return;
     if (list.len == 0) return;
@@ -171,7 +171,7 @@ fn putAlpn(arena: std.mem.Allocator, o: *ObjectMap, alpn: ?[]const []const u8) !
     try o.put("alpn", .{ .array = arr });
 }
 
-/// 可选字符串：非空才输出
+/// optional string: emitted only when non-empty
 fn putOpt(arena: std.mem.Allocator, o: *ObjectMap, key: []const u8, v: ?[]const u8) !void {
     _ = arena;
     const val = v orelse return;
@@ -213,13 +213,13 @@ test "render raw" {
     const a = arena.allocator();
     const nodes = [_]node.Node{
         .{ .trojan = .{
-            .name = "香港1",
+            .name = "HK-01",
             .server = "hk1.example.com",
             .port = 443,
             .password = "pass123",
         } },
         .{ .ss = .{
-            .name = "新加坡3-SS",
+            .name = "SG-03-SS",
             .server = "sg3.example.com",
             .port = 8388,
             .cipher = "aes-256-gcm",
@@ -231,7 +231,7 @@ test "render raw" {
     try std.testing.expectEqual(@as(usize, 2), v.array.items.len);
     const t = v.array.items[0].object;
     try std.testing.expectEqualStrings("trojan", t.get("type").?.string);
-    try std.testing.expectEqualStrings("香港1", t.get("name").?.string);
+    try std.testing.expectEqualStrings("HK-01", t.get("name").?.string);
     try std.testing.expectEqualStrings("pass123", t.get("password").?.string);
     const s = v.array.items[1].object;
     try std.testing.expectEqualStrings("aes-256-gcm", s.get("cipher").?.string);
@@ -278,7 +278,7 @@ test "raw full fields (vless reality + ws/grpc + alpn + plugin)" {
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, text, .{});
     const arr = v.array.items;
 
-    // vless: 全字段（reality-opts spider-x、alpn、ws-opts headers）
+    // vless: full fields (reality-opts spider-x, alpn, ws-opts headers)
     const vl = arr[0].object;
     try std.testing.expectEqualStrings("chrome", vl.get("client-fingerprint").?.string);
     try std.testing.expect(vl.get("skip-cert-verify").?.bool);

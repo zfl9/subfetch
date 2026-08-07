@@ -339,7 +339,7 @@ pub fn renderSsr(arena: std.mem.Allocator, nodes: []const node.Node, opts: Optio
 // ---------------- tests ----------------
 
 const trojan_node = node.Node{ .trojan = .{
-    .name = "香港1",
+    .name = "HK-01",
     .server = "hk1.example.com",
     .port = 443,
     .password = "pass123",
@@ -349,7 +349,7 @@ const trojan_node = node.Node{ .trojan = .{
 
 const trojan_ws_node = node.Node{
     .trojan = .{
-        .name = "日本1/WS", // filename sanitization test
+        .name = "JP-01/WS", // filename sanitization test
         .server = "jp1.example.com",
         .port = 8443,
         .password = "pass456",
@@ -360,7 +360,7 @@ const trojan_ws_node = node.Node{
 };
 
 const hy1_node = node.Node{ .hysteria = .{
-    .name = "日本2-hy1",
+    .name = "JP-02-hy1",
     .server = "hy1.example.com",
     .port = 36712,
     .protocol = "udp",
@@ -372,7 +372,7 @@ const hy1_node = node.Node{ .hysteria = .{
 } };
 
 const vless_reality_node = node.Node{ .vless = .{
-    .name = "韩国1-Reality",
+    .name = "KR-01-Reality",
     .server = "kr1.example.com",
     .port = 443,
     .uuid = "11111111-2222-3333-4444-555555555555",
@@ -385,7 +385,7 @@ const vless_reality_node = node.Node{ .vless = .{
 } };
 
 const ss_plugin_node = node.Node{ .ss = .{
-    .name = "美国3-obfs",
+    .name = "US-03-obfs",
     .server = "us3.example.com",
     .port = 8388,
     .cipher = "aes-256-gcm",
@@ -394,7 +394,7 @@ const ss_plugin_node = node.Node{ .ss = .{
 } };
 
 const ssr_node = node.Node{ .ssr = .{
-    .name = "SSR-节点",
+    .name = "SSR-node",
     .server = "s.example.com",
     .port = 443,
     .cipher = "aes-256-cfb",
@@ -406,7 +406,7 @@ const ssr_node = node.Node{ .ssr = .{
 } };
 
 const hy2_node = node.Node{ .hysteria2 = .{
-    .name = "香港2-hy2",
+    .name = "HK-02-hy2",
     .server = "hk2.example.com",
     .port = 443,
     .password = "hy2-pass",
@@ -423,8 +423,8 @@ test "render trojan files" {
     const files = try renderTrojan(a, &nodes, .{});
 
     try std.testing.expectEqual(@as(usize, 2), files.len); // one file per node
-    try std.testing.expectEqualStrings("香港1.json", files[0].path);
-    try std.testing.expectEqualStrings("日本1_WS.json", files[1].path);
+    try std.testing.expectEqualStrings("HK-01.json", files[0].path);
+    try std.testing.expectEqualStrings("JP-01_WS.json", files[1].path);
 
     // trojan json content checks
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, files[0].content, .{});
@@ -466,7 +466,7 @@ test "render hysteria2 files" {
     const nodes = [_]node.Node{hy2_node};
     const files = try renderHysteria2(a, &nodes, .{});
     try std.testing.expectEqual(@as(usize, 1), files.len);
-    try std.testing.expectEqualStrings("香港2-hy2.yaml", files[0].path);
+    try std.testing.expectEqualStrings("HK-02-hy2.yaml", files[0].path);
     const text = files[0].content;
     try std.testing.expect(std.mem.indexOf(u8, text, "server: hk2.example.com:443") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "auth: hy2-pass") != null);
@@ -481,7 +481,7 @@ test "render xray files" {
     const files = try renderXray(a, &nodes, .{});
     // only the vless node is rendered (hy2 skipped)
     try std.testing.expectEqual(@as(usize, 1), files.len);
-    try std.testing.expectEqualStrings("韩国1-Reality.json", files[0].path);
+    try std.testing.expectEqualStrings("KR-01-Reality.json", files[0].path);
 
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, files[0].content, .{});
     const root = v.object;
