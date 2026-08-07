@@ -16,6 +16,8 @@ pub fn renderRaw(arena: std.mem.Allocator, nodes: []const node.Node) ![]const u8
     return out.toOwnedSlice(arena);
 }
 
+/// 字段命名以 mihomo/clash YAML 为准（mihomo 覆盖全部 8 协议，无需原生兜底）。
+/// 输出完整字段（空值省略），供下游脚本消费。
 fn nodeToJson(arena: std.mem.Allocator, n: node.Node) !JsonValue {
     var o = ObjectMap.init(arena);
     try o.put("type", .{ .string = n.typeName() });
@@ -27,58 +29,154 @@ fn nodeToJson(arena: std.mem.Allocator, n: node.Node) !JsonValue {
         .ss => |v| {
             try o.put("cipher", .{ .string = v.cipher });
             try o.put("password", .{ .string = v.password });
+            try putSsPlugin(arena, &o, v.plugin);
         },
         .ssr => |v| {
             try o.put("cipher", .{ .string = v.cipher });
             try o.put("password", .{ .string = v.password });
             try o.put("protocol", .{ .string = v.protocol });
             try o.put("obfs", .{ .string = v.obfs });
-            if (v.obfs_param) |p| try o.put("obfs-param", .{ .string = p });
-            if (v.protocol_param) |p| try o.put("protocol-param", .{ .string = p });
+            try putOpt(arena, &o, "obfs-param", v.obfs_param);
+            try putOpt(arena, &o, "protocol-param", v.protocol_param);
         },
         .vmess => |v| {
             try o.put("uuid", .{ .string = v.uuid });
             try o.put("alterId", .{ .integer = v.alter_id });
             try o.put("network", .{ .string = @tagName(v.network) });
             if (v.tls) try o.put("tls", .{ .bool = true });
-            if (v.servername) |s| try o.put("servername", .{ .string = s });
+            try putOpt(arena, &o, "servername", v.servername);
+            try putOpt(arena, &o, "client-fingerprint", v.fingerprint);
+            try putWsGrpc(arena, &o, v.network, v.ws, v.grpc);
         },
         .vless => |v| {
             try o.put("uuid", .{ .string = v.uuid });
             try o.put("network", .{ .string = @tagName(v.network) });
             if (v.tls) try o.put("tls", .{ .bool = true });
-            if (v.flow) |f| try o.put("flow", .{ .string = f });
-            if (v.servername) |s| try o.put("servername", .{ .string = s });
+            try putOpt(arena, &o, "flow", v.flow);
+            try putOpt(arena, &o, "servername", v.servername);
+            try putOpt(arena, &o, "client-fingerprint", v.fingerprint);
+            if (v.skip_cert_verify) try o.put("skip-cert-verify", .{ .bool = true });
+            try putAlpn(arena, &o, v.alpn);
             if (v.reality) |r| {
                 var ro = ObjectMap.init(arena);
                 try ro.put("public-key", .{ .string = r.public_key });
-                if (r.short_id) |sid| try ro.put("short-id", .{ .string = sid });
+                try putOpt(arena, &ro, "short-id", r.short_id);
+                try putOpt(arena, &ro, "spider-x", r.spider_x);
                 try o.put("reality-opts", .{ .object = ro });
             }
+            try putWsGrpc(arena, &o, v.network, v.ws, v.grpc);
         },
         .trojan => |v| {
             try o.put("password", .{ .string = v.password });
-            if (v.servername) |s| try o.put("servername", .{ .string = s });
+            try putOpt(arena, &o, "servername", v.servername);
             if (v.skip_cert_verify) try o.put("skip-cert-verify", .{ .bool = true });
+            try putAlpn(arena, &o, v.alpn);
+            if (v.network != .tcp) try o.put("network", .{ .string = @tagName(v.network) });
+            try putWsGrpc(arena, &o, v.network, v.ws, v.grpc);
         },
         .hysteria => |v| {
-            if (v.auth_str) |a| try o.put("auth-str", .{ .string = a });
-            if (v.up) |u| try o.put("up-mbps", .{ .string = u });
-            if (v.down) |d| try o.put("down-mbps", .{ .string = d });
-            if (v.sni) |s| try o.put("sni", .{ .string = s });
+            try o.put("protocol", .{ .string = v.protocol });
+            try putOpt(arena, &o, "auth_str", v.auth_str);
+            try putOpt(arena, &o, "up", v.up);
+            try putOpt(arena, &o, "down", v.down);
+            try putOpt(arena, &o, "obfs", v.obfs);
+            try putOpt(arena, &o, "sni", v.sni);
+            if (v.skip_cert_verify) try o.put("skip-cert-verify", .{ .bool = true });
+            try putAlpn(arena, &o, v.alpn);
         },
         .hysteria2 => |v| {
             try o.put("password", .{ .string = v.password });
-            if (v.servername) |s| try o.put("servername", .{ .string = s });
-            if (v.obfs) |obfs| try o.put("obfs", .{ .string = obfs });
+            try putOpt(arena, &o, "servername", v.servername);
+            if (v.skip_cert_verify) try o.put("skip-cert-verify", .{ .bool = true });
+            try putOpt(arena, &o, "obfs", v.obfs);
+            try putOpt(arena, &o, "obfs-password", v.obfs_password);
+            try putAlpn(arena, &o, v.alpn);
         },
         .tuic => |v| {
             try o.put("uuid", .{ .string = v.uuid });
             try o.put("password", .{ .string = v.password });
-            if (v.servername) |s| try o.put("servername", .{ .string = s });
+            try putOpt(arena, &o, "servername", v.servername);
+            if (v.skip_cert_verify) try o.put("skip-cert-verify", .{ .bool = true });
+            try putOpt(arena, &o, "congestion-controller", v.congestion_controller);
+            try putOpt(arena, &o, "udp-relay-mode", v.udp_relay_mode);
+            try putAlpn(arena, &o, v.alpn);
         },
     }
     return .{ .object = o };
+}
+
+/// ss plugin：mihomo 的 plugin + plugin-opts（嵌套对象）
+fn putSsPlugin(arena: std.mem.Allocator, o: *ObjectMap, plugin: ?node.SsPlugin) !void {
+    const p = plugin orelse return;
+    switch (p) {
+        .obfs_local => |pl| {
+            try o.put("plugin", .{ .string = "obfs-local" });
+            var opts = ObjectMap.init(arena);
+            try opts.put("mode", .{ .string = pl.mode });
+            try opts.put("host", .{ .string = pl.host });
+            try o.put("plugin-opts", .{ .object = opts });
+        },
+        .v2ray_plugin => |pl| {
+            try o.put("plugin", .{ .string = "v2ray-plugin" });
+            var opts = ObjectMap.init(arena);
+            try opts.put("mode", .{ .string = pl.mode });
+            if (pl.tls) try opts.put("tls", .{ .bool = true });
+            try putOpt(arena, &opts, "host", pl.host);
+            try putOpt(arena, &opts, "path", pl.path);
+            try o.put("plugin-opts", .{ .object = opts });
+        },
+        .shadow_tls => |pl| {
+            try o.put("plugin", .{ .string = "shadow-tls" });
+            var opts = ObjectMap.init(arena);
+            try opts.put("host", .{ .string = pl.host });
+            try opts.put("password", .{ .string = pl.password });
+            try opts.put("version", .{ .integer = pl.version });
+            try o.put("plugin-opts", .{ .object = opts });
+        },
+    }
+}
+
+/// ws/grpc 传输层：mihomo 的 ws-opts / grpc-opts（嵌套对象）
+fn putWsGrpc(arena: std.mem.Allocator, o: *ObjectMap, network: node.Network, ws: ?node.WsOpts, grpc: ?node.GrpcOpts) !void {
+    switch (network) {
+        .ws => {
+            if (ws) |w| {
+                var opts = ObjectMap.init(arena);
+                try opts.put("path", .{ .string = w.path });
+                if (w.host) |h| {
+                    var headers = ObjectMap.init(arena);
+                    try headers.put("Host", .{ .string = h });
+                    try opts.put("headers", .{ .object = headers });
+                }
+                try o.put("ws-opts", .{ .object = opts });
+            }
+        },
+        .grpc => {
+            if (grpc) |g| {
+                var opts = ObjectMap.init(arena);
+                try opts.put("grpc-service-name", .{ .string = g.service_name });
+                try o.put("grpc-opts", .{ .object = opts });
+            }
+        },
+        else => {},
+    }
+}
+
+/// alpn 数组
+fn putAlpn(arena: std.mem.Allocator, o: *ObjectMap, alpn: ?[]const []const u8) !void {
+    const list = alpn orelse return;
+    if (list.len == 0) return;
+    var arr = std.json.Array.init(arena);
+    for (list) |a| try arr.append(.{ .string = a });
+    try o.put("alpn", .{ .array = arr });
+}
+
+/// 可选字符串：非空才输出
+fn putOpt(arena: std.mem.Allocator, o: *ObjectMap, key: []const u8, v: ?[]const u8) !void {
+    _ = arena;
+    const val = v orelse return;
+    if (val.len == 0) return;
+    try o.put(key, .{ .string = val });
 }
 
 fn serverOf(n: node.Node) []const u8 {
@@ -139,9 +237,77 @@ test "render raw" {
     try std.testing.expectEqualStrings("aes-256-gcm", s.get("cipher").?.string);
 }
 
+test "raw full fields (vless reality + ws/grpc + alpn + plugin)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const nodes = [_]node.Node{
+        .{ .vless = .{
+            .name = "kr1",
+            .server = "kr1.example.com",
+            .port = 443,
+            .uuid = "11111111-2222-3333-4444-555555555555",
+            .network = .ws,
+            .tls = true,
+            .reality = .{ .public_key = "pubkey123", .short_id = "ABCD", .spider_x = "/spx" },
+            .flow = "xtls-rprx-vision",
+            .servername = "www.example.com",
+            .fingerprint = "chrome",
+            .skip_cert_verify = true,
+            .alpn = &.{ "h2", "http/1.1" },
+            .ws = .{ .path = "/ws", .host = "kr1.example.com" },
+        } },
+        .{ .trojan = .{
+            .name = "jp1",
+            .server = "jp1.example.com",
+            .port = 8443,
+            .password = "p",
+            .network = .grpc,
+            .grpc = .{ .service_name = "svc1" },
+        } },
+        .{ .ss = .{
+            .name = "us1",
+            .server = "us1.example.com",
+            .port = 8388,
+            .cipher = "aes-256-gcm",
+            .password = "p",
+            .plugin = .{ .shadow_tls = .{ .host = "www.bing.com", .password = "st", .version = 3 } },
+        } },
+    };
+    const text = try renderRaw(a, &nodes);
+    const v = try std.json.parseFromSliceLeaky(JsonValue, a, text, .{});
+    const arr = v.array.items;
+
+    // vless: 全字段（reality-opts spider-x、alpn、ws-opts headers）
+    const vl = arr[0].object;
+    try std.testing.expectEqualStrings("chrome", vl.get("client-fingerprint").?.string);
+    try std.testing.expect(vl.get("skip-cert-verify").?.bool);
+    const ro = vl.get("reality-opts").?.object;
+    try std.testing.expectEqualStrings("/spx", ro.get("spider-x").?.string);
+    try std.testing.expectEqualStrings("h2", vl.get("alpn").?.array.items[0].string);
+    const ws = vl.get("ws-opts").?.object;
+    try std.testing.expectEqualStrings("/ws", ws.get("path").?.string);
+    try std.testing.expectEqualStrings("kr1.example.com", ws.get("headers").?.object.get("Host").?.string);
+
+    // trojan: grpc-opts + network
+    const tj = arr[1].object;
+    try std.testing.expectEqualStrings("grpc", tj.get("network").?.string);
+    try std.testing.expectEqualStrings("svc1", tj.get("grpc-opts").?.object.get("grpc-service-name").?.string);
+
+    // ss: shadow-tls plugin
+    const ss = arr[2].object;
+    try std.testing.expectEqualStrings("shadow-tls", ss.get("plugin").?.string);
+    const po = ss.get("plugin-opts").?.object;
+    try std.testing.expectEqual(@as(i64, 3), po.get("version").?.integer);
+}
+
 test "compile-check" {
     _ = &renderRaw;
     _ = &nodeToJson;
+    _ = &putSsPlugin;
+    _ = &putWsGrpc;
+    _ = &putAlpn;
+    _ = &putOpt;
     _ = &serverOf;
     _ = &portOf;
 }
