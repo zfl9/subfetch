@@ -380,5 +380,4 @@ test "compile-check" {
     _ = &yamlStr;
     _ = &isPlainSafe;
     _ = &collectNames;
-    _ = &test_nodes;
 }

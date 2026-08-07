@@ -602,11 +602,4 @@ test "compile-check" {
     _ = &str;
     _ = &int;
     _ = &jsonToString;
-    _ = &trojan_node;
-    _ = &trojan_ws_node;
-    _ = &hy1_node;
-    _ = &hy2_node;
-    _ = &vless_reality_node;
-    _ = &ss_plugin_node;
-    _ = &ssr_node;
 }

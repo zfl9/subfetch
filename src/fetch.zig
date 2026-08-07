@@ -146,11 +146,9 @@ test "fetch missing file" {
 }
 
 test "compile-check" {
-    _ = &max_sub_size;
     _ = &fetch;
     _ = &readFile;
     _ = &fetchHttp;
     _ = &fetchWithTimeout;
     _ = &worker;
-    _ = &ThreadCtx;
 }

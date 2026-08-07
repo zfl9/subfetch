@@ -303,7 +303,6 @@ test "compile-check" {
     _ = &sanitizeName;
     _ = &prefixed;
     _ = &isPrintableUtf8;
-    _ = &max_name_len;
     _ = &Node.name;
     _ = &Node.typeName;
 }

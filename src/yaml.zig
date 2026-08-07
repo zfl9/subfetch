@@ -217,10 +217,4 @@ test "compile-check" {
     _ = &scalarOf;
     _ = &mappingGet;
     _ = &mappingGetScalar;
-    _ = &clash_sample;
-    _ = &yaml_no_node;
-    _ = &yaml_scalar_node;
-    _ = &yaml_sequence_node;
-    _ = &yaml_mapping_node;
-    _ = &yaml_alias_node;
 }

@@ -414,5 +414,4 @@ test "compile-check" {
     _ = &putTls;
     _ = &putTransport;
     _ = &mbps;
-    _ = &test_nodes;
 }

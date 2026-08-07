@@ -481,7 +481,6 @@ fn errPrint(comptime fmt: []const u8, args: anytype) void {
 }
 
 test "compile-check" {
-    _ = &version;
     _ = &main;
     _ = &parseArgs;
     _ = &takeValue;

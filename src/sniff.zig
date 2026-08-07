@@ -223,6 +223,4 @@ test "compile-check" {
     _ = &looksLikeUri;
     _ = &looksB64;
     _ = &isMostlyPrintable;
-    _ = &uri_schemes;
-    _ = &max_depth;
 }

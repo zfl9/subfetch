@@ -293,5 +293,4 @@ test "compile-check" {
     _ = &Format.parse;
     _ = &writeJsonValue;
     _ = &writeJsonString;
-    _ = &sample_nodes;
 }

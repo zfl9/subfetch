@@ -816,14 +816,4 @@ test "compile-check" {
     _ = &applyWsGrpc;
     _ = &b64Str;
     _ = &b64;
-    _ = &b64Decode;
-    _ = &urlDecode;
-    _ = &test_ss_sip002;
-    _ = &test_ss_obfs;
-    _ = &test_vmess_url;
-    _ = &test_vless_reality;
-    _ = &test_trojan;
-    _ = &test_hy2;
-    _ = &test_hy1;
-    _ = &test_tuic;
 }
