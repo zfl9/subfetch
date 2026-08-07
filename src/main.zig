@@ -481,8 +481,6 @@ fn errPrint(comptime fmt: []const u8, args: anytype) void {
 }
 
 test "compile-check" {
-    // Zig compiler is lazy: explicitly reference every fn/var in this file (including private ones)
-    // to surface compile errors early
     _ = &version;
     _ = &main;
     _ = &parseArgs;
@@ -495,5 +493,4 @@ test "compile-check" {
     _ = &verifyDryRunFiles;
     _ = &defaultSinglePath;
     _ = &defaultDirPath;
-    // submodules carry their own compile-check; not repeated here
 }

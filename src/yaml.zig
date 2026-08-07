@@ -210,7 +210,6 @@ test "parse error on invalid yaml" {
 }
 
 test "compile-check" {
-    // Zig compiler is lazy: explicitly reference every fn/var in this file (including private ones) to surface compile errors early
     _ = &parse;
     _ = &buildValue;
     _ = &mappingOf;
@@ -224,5 +223,4 @@ test "compile-check" {
     _ = &yaml_sequence_node;
     _ = &yaml_mapping_node;
     _ = &yaml_alias_node;
-    // c is the @cImport-generated external decl set (a type); no reference needed
 }

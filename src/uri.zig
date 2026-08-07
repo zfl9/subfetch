@@ -793,7 +793,6 @@ fn b64(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
 }
 
 test "compile-check" {
-    // reference every fn/var in this file (including private ones)
     _ = &parseUri;
     _ = &parseSs;
     _ = &parseSsr;
@@ -817,10 +816,8 @@ test "compile-check" {
     _ = &applyWsGrpc;
     _ = &b64Str;
     _ = &b64;
-    // util alias consts (var decls defined in this file)
     _ = &b64Decode;
     _ = &urlDecode;
-    // test constant vars
     _ = &test_ss_sip002;
     _ = &test_ss_obfs;
     _ = &test_vmess_url;
@@ -829,6 +826,4 @@ test "compile-check" {
     _ = &test_hy2;
     _ = &test_hy1;
     _ = &test_tuic;
-    // local decls inside function bodies (e.g. PluginKV/kvGet, getStr)
-    // cannot be referenced from outside due to Zig scoping; covered by behavioral tests
 }

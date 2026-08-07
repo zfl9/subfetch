@@ -217,7 +217,6 @@ test "sniff nested base64 too deep" {
 }
 
 test "compile-check" {
-    // reference every fn/var in this file (including private ones)
     _ = &sniff;
     _ = &sniffDepth;
     _ = &hasTopLevelProxies;

@@ -294,5 +294,4 @@ test "compile-check" {
     _ = &writeJsonValue;
     _ = &writeJsonString;
     _ = &sample_nodes;
-    // no fn/var decls inside types (Options/Output/File only have fields and variants)
 }

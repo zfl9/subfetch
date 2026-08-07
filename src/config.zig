@@ -150,10 +150,7 @@ test "reject missing url field" {
 }
 
 test "compile-check" {
-    // Zig compiler is lazy: explicitly reference every fn/var in this file (including
-    // private ones and nested type decls) to surface compile errors early
     _ = &parse;
     _ = &isValidName;
-    // nested type decls
     _ = &Config.deinit;
 }

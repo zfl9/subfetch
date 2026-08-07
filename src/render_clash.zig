@@ -377,7 +377,6 @@ test "compile-check" {
     _ = &renderClash;
     _ = &renderProxy;
     _ = &renderWsGrpc;
-    // renderProxy already covers yamlStr in the proxies section; direct reference here
     _ = &yamlStr;
     _ = &isPlainSafe;
     _ = &collectNames;

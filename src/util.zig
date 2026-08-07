@@ -66,7 +66,6 @@ test "urlDecode passthrough and decode" {
 }
 
 test "compile-check" {
-    // Zig compiler is lazy: explicitly reference every fn/var in this file (including private ones) to surface compile errors early
     _ = &b64Decode;
     _ = &urlDecode;
 }

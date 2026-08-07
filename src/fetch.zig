@@ -146,7 +146,6 @@ test "fetch missing file" {
 }
 
 test "compile-check" {
-    // Zig compiler is lazy: explicitly reference every fn/var in this file (including private ones) to surface compile errors early
     _ = &max_sub_size;
     _ = &fetch;
     _ = &readFile;

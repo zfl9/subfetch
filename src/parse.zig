@@ -423,7 +423,6 @@ test "parse errors propagate" {
 }
 
 test "compile-check" {
-    // reference every fn/var in this file (including private ones)
     _ = &parseSubscription;
     _ = &clashYamlToNode;
     _ = &jsonNodeToNode;
@@ -435,6 +434,4 @@ test "compile-check" {
     _ = &grpcOpts;
     _ = &yamlAlpn;
     _ = &alpnFromString;
-    // local decls inside function bodies (e.g. getStr in jsonNodeToNode)
-    // cannot be referenced from outside due to Zig scoping; covered by behavioral tests
 }

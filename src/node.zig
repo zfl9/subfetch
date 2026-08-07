@@ -299,15 +299,11 @@ test "node name accessor" {
 }
 
 test "compile-check" {
-    // reference every fn/var in this file (including private ones and nested type fns)
     _ = &decodeNameAlloc;
     _ = &sanitizeName;
     _ = &prefixed;
     _ = &isPrintableUtf8;
     _ = &max_name_len;
-    // nested type decls (method fns)
     _ = &Node.name;
     _ = &Node.typeName;
-    // protocol structs only have fields, no methods; SsPlugin payloads are anonymous structs (no named decls)
-    // type names themselves need no reference
 }
