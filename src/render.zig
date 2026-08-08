@@ -52,24 +52,26 @@ pub const File = struct {
     content: []const u8,
 };
 
-/// renderer: one per output format. render() returns all output files
-/// (single-file formats return a one-element slice).
-pub const Renderer = struct {
-    name: Format,
-    /// node protocols this format accepts (filter basis; stage 4)
-    supported: []const node.Type,
-    /// render nodes to output files (allocated from arena); template is optional
-    /// (clash/singbox only; other formats ignore it)
-    render: *const fn (
-        arena: std.mem.Allocator,
-        nodes: []const Node,
-        opts: Options,
-        template: ?[]const u8,
-    ) anyerror![]const File,
-};
+/// whether `fmt` accepts a node of this protocol (protocol-level filter basis).
+/// per-node sub-type filters (e.g. sing-box's v2ray-plugin) still live inside
+/// the renderers; this is the explicit protocol-level filter for reporting.
+pub fn supports(fmt: Format, n: Node) bool {
+    return switch (fmt) {
+        .clash, .raw => true, // aggregate formats accept all 8 protocols
+        .singbox => n != .ssr, // sing-box has no ssr support
+        .trojan => n == .trojan,
+        .hysteria => n == .hysteria,
+        .hysteria2 => n == .hysteria2,
+        .xray => n == .vless,
+        .ss => n == .ss,
+        .ssr => n == .ssr,
+    };
+}
 
 /// render all nodes for the given format. returns output files
 /// (single-file formats: one element; native formats: one file per node).
+/// node names are deduped + reserved-name protected here (renderer layer
+/// responsibility); raw keeps the original names (data export).
 pub fn render(
     arena: std.mem.Allocator,
     fmt: Format,
@@ -77,16 +79,17 @@ pub fn render(
     opts: Options,
     template: ?[]const u8,
 ) ![]const File {
+    const use_nodes = if (fmt == .raw) nodes else try uniqueNames(arena, nodes);
     return switch (fmt) {
-        .clash => @import("render_clash.zig").renderClash(arena, nodes, opts, template),
-        .singbox => @import("render_singbox.zig").renderSingbox(arena, nodes, opts, template),
-        .trojan => @import("render_native.zig").renderTrojan(arena, nodes, opts, template),
-        .hysteria => @import("render_native.zig").renderHysteria(arena, nodes, opts, template),
-        .hysteria2 => @import("render_native.zig").renderHysteria2(arena, nodes, opts, template),
-        .xray => @import("render_native.zig").renderXray(arena, nodes, opts, template),
-        .ss => @import("render_native.zig").renderSs(arena, nodes, opts, template),
-        .ssr => @import("render_native.zig").renderSsr(arena, nodes, opts, template),
-        .raw => @import("render_raw.zig").renderRaw(arena, nodes, template),
+        .clash => @import("render_clash.zig").renderClash(arena, use_nodes, opts, template),
+        .singbox => @import("render_singbox.zig").renderSingbox(arena, use_nodes, opts, template),
+        .trojan => @import("render_native.zig").renderTrojan(arena, use_nodes, opts, template),
+        .hysteria => @import("render_native.zig").renderHysteria(arena, use_nodes, opts, template),
+        .hysteria2 => @import("render_native.zig").renderHysteria2(arena, use_nodes, opts, template),
+        .xray => @import("render_native.zig").renderXray(arena, use_nodes, opts, template),
+        .ss => @import("render_native.zig").renderSs(arena, use_nodes, opts, template),
+        .ssr => @import("render_native.zig").renderSsr(arena, use_nodes, opts, template),
+        .raw => @import("render_raw.zig").renderRaw(arena, use_nodes, template),
     };
 }
 
@@ -282,10 +285,33 @@ test "writeJsonValue escapes and indents" {
 }
 
 
+test "supports filter" {
+    const tro = node.Node{ .trojan = .{
+        .name = "t", .server = "s", .port = 443, .password = "p",
+    } };
+    const ssr = node.Node{ .ssr = .{
+        .name = "r", .server = "s", .port = 443, .cipher = "aes-256-cfb", .password = "p", .protocol = "origin", .obfs = "plain",
+    } };
+    const vl = node.Node{ .vless = .{
+        .name = "v", .server = "s", .port = 443, .uuid = "11111111-2222-3333-4444-555555555555",
+    } };
+
+    try std.testing.expect(supports(.clash, tro));
+    try std.testing.expect(supports(.clash, ssr));
+    try std.testing.expect(supports(.raw, ssr));
+    try std.testing.expect(!supports(.singbox, ssr));
+    try std.testing.expect(supports(.singbox, tro));
+    try std.testing.expect(!supports(.trojan, vl));
+    try std.testing.expect(supports(.trojan, tro));
+    try std.testing.expect(supports(.xray, vl));
+    try std.testing.expect(!supports(.xray, tro));
+}
+
 test "compile-check" {
     _ = &render;
     _ = &uniqueNames;
     _ = &renameNode;
+    _ = &supports;
     _ = &Format.parse;
     _ = &writeJsonValue;
     _ = &writeJsonString;

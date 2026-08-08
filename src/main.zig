@@ -159,8 +159,10 @@ pub fn main() !void {
         logErr(null, "no usable nodes, aborting", .{});
         std.process.exit(1);
     }
-    // dedupe names + protect reserved names
-    const nodes = try render_mod.uniqueNames(arena, all_nodes.items);
+    // node-name dedupe + reserved-name protection now lives inside render()
+    // (renderer layer); raw keeps original names. count unsupported protocols
+    // per target for the verbose report.
+    const nodes = all_nodes.items;
 
     // render options
     const secret = opts.secret orelse try genSecret(arena);
@@ -180,6 +182,16 @@ pub fn main() !void {
     };
     var rendered: std.ArrayListUnmanaged(Rendered) = .empty;
     for (opts.outs.items) |o| {
+        // verbose: report nodes skipped due to unsupported protocol (explicit filter)
+        if (opts.verbose > 0) {
+            var unsupported: usize = 0;
+            for (nodes) |n| {
+                if (!render_mod.supports(o.fmt, n)) unsupported += 1;
+            }
+            if (unsupported > 0) {
+                logVerbose(null, "[{s}] {d} node(s) skipped (unsupported protocol)", .{ @tagName(o.fmt), unsupported });
+            }
+        }
         // load user template (clash/singbox only)
         var tpl_text: ?[]const u8 = null;
         if (o.template) |tp| {

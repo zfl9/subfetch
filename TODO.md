@@ -24,10 +24,10 @@
 - [x] clash YAML / singbox JSON 统一文本级替换（src/template.zig）
 - [x] clash 补充：proxy-groups/rules 空则填充、缺失则追加
 
-## 阶段四：去重下放 + filter 显式化
+## 阶段四：去重下放 + filter 显式化（完成）
 
-- [ ] 去重从全局预处理 → 渲染器自治（同订阅重名 -2、保留名保护）
-- [ ] supported 集合显式 filter，verbose 提示跳过数
+- [x] 去重从 main 全局预处理 → render() 层统一（raw 保留原名，数据导出不处理）
+- [x] supports() 协议级 filter 显式化，verbose 提示跳过数
 
 ## 不变项
 
