@@ -75,10 +75,17 @@ const ThreadCtx = struct {
     result: ?[]const u8 = null,
     err: ?FetchError = null,
     done: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    /// set by the main thread when it gives up on the deadline; the worker then
+    /// destroys the ctx itself (ownership transfer, no use-after-free, no leak)
+    abandoned: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 };
 
 fn worker(ctx: *ThreadCtx) void {
-    defer ctx.done.store(true, .release);
+    defer {
+        ctx.done.store(true, .release);
+        // when the main thread abandoned us, we own the ctx and must free it
+        if (ctx.abandoned.load(.acquire)) std.heap.page_allocator.destroy(ctx);
+    }
     // use page_allocator inside the thread (thread-safe); the main thread dups the
     // result into the caller's allocator
     const body = fetch(std.heap.page_allocator, ctx.url, ctx.ua) catch |e| {
@@ -89,8 +96,9 @@ fn worker(ctx: *ThreadCtx) void {
 }
 
 /// fetch with timeout. std.http.Client has no built-in timeout; implemented with a
-/// background thread + deadline polling. On timeout: ctx stays in the arena (the thread
-/// may still be writing to it) and is reclaimed when the process exits.
+/// background thread + deadline polling. the ctx is page-allocated and its
+/// ownership is explicit: main thread frees it after join, or the worker frees it
+/// itself when abandoned (timeout path) - no use-after-free, no leak.
 pub fn fetchWithTimeout(
     allocator: std.mem.Allocator,
     url: []const u8,
@@ -99,23 +107,31 @@ pub fn fetchWithTimeout(
 ) FetchError![]const u8 {
     if (timeout_ms == null) return fetch(allocator, url, ua);
 
-    const ctx = allocator.create(ThreadCtx) catch return error.OutOfMemory;
+    const ctx = std.heap.page_allocator.create(ThreadCtx) catch return error.OutOfMemory;
     ctx.* = .{ .url = url, .ua = ua };
-    const t = std.Thread.spawn(.{}, worker, .{ctx}) catch return error.NetworkError;
+    const t = std.Thread.spawn(.{}, worker, .{ctx}) catch {
+        std.heap.page_allocator.destroy(ctx);
+        return error.NetworkError;
+    };
 
     const deadline = std.time.milliTimestamp() + timeout_ms.?;
     while (!ctx.done.load(.acquire)) {
         if (std.time.milliTimestamp() >= deadline) {
+            // give up: the worker owns the ctx from now on
+            ctx.abandoned.store(true, .release);
             t.detach();
             return error.Timeout;
         }
         std.Thread.sleep(10 * std.time.ns_per_ms);
     }
     t.join();
-    if (ctx.err) |e| return e;
-    const body = ctx.result orelse return error.NetworkError;
-    defer std.heap.page_allocator.free(body);
-    return allocator.dupe(u8, body) catch error.OutOfMemory;
+    const err = ctx.err;
+    const body = ctx.result;
+    std.heap.page_allocator.destroy(ctx);
+    if (err) |e| return e;
+    const b = body orelse return error.NetworkError;
+    defer std.heap.page_allocator.free(b);
+    return allocator.dupe(u8, b) catch error.OutOfMemory;
 }
 
 // ---------------- tests ----------------
@@ -143,6 +159,39 @@ test "fetch missing file" {
         error.InvalidUrl,
         fetch(std.testing.allocator, "/nonexistent/xyz/sub.txt", null),
     );
+}
+
+test "fetchWithTimeout times out on slow server" {
+    // local server that accepts but never responds; timeout must fire
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const listener = try std.net.Address.parseIp("127.0.0.1", 0);
+    var server = try listener.listen(.{ .reuse_address = true });
+    defer server.deinit();
+    const port = server.listen_address.getPort();
+
+    const server_thread = try std.Thread.spawn(.{}, struct {
+        fn run(srv: *std.net.Server) void {
+            // accept one connection, then sleep forever (never respond)
+            const conn = srv.accept() catch return;
+            defer conn.stream.close();
+            std.Thread.sleep(std.time.ns_per_s); // hold the connection past the 500ms timeout
+        }
+    }.run, .{&server});
+    defer server_thread.join();
+
+    const url = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}/slow", .{port});
+    // 500ms timeout: worker hits the dead server, main thread times out
+    try std.testing.expectError(error.Timeout, fetchWithTimeout(a, url, null, 500));
+    // normal path (file) still works
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "s.txt", .data = "ok" });
+    const p = try tmp.dir.realpathAlloc(a, "s.txt");
+    const b = try fetchWithTimeout(a, p, null, 1000);
+    try std.testing.expectEqualStrings("ok", b);
 }
 
 test "compile-check" {
