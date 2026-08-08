@@ -99,7 +99,7 @@ pub fn main() !void {
                         fail_cnt += 1;
             continue;
         };
-        const info_keywords = cfg.info_keywords orelse &node_mod.default_info_keywords;
+        const info_keywords = cfg.info_node_keywords orelse &node_mod.default_info_keywords;
         const result = parse_mod.parseSubscription(arena, s.name, body, opts.sep, info_keywords) catch |e| {
             logWarn(s.name, "parse failed ({s})", .{@errorName(e)});
                         fail_cnt += 1;
