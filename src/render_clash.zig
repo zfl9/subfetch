@@ -472,6 +472,37 @@ test "clash anchor expansion in user groups" {
     try std.testing.expect(std.mem.indexOf(u8, files2[0].content, "proxies: []") != null);
 }
 
+test "clash anchor edge cases" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // multiple groups each with anchors + mixed user refs
+    const tpl_text = "proxies: []\nproxy-groups:\n  - name: PROXY\n    type: select\n    proxies:\n      - AUTO\n      - __NODES__\n  - name: AUTO\n    type: url-test\n    proxies:\n      - __NODES__\n  - name: 香港\n    type: select\n    proxies:\n      - AUTO\nrules:\n  - MATCH,PROXY\n";
+    const files = try renderClash(a, &test_nodes, .{}, tpl_text);
+    const yaml = files[0].content;
+    // both anchors expanded, user ref kept, count matches
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "__NODES__") == null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "- AUTO\n      - HK-01-CM") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "- name: 香港\n    type: select\n    proxies:\n      - AUTO") != null);
+    // re-parse with libyaml: PROXY group proxies = AUTO + 4 nodes + 香港 group = AUTO
+    const ymod = @import("yaml.zig");
+    const root = try ymod.parse(a, yaml);
+    const m = ymod.mappingOf(root).?;
+    const groups = ymod.sequenceOf(ymod.mappingGet(m, "proxy-groups").?).?;
+    try std.testing.expectEqual(@as(usize, 3), groups.len);
+    const proxy_group = ymod.mappingOf(groups[0]).?;
+    const plist = ymod.sequenceOf(ymod.mappingGet(proxy_group, "proxies").?).?;
+    try std.testing.expectEqual(@as(usize, 5), plist.len); // AUTO + 4 nodes
+    try std.testing.expectEqualStrings("AUTO", ymod.scalarOf(plist[0]).?);
+    try std.testing.expectEqualStrings("HK-01-CM", ymod.scalarOf(plist[1]).?);
+    const auto_group = ymod.mappingOf(groups[1]).?;
+    try std.testing.expectEqual(@as(usize, 4), ymod.sequenceOf(ymod.mappingGet(auto_group, "proxies").?).?.len);
+
+    // misplaced anchor propagates as error
+    try std.testing.expectError(error.MisplacedAnchor, renderClash(a, &test_nodes, .{}, "proxies: []\nproxy-groups:\n  - name: G\n    proxies: [__NODES__]\n"));
+}
+
 test "compile-check" {
     _ = &renderClash;
     _ = &renderProxyRel;

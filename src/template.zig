@@ -181,6 +181,8 @@ fn matchAnchorLine(line: []const u8, anchor: []const u8) bool {
 /// expand every `- <anchor>` line into `block` (one item per line, indented like
 /// the anchor line). non-matching lines are kept as-is; text is returned
 /// unchanged when no anchor line is present (no error: absence is explicit).
+/// an anchor that appears anywhere else (inline, comment, etc.) is an error:
+/// the anchor is a reserved word and must be a standalone list item.
 pub fn expandAnchor(
     arena: std.mem.Allocator,
     text: []const u8,
@@ -202,6 +204,8 @@ pub fn expandAnchor(
                 try out.appendSlice(arena, bl);
                 try out.append(arena, '\n');
             }
+        } else if (std.mem.indexOf(u8, line, anchor) != null) {
+            return error.MisplacedAnchor;
         } else {
             try out.appendSlice(arena, line);
             try out.append(arena, '\n');
@@ -321,6 +325,30 @@ test "expandAnchor" {
     // no anchor: unchanged
     const plain = try expandAnchor(a, "a: 1\n- x\n", nodes_anchor, "- n1\n");
     try std.testing.expectEqualStrings("a: 1\n- x\n", plain);
+    // inline anchor (not a standalone list item) is an error
+    try std.testing.expectError(error.MisplacedAnchor, expandAnchor(a, "proxies: [__NODES__]\n", nodes_anchor, "- n1\n"));
+    try std.testing.expectError(error.MisplacedAnchor, expandAnchor(a, "- __NODES__,extra\n", nodes_anchor, "- n1\n"));
+}
+
+test "expandAnchor multiple anchors and indent alignment" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // two anchors at different indents (4 and 8 spaces)
+    const tpl = "proxy-groups:\n    - name: A\n        proxies:\n            - __NODES__\n    - name: B\n        proxies:\n            - __NODES__\n";
+    const out = try expandAnchor(a, tpl, nodes_anchor, "- n1\n- n2\n");
+    try std.testing.expectEqualStrings(
+        "proxy-groups:\n    - name: A\n        proxies:\n            - n1\n            - n2\n    - name: B\n        proxies:\n            - n1\n            - n2\n",
+        out,
+    );
+    // block with two items and a trailing newline
+    const out2 = try expandAnchor(a, "- __NODES__\n", nodes_anchor, "- x\n- y\n");
+    try std.testing.expectEqualStrings("- x\n- y\n", out2);
+    // bare anchor word (not a list item) is misplaced
+    try std.testing.expectError(error.MisplacedAnchor, expandAnchor(a, "__NODES__\n", nodes_anchor, "- a\n"));
+    const out4 = try expandAnchor(a, "- __NODES__\n", nodes_anchor, "- a\n");
+    try std.testing.expectEqualStrings("- a\n", out4);
 }
 
 test "compile-check" {
