@@ -22,7 +22,7 @@
 ```sh
 zig build -Doptimize=ReleaseSafe        # 默认 x86_64-linux-musl 静态
 zig build -Dtarget=aarch64-linux-musl   # 交叉编译（RPi / ARM 路由器）
-zig build test                          # 单元测试（84 个）
+zig build test                          # 单元测试（103 个）
 ```
 
 产物在 `zig-out/bin/subfetch`。
@@ -191,7 +191,8 @@ src/
 ├── parse.zig          订阅编排 + clash YAML/JSON 转换
 ├── yaml.zig           libyaml 封装（vendor 捆绑）
 ├── util.zig           base64/percent 解码
-├── render.zig         格式分发 + 节点名处理
+├── template.zig       模板机制（填充点/锚点/缩进探测）
+├── render.zig         格式分发 + 节点名处理 + JSON 序列化
 ├── render_clash.zig   mihomo YAML 渲染
 ├── render_singbox.zig sing-box JSON 渲染
 ├── render_native.zig  原生客户端渲染（trojan/hy1/hy2/xray/ss/ssr）
