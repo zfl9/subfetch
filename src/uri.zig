@@ -350,19 +350,21 @@ fn vmessFromJson(arena: std.mem.Allocator, json_text: []const u8, sub_name: []co
         else => return error.InvalidJson,
     };
     const getStr = struct {
-        fn get(o: std.json.ObjectMap, key: []const u8) ?[]const u8 {
+        // real v2rayn JSON has numeric port/aid; accept string or integer
+        fn get(a: std.mem.Allocator, o: std.json.ObjectMap, key: []const u8) ?[]const u8 {
             const v = o.get(key) orelse return null;
             return switch (v) {
                 .string => |s| s,
+                .integer => |i| std.fmt.allocPrint(a, "{d}", .{i}) catch null,
                 else => null,
             };
         }
     }.get;
 
-    const server = getStr(obj, "add") orelse return error.MissingField;
-    const port = try parsePort(getStr(obj, "port") orelse return error.MissingField);
-    const uuid = getStr(obj, "id") orelse return error.MissingField;
-    const raw_name = getStr(obj, "ps") orelse "";
+    const server = getStr(arena, obj, "add") orelse return error.MissingField;
+    const port = try parsePort(getStr(arena, obj, "port") orelse return error.MissingField);
+    const uuid = getStr(arena, obj, "id") orelse return error.MissingField;
+    const raw_name = getStr(arena, obj, "ps") orelse "";
     const fallback = try std.fmt.allocPrint(arena, "{s}:{d}", .{ server, port });
     const name = try node.prefixed(arena, sub_name, raw_name, sep, fallback);
 
@@ -372,24 +374,24 @@ fn vmessFromJson(arena: std.mem.Allocator, json_text: []const u8, sub_name: []co
         .port = port,
         .uuid = uuid,
     };
-    if (getStr(obj, "aid")) |aid| {
+    if (getStr(arena, obj, "aid")) |aid| {
         n.alter_id = std.fmt.parseInt(u16, aid, 10) catch 0;
     }
-    if (getStr(obj, "net")) |net| {
+    if (getStr(arena, obj, "net")) |net| {
         n.network = parseNetwork(net) catch .tcp;
     }
-    if (std.mem.eql(u8, getStr(obj, "tls") orelse "", "tls")) n.tls = true;
-    n.servername = getStr(obj, "sni");
-    n.fingerprint = getStr(obj, "fp");
-    if (getStr(obj, "host")) |host| {
+    if (std.mem.eql(u8, getStr(arena, obj, "tls") orelse "", "tls")) n.tls = true;
+    n.servername = getStr(arena, obj, "sni");
+    n.fingerprint = getStr(arena, obj, "fp");
+    if (getStr(arena, obj, "host")) |host| {
         if (n.network == .ws) {
-            n.ws = .{ .path = getStr(obj, "path") orelse "/", .host = host };
+            n.ws = .{ .path = getStr(arena, obj, "path") orelse "/", .host = host };
         }
     } else if (n.network == .ws) {
-        n.ws = .{ .path = getStr(obj, "path") orelse "/" };
+        n.ws = .{ .path = getStr(arena, obj, "path") orelse "/" };
     }
     if (n.network == .grpc) {
-        n.grpc = .{ .service_name = getStr(obj, "serviceName") orelse getStr(obj, "path") orelse "" };
+        n.grpc = .{ .service_name = getStr(arena, obj, "serviceName") orelse getStr(arena, obj, "path") orelse "" };
     }
     return .{ .vmess = n };
 }
@@ -667,6 +669,19 @@ test "parse vmess legacy json" {
     try std.testing.expectEqual(node.Network.ws, v.network);
     try std.testing.expectEqualStrings("/vmess", v.ws.?.path);
     try std.testing.expectEqualStrings("jp1.example.com", v.ws.?.host.?);
+}
+
+test "parse vmess legacy json numeric port/aid" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // real v2rayn payload: port/aid are JSON numbers
+    const json = "{\"v\":\"2\",\"ps\":\"JP-01-num\",\"add\":\"jp1.example.com\",\"port\":443,\"id\":\"11111111-2222-3333-4444-555555555555\",\"aid\":0,\"net\":\"tcp\",\"type\":\"none\"}";
+    const link = try std.fmt.allocPrint(a, "vmess://{s}", .{try b64(a, json)});
+    const n = try parseUri(a, link, "", "@");
+    try std.testing.expectEqualStrings("JP-01-num", n.name());
+    try std.testing.expectEqual(@as(u16, 443), n.vmess.port);
+    try std.testing.expectEqual(@as(u16, 0), n.vmess.alter_id);
 }
 
 test "parse vmess url style" {
