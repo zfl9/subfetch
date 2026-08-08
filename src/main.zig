@@ -7,7 +7,7 @@ const node_mod = @import("node.zig");
 const render_mod = @import("render.zig");
 const deploy_mod = @import("deploy.zig");
 
-const version = "0.1.0";
+const version = "0.2.0";
 
 /// one -o/--out target: format[:template][=path]
 const Out = struct {
