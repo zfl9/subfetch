@@ -14,6 +14,7 @@ const Options = struct {
     out_fmt: []const u8 = "clash",
     output: ?[]const u8 = null,
     dry_run: bool = false,
+    quiet: bool = false,
     ua: ?[]const u8 = null,
     sep: []const u8 = "｜",
     timeout: ?u32 = null,
@@ -157,7 +158,8 @@ pub fn main() !void {
     switch (output) {
         .single => |text| {
             if (opts.dry_run) {
-                outPrint("{s}", .{text});
+                // -q/--quiet: suppress the generated config content (smoke tests only need the verify result)
+                if (!opts.quiet) outPrint("{s}", .{text});
                 try verifyDryRun(arena, fmt, text);
             } else {
                 const path = opts.output orelse defaultSinglePath(fmt);
@@ -201,8 +203,10 @@ pub fn main() !void {
         },
         .files => |files| {
             if (opts.dry_run) {
-                for (files) |f| {
-                    outPrint("===== {s} =====\n{s}\n", .{ f.path, f.content });
+                if (!opts.quiet) {
+                    for (files) |f| {
+                        outPrint("===== {s} =====\n{s}\n", .{ f.path, f.content });
+                    }
                 }
                 try verifyDryRunFiles(arena, fmt, files);
             } else {
@@ -360,6 +364,8 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
             std.process.exit(0);
         } else if (std.mem.eql(u8, a, "--dry-run")) {
             opts.dry_run = true;
+        } else if (std.mem.eql(u8, a, "-q") or std.mem.eql(u8, a, "--quiet")) {
+            opts.quiet = true;
         } else if (std.mem.eql(u8, a, "-v") or std.mem.eql(u8, a, "--verbose")) {
             opts.verbose = true;
         } else if (std.mem.eql(u8, a, "--no-clash-api")) {
@@ -444,6 +450,7 @@ fn printUsage() void {
         \\      --node <uri>       directly pasted node URI (repeatable)
         \\      --node-file <path> node list file (one URI per line)
         \\      --dry-run          print generated config only, write nothing
+        \\  -q, --quiet           with --dry-run: suppress config content (keep logs & verify)
         \\      --ua <str>         default User-Agent
         \\      --sep <str>        node name prefix separator (default ｜)
         \\      --timeout <sec>    per-subscription fetch timeout in seconds

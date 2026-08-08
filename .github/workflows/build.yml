@@ -23,9 +23,9 @@ jobs:
           sudo apt-get install -qq qemu-user-static
           echo "::endgroup::"
       - name: Build all release targets
-        run: zig build release
+        run: zig build release -Doptimize=ReleaseSafe
       - name: Test all release targets (unit tests + fixtures smoke, qemu for cross)
-        run: zig build release-test
+        run: zig build release-test -Doptimize=ReleaseSafe
       - name: Package
         run: |
           mkdir -p dist
