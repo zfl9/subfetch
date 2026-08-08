@@ -6,17 +6,71 @@ const Options = render.Options;
 const JsonValue = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
 
-/// filename sanitization: replace path separators and other special chars
+/// filename sanitization, layered:
+/// - decorative chars (emoji U+10000+, misc symbols U+2600-27BF, variation
+///   selectors U+FE00-FE0F, ZWJ U+200D) are dropped together with adjacent
+///   whitespace (visual noise, no separator meaning)
+/// - dangerous/separator chars (/\:*?"<>| and whitespace) become '_' (keeps
+///   readability, prevents path injection)
+/// - CJK / alnum / '-' '_' '.' pass through
 fn safeFileName(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
     var out: std.ArrayListUnmanaged(u8) = .empty;
-    for (name) |ch| {
-        switch (ch) {
-            '/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ' => try out.append(arena, '_'),
-            else => try out.append(arena, ch),
+    var i: usize = 0;
+    var prev_ws = false; // previous source char (before decorative runs) was whitespace
+    while (i < name.len) {
+        const b = name[i];
+        if (b >= 0xF0 and b <= 0xF4) {
+            // 4-byte emoji: drop, plus adjacent whitespace
+            i += 4;
+            if (prev_ws and out.items.len > 0 and out.items[out.items.len - 1] == '_') {
+                out.items.len -= 1; // retract the '_' emitted for preceding whitespace
+            }
+            prev_ws = false;
+            while (i < name.len and isWs(name[i])) i += 1;
+            continue;
         }
+        if (b >= 0xE0) {
+            // 3-byte: decode codepoint, drop decorative ranges
+            const cp = (@as(u21, b & 0x0F) << 12) | (@as(u21, name[i + 1] & 0x3F) << 6) | (name[i + 2] & 0x3F);
+            if (isDecorative(cp)) {
+                i += 3;
+                if (prev_ws and out.items.len > 0 and out.items[out.items.len - 1] == '_') {
+                    out.items.len -= 1;
+                }
+                prev_ws = false;
+                while (i < name.len and isWs(name[i])) i += 1;
+                continue;
+            }
+            try out.appendSlice(arena, name[i .. i + 3]);
+            prev_ws = false;
+            i += 3;
+            continue;
+        }
+        // ASCII / 1-2 byte
+        switch (b) {
+            ' ', '\t', '\r', '\n' => {
+                if (!prev_ws and out.items.len > 0) try out.append(arena, '_');
+                prev_ws = true;
+            },
+            '/', '\\', ':', '*', '?', '"', '<', '>', '|' => try out.append(arena, '_'),
+            else => try out.append(arena, b),
+        }
+        i += 1;
     }
+    // trim trailing '_' (from trailing whitespace/special chars)
+    while (out.items.len > 0 and out.items[out.items.len - 1] == '_') out.items.len -= 1;
     if (out.items.len == 0) return "node";
     return out.toOwnedSlice(arena);
+}
+
+fn isWs(b: u8) bool {
+    return b == ' ' or b == '\t' or b == '\r' or b == '\n';
+}
+
+/// decorative codepoints (3-byte BMP): misc symbols + dingbats, variation
+/// selectors, zero-width joiner (emoji sequences).
+fn isDecorative(cp: u21) bool {
+    return (cp >= 0x2600 and cp <= 0x27BF) or (cp >= 0xFE00 and cp <= 0xFE0F) or cp == 0x200D;
 }
 
 /// single-node JSON serialization helper: build an object
@@ -543,6 +597,32 @@ test "render ssr files" {
     try std.testing.expectEqual(@as(i64, 443), o.get("server_port").?.integer);
 }
 
+test "safeFileName sanitization" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // emoji + whitespace dropped (flag emoji is 4-byte, followed by space)
+    try std.testing.expectEqualStrings("香港1-电信优化", try safeFileName(a, "🇭🇰 香港1-电信优化"));
+    // emoji glued (no space) also dropped
+    try std.testing.expectEqualStrings("香港1", try safeFileName(a, "🇭🇰香港1"));
+    // misc symbol (3-byte U+2600) dropped
+    try std.testing.expectEqualStrings("香港", try safeFileName(a, "☀香港"));
+    // variation selector (U+FE0F) dropped
+    try std.testing.expectEqualStrings("香港", try safeFileName(a, "❤️香港"));
+    // separator chars become '_', readability kept
+    try std.testing.expectEqualStrings("JP-01_WS", try safeFileName(a, "JP-01/WS"));
+    try std.testing.expectEqualStrings("a_b_c", try safeFileName(a, "a:b*c"));
+    // whitespace collapse + trim
+    try std.testing.expectEqualStrings("香港_1", try safeFileName(a, "香港  1"));
+    try std.testing.expectEqualStrings("香港1", try safeFileName(a, " 香港1 "));
+    // CJK / alnum pass through
+    try std.testing.expectEqualStrings("日本1-电信优化", try safeFileName(a, "日本1-电信优化"));
+    try std.testing.expectEqualStrings("HK-01", try safeFileName(a, "HK-01"));
+    // all decorative -> fallback
+    try std.testing.expectEqualStrings("node", try safeFileName(a, "😀🎉"));
+}
+
 test "no supported nodes" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -572,6 +652,8 @@ test "compile-check" {
     _ = &ssrJson;
     _ = &v2rayPluginOpts;
     _ = &safeFileName;
+    _ = &isWs;
+    _ = &isDecorative;
     _ = &buildObj;
     _ = &str;
     _ = &int;
