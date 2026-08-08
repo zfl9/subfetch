@@ -70,7 +70,7 @@ jobs:
           echo "::endgroup::"
           case "${{ matrix.target }}" in
             aarch64*)    QEMU=qemu-aarch64-static    QEMU_CPU=cortex-a57 ;;
-            arm*)        QEMU=qemu-arm-static        QEMU_CPU=arm1176 ;;
+            arm*)        QEMU=qemu-arm-static        QEMU_CPU=arm1136 ;;
             riscv64*)    QEMU=qemu-riscv64-static    QEMU_CPU=thead-c906 ;;
             mipsel*)     QEMU=qemu-mipsel-static     QEMU_CPU=4Kc ;;
             mips64el*)   QEMU=qemu-mips64el-static   QEMU_CPU=5Kf ;;
