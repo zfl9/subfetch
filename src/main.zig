@@ -736,9 +736,44 @@ fn outPrint(comptime fmt: []const u8, args: anytype) void {
     std.fs.File.stdout().writeAll(text) catch {};
 }
 
+test "parseOut grammar" {
+    // format only
+    const o1 = try parseOut("clash");
+    try std.testing.expectEqual(render_mod.Format.clash, o1.fmt);
+    try std.testing.expect(o1.template == null);
+    try std.testing.expect(o1.path == null);
+    // format + template
+    const o2 = try parseOut("clash:tmpl.yaml");
+    try std.testing.expectEqual(render_mod.Format.clash, o2.fmt);
+    try std.testing.expectEqualStrings("tmpl.yaml", o2.template.?);
+    try std.testing.expect(o2.path == null);
+    // format + path
+    const o3 = try parseOut("singbox=/etc/sing-box/config.json");
+    try std.testing.expectEqual(render_mod.Format.singbox, o3.fmt);
+    try std.testing.expectEqualStrings("/etc/sing-box/config.json", o3.path.?);
+    try std.testing.expect(o3.template == null);
+    // full: format + template + path
+    const o4 = try parseOut("clash:tmpl.yaml=out/c.yaml");
+    try std.testing.expectEqual(render_mod.Format.clash, o4.fmt);
+    try std.testing.expectEqualStrings("tmpl.yaml", o4.template.?);
+    try std.testing.expectEqualStrings("out/c.yaml", o4.path.?);
+    // stdout path
+    const o5 = try parseOut("raw=-");
+    try std.testing.expectEqual(render_mod.Format.raw, o5.fmt);
+    try std.testing.expectEqualStrings("-", o5.path.?);
+    // unknown format errors
+    try std.testing.expectError(error.BadArg, parseOut("bogus"));
+    try std.testing.expectError(error.BadArg, parseOut(""));
+    // extra '=' belongs to the path (first '=' splits path, then ':' splits template)
+    const o6 = try parseOut("clash:tmpl=path=extra");
+    try std.testing.expectEqualStrings("tmpl", o6.template.?);
+    try std.testing.expectEqualStrings("path=extra", o6.path.?);
+}
+
 test "compile-check" {
     _ = &main;
     _ = &parseArgs;
+    _ = &parseOut;
     _ = &takeValue;
     _ = &printUsage;
     _ = &outPrint;

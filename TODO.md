@@ -5,7 +5,7 @@
 - [x] Renderer 统一接口（name / supported / render → []File）——render() 返回 []const File
 - [x] 消除 union{single, files} → 统一 []File（clash/singbox/raw = 单元素）
 - [x] main.zig 部署逻辑一套代码（循环 File[]：verify → 落盘 → reload）
-- [ ] 多目标 -o a -o b：全部 verify 通过 → 统一落地（原子性）——待阶段二 CLI 重构后落实
+- [x] 多目标 -o a -o b：全部 verify 通过 → 统一落地（原子性）——阶段二已落实
 
 ## 阶段二：CLI 重构（完成）
 

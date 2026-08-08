@@ -102,10 +102,11 @@ pub fn build(b: *std.Build) !void {
     const run_tests = b.addRunArtifact(tests);
     b.step("test", "run unit tests").dependOn(&run_tests.step);
 
-    // smoke test
+    // smoke test: all 9 output formats (native multi-file formats run too)
     const smoke_test_step = b.step("smoke-test", "run smoke tests");
-    smoke_test_step.dependOn(&addSmokeTest(b, exe, "clash", null).step);
-    smoke_test_step.dependOn(&addSmokeTest(b, exe, "singbox", null).step);
+    for ([_][]const u8{ "clash", "singbox", "trojan", "hysteria", "hysteria2", "xray", "ss", "ssr", "raw" }) |fmt| {
+        smoke_test_step.dependOn(&addSmokeTest(b, exe, fmt, null).step);
+    }
 
     // release filter
     const release_filter_raw = b.option([]const u8, "release_filter", "only build/test release targets for this arch");
