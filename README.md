@@ -91,6 +91,7 @@ rules: []            # ← 可选：默认 MATCH,PROXY（缺失则自动追加�
 规则：
 - `proxies` / `"outbounds"` 填充点：必须是**单行空列表**（缺失或非空 → 报错）
 - `proxy-groups` / `rules`：空列表 → 填默认（PROXY/AUTO 组、MATCH,PROXY）；**非空 → 保留用户内容**（可引用固定组名 PROXY/DIRECT）；缺失 → 自动追加默认
+- 自定义 proxy-groups 时，组内 `proxies: []` 空列表 → subfetch 填节点名列表（组内非空则保留用户引用，如 `- AUTO`）
 - 节点块缩进自动模仿模板的缩进风格
 - 无模板时使用内置默认模板（同一机制）
 

@@ -161,6 +161,44 @@ pub fn hasKey(text: []const u8, key: []const u8) bool {
     return false;
 }
 
+/// fill all nested (indent > 0) empty lists of `key` with `block`; nested
+/// non-empty lists are kept as-is. used for clash proxy-groups' inner
+/// `proxies: []` lists (filled with node-name lists). the outermost key line
+/// (indent 0, the node definitions themselves) is never touched here.
+pub fn fillNestedLists(
+    arena: std.mem.Allocator,
+    text: []const u8,
+    key: []const u8,
+    block: []const u8,
+) ![]const u8 {
+    const unit = detectIndent(text);
+    const src = std.mem.trimRight(u8, text, "\n");
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var lines = std.mem.splitScalar(u8, src, '\n');
+    while (lines.next()) |line| {
+        var li: usize = 0;
+        while (li < line.len and (line[li] == ' ' or line[li] == '\t')) : (li += 1) {}
+        if (li > 0 and matchKeyLine(line, key) and matchFillLine(line, key)) {
+            const key_end = li + key.len + 1;
+            try out.appendSlice(arena, line[0..key_end]);
+            try out.append(arena, '\n');
+            const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ line[0..li], unit });
+            var bit = std.mem.splitScalar(u8, block, '\n');
+            while (bit.next()) |bl| {
+                if (bl.len == 0) continue;
+                try out.appendSlice(arena, prefix);
+                try out.appendSlice(arena, bl);
+                try out.append(arena, '\n');
+            }
+        } else {
+            try out.appendSlice(arena, line);
+            try out.append(arena, '\n');
+        }
+    }
+    if (out.items.len > 0 and out.items[out.items.len - 1] != '\n') try out.append(arena, '\n');
+    return out.toOwnedSlice(arena);
+}
+
 /// append a top-level block to the template text: "key:\n" + block (relative indent).
 pub fn appendBlock(
     arena: std.mem.Allocator,
@@ -257,8 +295,25 @@ test "fillState and appendBlock" {
     try std.testing.expectEqualStrings("a: 1\nproxy-groups:\n  - name: PROXY\n    type: select\n", out);
 }
 
+test "fillNestedLists" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const tpl = "proxies: []\nproxy-groups:\n  - name: PROXY\n    type: select\n    proxies: []\n  - name: AUTO\n    proxies:\n      - DIRECT\n";
+    const out = try fillNestedLists(a, tpl, "proxies", "- n1\n- n2\n");
+    try std.testing.expectEqualStrings(
+        "proxies: []\nproxy-groups:\n  - name: PROXY\n    type: select\n    proxies:\n      - n1\n      - n2\n  - name: AUTO\n    proxies:\n      - DIRECT\n",
+        out,
+    );
+    // top-level proxies untouched, nested non-empty kept
+    try std.testing.expect(std.mem.indexOf(u8, out, "proxies: []") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "- DIRECT") != null);
+}
+
 test "compile-check" {
     _ = &fillList;
+    _ = &fillNestedLists;
     _ = &appendBlock;
     _ = &detectIndent;
     _ = &fillState;

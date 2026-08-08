@@ -26,6 +26,16 @@ pub fn renderClash(
     }
     text = try tpl.fillList(arena, text, "proxies", block.items);
 
+    // nested `proxies: []` inside user-defined proxy-groups: fill with node-name list
+    var nblock: std.ArrayListUnmanaged(u8) = .empty;
+    const nw = nblock.writer(arena);
+    for (nodes) |n| {
+        try nw.print("- ", .{});
+        try yamlStr(nw, n.name());
+        try nw.print("\n", .{});
+    }
+    text = try tpl.fillNestedLists(arena, text, "proxies", nblock.items);
+
     // proxy-groups: empty -> fill default, non-empty -> keep user content, missing -> append
     const names = try collectNames(arena, nodes);
     var gblock: std.ArrayListUnmanaged(u8) = .empty;
