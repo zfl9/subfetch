@@ -285,6 +285,50 @@ test "writeJsonValue escapes and indents" {
 }
 
 
+test "uniqueNames dedupe and reserved names" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const mk = struct {
+        fn trojan(nm: []const u8) Node {
+            return .{ .trojan = .{ .name = nm, .server = "s", .port = 443, .password = "p" } };
+        }
+    }.trojan;
+
+    // duplicates get -2/-3 suffixes
+    const dup = [_]Node{ mk("A"), mk("A"), mk("A") };
+    const dup_out = try uniqueNames(a, &dup);
+    try std.testing.expectEqualStrings("A", dup_out[0].name());
+    try std.testing.expectEqualStrings("A-2", dup_out[1].name());
+    try std.testing.expectEqualStrings("A-3", dup_out[2].name());
+
+    // reserved names get -1 (protect clash/singbox fixed group tags)
+    const res = [_]Node{ mk("PROXY"), mk("AUTO"), mk("DIRECT") };
+    const res_out = try uniqueNames(a, &res);
+    try std.testing.expectEqualStrings("PROXY-1", res_out[0].name());
+    try std.testing.expectEqualStrings("AUTO-1", res_out[1].name());
+    try std.testing.expectEqualStrings("DIRECT-1", res_out[2].name());
+
+    // reserved + duplicate: PROXY, PROXY -> PROXY-1, PROXY-1-2
+    const resdup = [_]Node{ mk("PROXY"), mk("PROXY") };
+    const rd_out = try uniqueNames(a, &resdup);
+    try std.testing.expectEqualStrings("PROXY-1", rd_out[0].name());
+    try std.testing.expectEqualStrings("PROXY-1-2", rd_out[1].name());
+
+    // cross-subscription same node name stays untouched (sub@name is unique)
+    const cross = [_]Node{ mk("sub1@HK-01"), mk("sub2@HK-01") };
+    const cross_out = try uniqueNames(a, &cross);
+    try std.testing.expectEqualStrings("sub1@HK-01", cross_out[0].name());
+    try std.testing.expectEqualStrings("sub2@HK-01", cross_out[1].name());
+
+    // no duplicates: unchanged
+    const clean = [_]Node{ mk("X"), mk("Y") };
+    const clean_out = try uniqueNames(a, &clean);
+    try std.testing.expectEqualStrings("X", clean_out[0].name());
+    try std.testing.expectEqualStrings("Y", clean_out[1].name());
+}
+
 test "supports filter" {
     const tro = node.Node{ .trojan = .{
         .name = "t", .server = "s", .port = 443, .password = "p",
