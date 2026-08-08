@@ -107,9 +107,14 @@ pub fn build(b: *std.Build) !void {
     smoke_test_step.dependOn(&addSmokeTest(b, exe, "clash", null).step);
     smoke_test_step.dependOn(&addSmokeTest(b, exe, "singbox", null).step);
 
+    // release filter
+    const release_filter_raw = b.option([]const u8, "release_filter", "only build/test release targets for this arch");
+    const release_filter = if (release_filter_raw) |filter| b.fmt("{s}-", .{filter}) else null;
+
     const release_step = b.step("release", "build exe for all release targets");
     var release_exes: [release_matrix.len]*std.Build.Step.Compile = undefined;
     for (release_matrix, &release_exes) |r_matrix, *r_exe| {
+        if (release_filter) |filter| if (!std.mem.startsWith(u8, r_matrix.triple, filter)) continue;
         const r_target = b.resolveTargetQuery(try std.Target.Query.parse(.{
             .arch_os_abi = r_matrix.triple,
             .cpu_features = r_matrix.cpu,
@@ -125,6 +130,7 @@ pub fn build(b: *std.Build) !void {
     const release_test_step = b.step("release-test", "unit-test & smoke-test for all release targets");
     release_test_step.dependOn(release_step);
     for (release_matrix, release_exes) |r_matrix, r_exe| {
+        if (release_filter) |filter| if (!std.mem.startsWith(u8, r_matrix.triple, filter)) continue;
         // unit test
         const r_target = r_exe.root_module.resolved_target.?;
         const r_tests = b.addTest(.{
