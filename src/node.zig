@@ -219,6 +219,32 @@ pub fn sanitizeName(allocator: std.mem.Allocator, n: []const u8) ![]const u8 {
     return buf.toOwnedSlice(allocator);
 }
 
+/// case-insensitive substring search (byte-wise; non-ASCII passes through).
+fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    if (needle.len == 0) return true;
+    var i: usize = 0;
+    while (i + needle.len <= haystack.len) : (i += 1) {
+        var j: usize = 0;
+        while (j < needle.len and std.ascii.toLower(haystack[i + j]) == std.ascii.toLower(needle[j])) : (j += 1) {}
+        if (j == needle.len) return true;
+    }
+    return false;
+}
+
+/// airport notice (info) node detection: names like "到期2026-12-21 剩余流量279.95G".
+/// strong keywords only, so real node names (e.g. "不限流量-香港") are never caught.
+pub fn isInfoNodeName(name: []const u8) bool {
+    const zh = [_][]const u8{ "到期", "剩余流量", "有效期", "套餐", "官网" };
+    for (zh) |kw| {
+        if (std.mem.indexOf(u8, name, kw) != null) return true;
+    }
+    const en = [_][]const u8{ "expire", "traffic", "usage", "plan" };
+    for (en) |kw| {
+        if (containsIgnoreCase(name, kw)) return true;
+    }
+    return false;
+}
+
 /// build the full node name: subscription name + separator + node name; empty name falls back to server:port.
 pub fn prefixed(
     allocator: std.mem.Allocator,
@@ -260,6 +286,24 @@ test "node name accessor" {
     } };
     try std.testing.expectEqualStrings("t1", n.name());
     try std.testing.expectEqualStrings("trojan", n.typeName());
+}
+
+test "isInfoNodeName" {
+    // airport notice pseudo-nodes
+    try std.testing.expect(isInfoNodeName("到期2026-12-21 剩余流量279.95G"));
+    try std.testing.expect(isInfoNodeName("剩余流量：100GB"));
+    try std.testing.expect(isInfoNodeName("有效期至2027-01-01"));
+    try std.testing.expect(isInfoNodeName("套餐信息 官网：example.com"));
+    try std.testing.expect(isInfoNodeName("Expire: 2026-12-21"));
+    try std.testing.expect(isInfoNodeName("Traffic Used: 20GB"));
+    try std.testing.expect(isInfoNodeName("USAGE: 50%"));
+    try std.testing.expect(isInfoNodeName("My Plan Info"));
+    // real node names must NOT match (no false positives)
+    try std.testing.expect(!isInfoNodeName("香港1-电信优化"));
+    try std.testing.expect(!isInfoNodeName("不限流量-香港")); // bare 流量 alone must not match
+    try std.testing.expect(!isInfoNodeName("新加坡1-BGP优化"));
+    try std.testing.expect(!isInfoNodeName("日本4"));
+    try std.testing.expect(!isInfoNodeName("HK-01-optimized"));
 }
 
 test "compile-check" {

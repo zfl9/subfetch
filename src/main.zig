@@ -115,6 +115,15 @@ pub fn main() !void {
         if (result.skipped > 0) {
             try extras.append(arena, try std.fmt.allocPrint(arena, "{d} skipped", .{result.skipped}));
         }
+        if (result.info > 0) {
+            try extras.append(arena, try std.fmt.allocPrint(arena, "{d} info", .{result.info}));
+            // verbose: list filtered info (notice) nodes for debugging
+            if (opts.verbose > 0) {
+                for (result.info_names) |nm| {
+                    logVerbose(null, "  ! {s} (info node, filtered)", .{nm});
+                }
+            }
+        }
         try extras.append(arena, try std.fmt.allocPrint(arena, "{d} bytes", .{body.len}));
         msg = try std.fmt.allocPrint(arena, "{s}, {s}", .{ msg, try std.mem.join(arena, ", ", extras.items) });
         logInfo(s.name, "{s}", .{msg});

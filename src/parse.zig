@@ -21,6 +21,10 @@ pub const ParseError = error{
 pub const ParseResult = struct {
     nodes: []const node.Node,
     skipped: usize,
+    /// info (notice) nodes filtered out: airport pseudo-nodes like "到期... 剩余流量..."
+    info: usize,
+    /// names of the filtered info nodes (for verbose display)
+    info_names: []const []const u8,
 };
 
 /// parse a single subscription payload (any format) into a node list. names already carry the subscription prefix.
@@ -36,14 +40,18 @@ pub fn parseSubscription(
     };
     var nodes: std.ArrayListUnmanaged(node.Node) = .empty;
     var skipped: usize = 0;
+    var info: usize = 0;
+    var info_names: std.ArrayListUnmanaged([]const u8) = .empty;
 
     switch (s) {
         .uris => |lines| {
             for (lines) |line| {
-                nodes.append(arena, uri.parseUri(arena, line, sub_name, sep) catch {
+                const n = uri.parseUri(arena, line, sub_name, sep) catch {
                     skipped += 1;
                     continue;
-                }) catch return error.OutOfMemory;
+                };
+                if (try filterInfoNode(arena, n, sub_name, sep, &info, &info_names)) continue;
+                nodes.append(arena, n) catch return error.OutOfMemory;
             }
         },
         .json => |value| switch (value) {
@@ -51,16 +59,20 @@ pub fn parseSubscription(
                 for (arr.items) |item| {
                     switch (item) {
                         .string => |str| {
-                            nodes.append(arena, uri.parseUri(arena, str, sub_name, sep) catch {
+                            const n = uri.parseUri(arena, str, sub_name, sep) catch {
                                 skipped += 1;
                                 continue;
-                            }) catch return error.OutOfMemory;
+                            };
+                            if (try filterInfoNode(arena, n, sub_name, sep, &info, &info_names)) continue;
+                            nodes.append(arena, n) catch return error.OutOfMemory;
                         },
                         .object => |obj| {
-                            nodes.append(arena, jsonNodeToNode(arena, obj, sub_name, sep) catch {
+                            const n = jsonNodeToNode(arena, obj, sub_name, sep) catch {
                                 skipped += 1;
                                 continue;
-                            }) catch return error.OutOfMemory;
+                            };
+                            if (try filterInfoNode(arena, n, sub_name, sep, &info, &info_names)) continue;
+                            nodes.append(arena, n) catch return error.OutOfMemory;
                         },
                         else => skipped += 1,
                     }
@@ -80,14 +92,40 @@ pub fn parseSubscription(
                     skipped += 1;
                     continue;
                 };
-                nodes.append(arena, clashYamlToNode(arena, pm, sub_name, sep) catch {
+                const n = clashYamlToNode(arena, pm, sub_name, sep) catch {
                     skipped += 1;
                     continue;
-                }) catch return error.OutOfMemory;
+                };
+                if (try filterInfoNode(arena, n, sub_name, sep, &info, &info_names)) continue;
+                nodes.append(arena, n) catch return error.OutOfMemory;
             }
         },
     }
-    return .{ .nodes = try nodes.toOwnedSlice(arena), .skipped = skipped };
+    return .{
+        .nodes = try nodes.toOwnedSlice(arena),
+        .skipped = skipped,
+        .info = info,
+        .info_names = try info_names.toOwnedSlice(arena),
+    };
+}
+
+/// filter airport notice nodes (info pseudo-nodes like "到期2026-12-21 剩余流量279.95G").
+/// returns true when the node is an info node (already counted); caller skips it.
+fn filterInfoNode(
+    arena: std.mem.Allocator,
+    n: node.Node,
+    sub_name: []const u8,
+    sep: []const u8,
+    info: *usize,
+    info_names: *std.ArrayListUnmanaged([]const u8),
+) ParseError!bool {
+    // judge on the raw name (strip the "sub@sep" prefix so subscription names cannot match)
+    const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ sub_name, sep });
+    const raw = if (std.mem.startsWith(u8, n.name(), prefix)) n.name()[prefix.len..] else n.name();
+    if (!node.isInfoNodeName(raw)) return false;
+    info.* += 1;
+    try info_names.append(arena, n.name());
+    return true;
 }
 
 // ---------------- clash node conversion ----------------
@@ -420,6 +458,24 @@ test "parse errors propagate" {
         error.SniffError,
         parseSubscription(std.testing.allocator, "airport-a", "<html>error</html>", "@"),
     );
+}
+
+test "parse filters info nodes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const text = "trojan://pass@hk1.example.com:443?sni=hk1.example.com#香港1-电信优化\ntrojan://pass@hk2.example.com:443?sni=hk2.example.com#到期2026-12-21 剩余流量279.95G\ntrojan://pass@jp1.example.com:443?sni=jp1.example.com#日本1-电信优化\n";
+    const r = try parseSubscription(a, "sub", text, "@");
+    try std.testing.expectEqual(@as(usize, 2), r.nodes.len);
+    try std.testing.expectEqual(@as(usize, 1), r.info);
+    try std.testing.expectEqual(@as(usize, 1), r.info_names.len);
+    try std.testing.expectEqualStrings("sub@到期2026-12-21 剩余流量279.95G", r.info_names[0]);
+    try std.testing.expectEqualStrings("sub@香港1-电信优化", r.nodes[0].name());
+    try std.testing.expectEqualStrings("sub@日本1-电信优化", r.nodes[1].name());
+    // no info nodes: info == 0
+    const r2 = try parseSubscription(a, "sub", "trojan://pass@hk1.example.com:443#香港1\n", "@");
+    try std.testing.expectEqual(@as(usize, 1), r2.nodes.len);
+    try std.testing.expectEqual(@as(usize, 0), r2.info);
 }
 
 test "compile-check" {
