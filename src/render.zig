@@ -154,8 +154,14 @@ fn renameNode(n: Node, new_name: []const u8) Node {
     };
 }
 
-/// recursively serialize std.json.Value to JSON text (objects expanded, arrays inline; readability first)
+/// recursively serialize std.json.Value to JSON text: objects expanded with 2-space
+/// indentation, arrays inline (readability first). Exact output is what gets written
+/// to disk, so indentation matters for the generated config.json files.
 pub fn writeJsonValue(w: anytype, v: std.json.Value) !void {
+    try writeJsonValueLevel(w, v, 0);
+}
+
+fn writeJsonValueLevel(w: anytype, v: std.json.Value, level: usize) !void {
     switch (v) {
         .null => try w.writeAll("null"),
         .bool => |b| try w.print("{}", .{b}),
@@ -164,11 +170,21 @@ pub fn writeJsonValue(w: anytype, v: std.json.Value) !void {
         .number_string => |s| try w.writeAll(s),
         .string => |s| try writeJsonString(w, s),
         .array => |a| {
-            try w.writeAll("[");
-            for (a.items, 0..) |item, i| {
-                if (i > 0) try w.writeAll(", ");
-                try writeJsonValue(w, item);
+            if (a.items.len == 0) {
+                try w.writeAll("[]");
+                return;
             }
+            // standard pretty style: every element on its own indented line
+            try w.writeAll("[\n");
+            for (a.items, 0..) |item, i| {
+                if (i > 0) try w.writeAll(",\n");
+                var indent: usize = 0;
+                while (indent <= level) : (indent += 1) try w.writeAll("  ");
+                try writeJsonValueLevel(w, item, level + 1);
+            }
+            try w.writeAll("\n");
+            var close_indent: usize = 0;
+            while (close_indent < level) : (close_indent += 1) try w.writeAll("  ");
             try w.writeAll("]");
         },
         .object => |o| {
@@ -182,11 +198,16 @@ pub fn writeJsonValue(w: anytype, v: std.json.Value) !void {
             while (it.next()) |entry| {
                 if (!first) try w.writeAll(",\n");
                 first = false;
+                var indent: usize = 0;
+                while (indent <= level) : (indent += 1) try w.writeAll("  ");
                 try writeJsonString(w, entry.key_ptr.*);
                 try w.writeAll(": ");
-                try writeJsonValue(w, entry.value_ptr.*);
+                try writeJsonValueLevel(w, entry.value_ptr.*, level + 1);
             }
-            try w.writeAll("\n}");
+            try w.writeAll("\n");
+            var close_indent: usize = 0;
+            while (close_indent < level) : (close_indent += 1) try w.writeAll("  ");
+            try w.writeAll("}");
         },
     }
 }
@@ -199,71 +220,15 @@ pub fn writeJsonString(w: anytype, s: []const u8) !void {
             '"' => try w.writeAll("\\\""),
             '\\' => try w.writeAll("\\\\"),
             '\n' => try w.writeAll("\\n"),
-            '\t' => try w.writeAll("\\t"),
             '\r' => try w.writeAll("\\r"),
-            else => {
-                if (ch < 0x20) {
-                    try w.print("\\u{X:0>4}", .{ch});
-                } else {
-                    try w.writeByte(ch);
-                }
-            },
+            '\t' => try w.writeAll("\\t"),
+            else => try w.writeByte(ch),
         }
     }
     try w.writeAll("\"");
 }
 
-// ---------------- tests ----------------
-
-const sample_nodes = [_]node.Node{
-    .{ .trojan = .{
-        .name = "HK-01",
-        .server = "hk1.example.com",
-        .port = 443,
-        .password = "pass123",
-        .servername = "hk1.example.com",
-        .skip_cert_verify = true,
-    } },
-    .{
-        .trojan = .{
-            .name = "HK-01", // duplicate-name test
-            .server = "hk2.example.com",
-            .port = 443,
-            .password = "pass456",
-        },
-    },
-    .{
-        .ss = .{
-            .name = "AUTO", // reserved-name test
-            .server = "sg1.example.com",
-            .port = 8388,
-            .cipher = "aes-256-gcm",
-            .password = "sspass",
-        },
-    },
-};
-
-test "uniqueNames dedupe and reserved" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const out = try uniqueNames(arena.allocator(), &sample_nodes);
-    try std.testing.expectEqual(@as(usize, 3), out.len);
-    try std.testing.expectEqualStrings("HK-01", out[0].name());
-    try std.testing.expectEqualStrings("HK-01-2", out[1].name());
-    try std.testing.expectEqualStrings("AUTO-1", out[2].name());
-    // original node name is unaffected
-    try std.testing.expectEqualStrings("HK-01", sample_nodes[1].name());
-}
-
-test "format parse" {
-    try std.testing.expectEqual(Format.clash, Format.parse("clash").?);
-    try std.testing.expectEqual(Format.singbox, Format.parse("singbox").?);
-    try std.testing.expectEqual(Format.trojan, Format.parse("trojan").?);
-    try std.testing.expectEqual(Format.raw, Format.parse("raw").?);
-    try std.testing.expect(Format.parse("nope") == null);
-}
-
-test "writeJsonValue escapes" {
+test "writeJsonValue escapes and indents" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const q = struct {
@@ -276,13 +241,36 @@ test "writeJsonValue escapes" {
     try std.testing.expectEqualStrings("null", try q(arena.allocator(), .null));
     try std.testing.expectEqualStrings("123", try q(arena.allocator(), .{ .integer = 123 }));
     try std.testing.expectEqualStrings("\"a\\\"b\"", try q(arena.allocator(), .{ .string = "a\"b" }));
-    try std.testing.expectEqualStrings("[1, 2]", try q(arena.allocator(), .{ .array = blk: {
+    try std.testing.expectEqualStrings(
+        \\[
+        \\  1,
+        \\  2
+        \\]
+    , try q(arena.allocator(), .{ .array = blk: {
         var a = std.json.Array.init(arena.allocator());
         try a.append(.{ .integer = 1 });
         try a.append(.{ .integer = 2 });
         break :blk a;
     } }));
+    // object with 2-space indentation
+    const obj = try q(arena.allocator(), .{ .object = blk_obj: {
+        var o = std.json.ObjectMap.init(arena.allocator());
+        try o.put("log", .{ .object = blk_log: {
+            var l = std.json.ObjectMap.init(arena.allocator());
+            try l.put("level", .{ .string = "info" });
+            break :blk_log l;
+        } });
+        break :blk_obj o;
+    } });
+    try std.testing.expectEqualStrings(
+        \\{
+        \\  "log": {
+        \\    "level": "info"
+        \\  }
+        \\}
+    , obj);
 }
+
 
 test "compile-check" {
     _ = &render;

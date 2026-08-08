@@ -245,10 +245,10 @@ test "sanitizeName strips control chars and collapses spaces" {
 test "prefixed with fallback" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const n1 = try prefixed(arena.allocator(), "airport-a", "HK-01", "｜", "1.2.3.4:443");
-    try std.testing.expectEqualStrings("airport-a｜HK-01", n1);
-    const n2 = try prefixed(arena.allocator(), "airport-a", "", "｜", "1.2.3.4:443");
-    try std.testing.expectEqualStrings("airport-a｜1.2.3.4:443", n2);
+    const n1 = try prefixed(arena.allocator(), "airport-a", "HK-01", "@", "1.2.3.4:443");
+    try std.testing.expectEqualStrings("airport-a@HK-01", n1);
+    const n2 = try prefixed(arena.allocator(), "airport-a", "", "@", "1.2.3.4:443");
+    try std.testing.expectEqualStrings("airport-a@1.2.3.4:443", n2);
 }
 
 test "node name accessor" {

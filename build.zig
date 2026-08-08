@@ -54,7 +54,7 @@ fn addSmokeTest(b: *std.Build, exe: *std.Build.Step.Compile, arg_out: []const u8
 
     if (matrix) |m| smoke_test.addArgs(&.{ m.qemu, "-cpu", m.qemu_cpu });
     smoke_test.addArtifactArg(exe);
-    smoke_test.addArgs(&.{ "--config", "fixtures/subscriptions.zon", "--out", arg_out, "--dry-run", "-q" });
+    smoke_test.addArgs(&.{ "--config", "fixtures/subscriptions.zon", "--output-format", arg_out, "--dry-run" });
 
     return smoke_test;
 }

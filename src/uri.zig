@@ -596,9 +596,9 @@ const test_tuic = "tuic://11111111-2222-3333-4444-555555555555:tuic-pass@sg2.exa
 test "parse ss sip002" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const n = try parseUri(arena.allocator(), test_ss_sip002, "airport-a", "｜");
+    const n = try parseUri(arena.allocator(), test_ss_sip002, "airport-a", "@");
     try std.testing.expectEqualStrings("ss", n.typeName());
-    try std.testing.expectEqualStrings("airport-a｜SG-03-SS", n.name());
+    try std.testing.expectEqualStrings("airport-a@SG-03-SS", n.name());
     const ss = n.ss;
     try std.testing.expectEqualStrings("sg3.example.com", ss.server);
     try std.testing.expectEqual(@as(u16, 8388), ss.port);
@@ -610,7 +610,7 @@ test "parse ss sip002" {
 test "parse ss obfs-local plugin" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const n = try parseUri(arena.allocator(), test_ss_obfs, "", "｜");
+    const n = try parseUri(arena.allocator(), test_ss_obfs, "", "@");
     const plugin = n.ss.plugin.?;
     try std.testing.expectEqualStrings("http", plugin.obfs_local.mode);
     try std.testing.expectEqualStrings("www.bing.com", plugin.obfs_local.host);
@@ -621,7 +621,7 @@ test "parse ss legacy base64" {
     defer arena.deinit();
     // base64("aes-256-gcm:password@1.2.3.4:8388")
     const link = try std.fmt.allocPrint(arena.allocator(), "ss://{s}#legacy-node", .{try b64(arena.allocator(), "aes-256-gcm:password@1.2.3.4:8388")});
-    const n = try parseUri(arena.allocator(), link, "", "｜");
+    const n = try parseUri(arena.allocator(), link, "", "@");
     try std.testing.expectEqualStrings("1.2.3.4", n.ss.server);
     try std.testing.expectEqual(@as(u16, 8388), n.ss.port);
     try std.testing.expectEqualStrings("legacy-node", n.name());
@@ -642,7 +642,7 @@ test "parse ssr" {
     const enc = b64u.Encoder.encode(&enc_buf, link_body);
     const link = try std.fmt.allocPrint(arena.allocator(), "ssr://{s}", .{enc});
 
-    const n = try parseUri(arena.allocator(), link, "", "｜");
+    const n = try parseUri(arena.allocator(), link, "", "@");
     try std.testing.expectEqualStrings("1.2.3.4", n.ssr.server);
     try std.testing.expectEqual(@as(u16, 443), n.ssr.port);
     try std.testing.expectEqualStrings("aes-256-cfb", n.ssr.cipher);
@@ -657,7 +657,7 @@ test "parse vmess legacy json" {
     defer arena.deinit();
     const json = "{\"v\":\"2\",\"ps\":\"JP-01-legacy\",\"add\":\"jp1.example.com\",\"port\":\"443\",\"id\":\"11111111-2222-3333-4444-555555555555\",\"aid\":\"0\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"jp1.example.com\",\"path\":\"/vmess\",\"tls\":\"tls\",\"sni\":\"jp1.example.com\",\"fp\":\"chrome\"}";
     const link = try std.fmt.allocPrint(arena.allocator(), "vmess://{s}", .{try b64(arena.allocator(), json)});
-    const n = try parseUri(arena.allocator(), link, "", "｜");
+    const n = try parseUri(arena.allocator(), link, "", "@");
     try std.testing.expectEqualStrings("JP-01-legacy", n.name());
     const v = n.vmess;
     try std.testing.expectEqualStrings("jp1.example.com", v.server);
@@ -672,7 +672,7 @@ test "parse vmess legacy json" {
 test "parse vmess url style" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const n = try parseUri(arena.allocator(), test_vmess_url, "", "｜");
+    const n = try parseUri(arena.allocator(), test_vmess_url, "", "@");
     try std.testing.expectEqualStrings("SG-01-new", n.name());
     const v = n.vmess;
     try std.testing.expectEqualStrings("sg1.example.com", v.server);
@@ -685,7 +685,7 @@ test "parse vmess url style" {
 test "parse vless reality" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const n = try parseUri(arena.allocator(), test_vless_reality, "", "｜");
+    const n = try parseUri(arena.allocator(), test_vless_reality, "", "@");
     try std.testing.expectEqualStrings("KR-01-Reality", n.name());
     const v = n.vless;
     try std.testing.expect(v.tls);
@@ -701,8 +701,8 @@ test "parse vless reality" {
 test "parse trojan" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const n = try parseUri(arena.allocator(), test_trojan, "airport-b", "｜");
-    try std.testing.expectEqualStrings("airport-b｜HK-01-CM", n.name());
+    const n = try parseUri(arena.allocator(), test_trojan, "airport-b", "@");
+    try std.testing.expectEqualStrings("airport-b@HK-01-CM", n.name());
     const t = n.trojan;
     try std.testing.expectEqualStrings("tw-pass-123", t.password);
     try std.testing.expectEqualStrings("hk1.example.com", t.servername.?);
@@ -712,7 +712,7 @@ test "parse trojan" {
 test "parse hysteria2" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const n = try parseUri(arena.allocator(), test_hy2, "", "｜");
+    const n = try parseUri(arena.allocator(), test_hy2, "", "@");
     const h = n.hysteria2;
     try std.testing.expectEqualStrings("hy2-pass", h.password);
     try std.testing.expectEqualStrings("hk2.example.com", h.servername.?);
@@ -724,7 +724,7 @@ test "parse hysteria2" {
 test "parse hysteria1" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const n = try parseUri(arena.allocator(), test_hy1, "", "｜");
+    const n = try parseUri(arena.allocator(), test_hy1, "", "@");
     const h = n.hysteria;
     try std.testing.expectEqualStrings("udp", h.protocol);
     try std.testing.expectEqualStrings("hy1-auth", h.auth_str.?);
@@ -736,7 +736,7 @@ test "parse hysteria1" {
 test "parse tuic" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const n = try parseUri(arena.allocator(), test_tuic, "", "｜");
+    const n = try parseUri(arena.allocator(), test_tuic, "", "@");
     const t = n.tuic;
     try std.testing.expectEqualStrings("11111111-2222-3333-4444-555555555555", t.uuid);
     try std.testing.expectEqualStrings("tuic-pass", t.password);
@@ -751,7 +751,7 @@ test "parse tuic hyphenated params and default port" {
     defer arena.deinit();
     // mihomo/clash-verge ecosystem: hyphenated params + omitted port
     const link = "tuic://11111111-2222-3333-4444-555555555555:tuic-pass@sg3.example.com?congestion-controller=bbr&udp-relay-mode=quic&skip-cert-verify=1#SG-03-TUIC";
-    const n = try parseUri(arena.allocator(), link, "", "｜");
+    const n = try parseUri(arena.allocator(), link, "", "@");
     const t = n.tuic;
     try std.testing.expectEqual(@as(u16, 443), t.port);
     try std.testing.expectEqualStrings("bbr", t.congestion_controller.?);
@@ -763,7 +763,7 @@ test "parse trojan skip-cert-verify and default port" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const link = "trojan://pass@hk2.example.com?skip-cert-verify=1#HK-02";
-    const n = try parseUri(arena.allocator(), link, "", "｜");
+    const n = try parseUri(arena.allocator(), link, "", "@");
     try std.testing.expectEqual(@as(u16, 443), n.trojan.port);
     try std.testing.expect(n.trojan.skip_cert_verify);
 }
@@ -773,16 +773,16 @@ test "parse hysteria2 peer alias and obfs none" {
     defer arena.deinit();
     // peer is a sni alias; obfs=none should be ignored
     const link = "hysteria2://pass@hk3.example.com?peer=real.example.com&obfs=none#HK-03";
-    const n = try parseUri(arena.allocator(), link, "", "｜");
+    const n = try parseUri(arena.allocator(), link, "", "@");
     try std.testing.expectEqual(@as(u16, 443), n.hysteria2.port);
     try std.testing.expectEqualStrings("real.example.com", n.hysteria2.servername.?);
     try std.testing.expect(n.hysteria2.obfs == null);
 }
 
 test "parse errors" {
-    try std.testing.expectError(error.InvalidUri, parseUri(std.testing.allocator, "notaurl", "", "｜"));
-    try std.testing.expectError(error.UnsupportedScheme, parseUri(std.testing.allocator, "http://x.com/", "", "｜"));
-    try std.testing.expectError(error.UnsupportedScheme, parseUri(std.testing.allocator, "socks5://1.2.3.4:1080", "", "｜"));
+    try std.testing.expectError(error.InvalidUri, parseUri(std.testing.allocator, "notaurl", "", "@"));
+    try std.testing.expectError(error.UnsupportedScheme, parseUri(std.testing.allocator, "http://x.com/", "", "@"));
+    try std.testing.expectError(error.UnsupportedScheme, parseUri(std.testing.allocator, "socks5://1.2.3.4:1080", "", "@"));
 }
 
 fn b64(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {

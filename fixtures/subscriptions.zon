@@ -1,7 +1,7 @@
 .{
     .default_ua = "clash-verge/v2.2.3",
     .subscriptions = .{
-        .{ .name = "base64-trojan", .url = "fixtures/base64_trojan.txt" },
+        .{ .name = "trojan-base64", .url = "fixtures/base64_trojan.txt" },
         .{ .name = "clash-yaml", .url = "fixtures/clash.yaml" },
         .{ .name = "vmess-json", .url = "fixtures/vmess_json.txt" },
         .{ .name = "vless-reality", .url = "fixtures/vless_reality.txt" },
@@ -9,6 +9,10 @@
         .{ .name = "ss-sip002", .url = "fixtures/ss_sip002.txt" },
         .{ .name = "ssr", .url = "fixtures/ssr.txt" },
         .{ .name = "v2rayn-json", .url = "fixtures/v2rayn.json" },
-        .{ .name = "html-error", .url = "fixtures/html_error.html" },
+                // intentionally broken subscription (content is HTML): exercises the parse-error path;
+        // every run shows one W line, which is expected
+        .{ .name = "broken-source", .url = "fixtures/html_error.html" },
+        // intentionally disabled subscription: exercises the skip path (I line + disabled count)
+        .{ .name = "disabled-sample", .url = "fixtures/base64_trojan.txt", .enable = false },
     },
 }

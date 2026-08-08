@@ -35,10 +35,10 @@ cp subscriptions.example.zon subscriptions.zon
 vim subscriptions.zon
 
 # 2. 预览（dry-run：打印配置并校验，不写文件）
-subfetch --config subscriptions.zon --out clash --dry-run
+subfetch --config subscriptions.zon --output-format clash --dry-run
 
 # 3. 安装并重载
-subfetch --config subscriptions.zon --out clash \
+subfetch --config subscriptions.zon --output-format clash \
     -o /etc/clash/config.yaml --reload-cmd "systemctl restart clash"
 ```
 
@@ -59,11 +59,11 @@ subfetch --config subscriptions.zon --out clash \
 }
 ```
 
-`url` 支持 `https://`、`http://`、`file://`、本地文件路径。节点名格式：`订阅名｜节点名`（分隔符可用 `--sep` 修改）。
+`url` 支持 `https://`、`http://`、`file://`、本地文件路径。节点名格式：`订阅名@节点名`（分隔符可用 `--sep` 修改）。
 
 ## 输出格式
 
-| `--out` | 说明 | 校验 |
+| `--output-format` | 说明 | 校验 |
 |---|---|---|
 | `clash` | mihomo / clash 聚合配置（默认） | `mihomo -t` |
 | `singbox` | sing-box 聚合配置（clash_api 可选） | `sing-box check` |
@@ -89,7 +89,7 @@ subfetch --config subscriptions.zon --out clash \
     --node-file <path> 节点列表文件（每行一个 URI）
     --dry-run          只打印生成内容，不写文件
     --ua <str>         默认 User-Agent
-    --sep <str>        节点名前缀分隔符（默认 ｜）
+    --sep <str>        节点名前缀分隔符（默认 @）
     --timeout <sec>    单订阅拉取超时秒数
     --listen <addr>    原生客户端监听地址（默认 127.0.0.1）
     --port <n>         原生客户端监听端口（默认 1080）
