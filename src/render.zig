@@ -58,11 +58,13 @@ pub const Renderer = struct {
     name: Format,
     /// node protocols this format accepts (filter basis; stage 4)
     supported: []const node.Type,
-    /// render nodes to output files (allocated from arena)
+    /// render nodes to output files (allocated from arena); template is optional
+    /// (clash/singbox only; other formats ignore it)
     render: *const fn (
         arena: std.mem.Allocator,
         nodes: []const Node,
         opts: Options,
+        template: ?[]const u8,
     ) anyerror![]const File,
 };
 
@@ -73,17 +75,18 @@ pub fn render(
     fmt: Format,
     nodes: []const Node,
     opts: Options,
+    template: ?[]const u8,
 ) ![]const File {
     return switch (fmt) {
-        .clash => @import("render_clash.zig").renderClash(arena, nodes, opts),
-        .singbox => @import("render_singbox.zig").renderSingbox(arena, nodes, opts),
-        .trojan => @import("render_native.zig").renderTrojan(arena, nodes, opts),
-        .hysteria => @import("render_native.zig").renderHysteria(arena, nodes, opts),
-        .hysteria2 => @import("render_native.zig").renderHysteria2(arena, nodes, opts),
-        .xray => @import("render_native.zig").renderXray(arena, nodes, opts),
-        .ss => @import("render_native.zig").renderSs(arena, nodes, opts),
-        .ssr => @import("render_native.zig").renderSsr(arena, nodes, opts),
-        .raw => @import("render_raw.zig").renderRaw(arena, nodes),
+        .clash => @import("render_clash.zig").renderClash(arena, nodes, opts, template),
+        .singbox => @import("render_singbox.zig").renderSingbox(arena, nodes, opts, template),
+        .trojan => @import("render_native.zig").renderTrojan(arena, nodes, opts, template),
+        .hysteria => @import("render_native.zig").renderHysteria(arena, nodes, opts, template),
+        .hysteria2 => @import("render_native.zig").renderHysteria2(arena, nodes, opts, template),
+        .xray => @import("render_native.zig").renderXray(arena, nodes, opts, template),
+        .ss => @import("render_native.zig").renderSs(arena, nodes, opts, template),
+        .ssr => @import("render_native.zig").renderSsr(arena, nodes, opts, template),
+        .raw => @import("render_raw.zig").renderRaw(arena, nodes, template),
     };
 }
 

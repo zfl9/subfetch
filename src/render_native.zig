@@ -270,8 +270,10 @@ fn renderNative(
     arena: std.mem.Allocator,
     nodes: []const node.Node,
     opts: Options,
+    template: ?[]const u8,
     comptime kind: enum { trojan, hysteria, hysteria2, xray, ss, ssr },
 ) ![]const render.File {
+    _ = template; // native formats have no template support
     var files: std.ArrayListUnmanaged(render.File) = .empty;
 
     for (nodes) |n| {
@@ -312,28 +314,28 @@ fn renderNative(
     return files.toOwnedSlice(arena);
 }
 
-pub fn renderTrojan(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
-    return renderNative(arena, nodes, opts, .trojan);
+pub fn renderTrojan(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options, template: ?[]const u8) ![]const render.File {
+    return renderNative(arena, nodes, opts, template, .trojan);
 }
 
-pub fn renderHysteria(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
-    return renderNative(arena, nodes, opts, .hysteria);
+pub fn renderHysteria(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options, template: ?[]const u8) ![]const render.File {
+    return renderNative(arena, nodes, opts, template, .hysteria);
 }
 
-pub fn renderHysteria2(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
-    return renderNative(arena, nodes, opts, .hysteria2);
+pub fn renderHysteria2(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options, template: ?[]const u8) ![]const render.File {
+    return renderNative(arena, nodes, opts, template, .hysteria2);
 }
 
-pub fn renderXray(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
-    return renderNative(arena, nodes, opts, .xray);
+pub fn renderXray(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options, template: ?[]const u8) ![]const render.File {
+    return renderNative(arena, nodes, opts, template, .xray);
 }
 
-pub fn renderSs(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
-    return renderNative(arena, nodes, opts, .ss);
+pub fn renderSs(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options, template: ?[]const u8) ![]const render.File {
+    return renderNative(arena, nodes, opts, template, .ss);
 }
 
-pub fn renderSsr(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
-    return renderNative(arena, nodes, opts, .ssr);
+pub fn renderSsr(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options, template: ?[]const u8) ![]const render.File {
+    return renderNative(arena, nodes, opts, template, .ssr);
 }
 
 // ---------------- tests ----------------
@@ -420,7 +422,7 @@ test "render trojan files" {
     defer arena.deinit();
     const a = arena.allocator();
     const nodes = [_]node.Node{ trojan_node, trojan_ws_node };
-    const files = try renderTrojan(a, &nodes, .{});
+    const files = try renderTrojan(a, &nodes, .{}, null);
 
     try std.testing.expectEqual(@as(usize, 2), files.len); // one file per node
     try std.testing.expectEqualStrings("HK-01.json", files[0].path);
@@ -449,7 +451,7 @@ test "render hysteria files" {
     defer arena.deinit();
     const a = arena.allocator();
     const nodes = [_]node.Node{hy1_node};
-    const files = try renderHysteria(a, &nodes, .{});
+    const files = try renderHysteria(a, &nodes, .{}, null);
     try std.testing.expectEqual(@as(usize, 1), files.len);
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, files[0].content, .{});
     const o = v.object;
@@ -464,7 +466,7 @@ test "render hysteria2 files" {
     defer arena.deinit();
     const a = arena.allocator();
     const nodes = [_]node.Node{hy2_node};
-    const files = try renderHysteria2(a, &nodes, .{});
+    const files = try renderHysteria2(a, &nodes, .{}, null);
     try std.testing.expectEqual(@as(usize, 1), files.len);
     try std.testing.expectEqualStrings("HK-02-hy2.yaml", files[0].path);
     const text = files[0].content;
@@ -478,7 +480,7 @@ test "render xray files" {
     defer arena.deinit();
     const a = arena.allocator();
     const nodes = [_]node.Node{ vless_reality_node, hy2_node };
-    const files = try renderXray(a, &nodes, .{});
+    const files = try renderXray(a, &nodes, .{}, null);
     // only the vless node is rendered (hy2 skipped)
     try std.testing.expectEqual(@as(usize, 1), files.len);
     try std.testing.expectEqualStrings("KR-01-Reality.json", files[0].path);
@@ -510,7 +512,7 @@ test "render ss files with plugin" {
     defer arena.deinit();
     const a = arena.allocator();
     const nodes = [_]node.Node{ ss_plugin_node, vless_reality_node };
-    const files = try renderSs(a, &nodes, .{});
+    const files = try renderSs(a, &nodes, .{}, null);
     try std.testing.expectEqual(@as(usize, 1), files.len);
 
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, files[0].content, .{});
@@ -529,7 +531,7 @@ test "render ssr files" {
     defer arena.deinit();
     const a = arena.allocator();
     const nodes = [_]node.Node{ssr_node};
-    const files = try renderSsr(a, &nodes, .{});
+    const files = try renderSsr(a, &nodes, .{}, null);
     try std.testing.expectEqual(@as(usize, 1), files.len);
 
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, files[0].content, .{});
@@ -551,7 +553,7 @@ test "no supported nodes" {
         .cipher = "aes-256-gcm",
         .password = "p",
     } }};
-    try std.testing.expectError(error.NoSupportedNodes, renderTrojan(arena.allocator(), &nodes, .{}));
+    try std.testing.expectError(error.NoSupportedNodes, renderTrojan(arena.allocator(), &nodes, .{}, null));
 }
 
 test "compile-check" {

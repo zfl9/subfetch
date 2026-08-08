@@ -1,12 +1,55 @@
 const std = @import("std");
 const node = @import("node.zig");
 const render = @import("render.zig");
+const tpl = @import("template.zig");
 const Options = render.Options;
 
 const Writer = std.Io.Writer;
 
-/// render mihomo/clash config.yaml (hand-written emitter, fixed structure)
-pub fn renderClash(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
+/// render mihomo/clash config.yaml.
+/// with a user template: fills the `proxies: []` / `proxy-groups: []` / `rules: []`
+/// fill points (missing groups/rules are appended). without a template: uses the
+/// built-in default template (same fill mechanism).
+pub fn renderClash(
+    arena: std.mem.Allocator,
+    nodes: []const node.Node,
+    opts: Options,
+    template: ?[]const u8,
+) ![]const render.File {
+    var text = if (template) |t| try arena.dupe(u8, t) else try defaultClashBase(arena, opts);
+
+    // proxies block (relative indent: "- name" at column 0, fields at 2)
+    var block: std.ArrayListUnmanaged(u8) = .empty;
+    const bw = block.writer(arena);
+    for (nodes) |n| {
+        try renderProxyRel(bw, n);
+    }
+    text = try tpl.fillList(arena, text, "proxies", block.items);
+
+    // proxy-groups: empty -> fill default, non-empty -> keep user content, missing -> append
+    const names = try collectNames(arena, nodes);
+    var gblock: std.ArrayListUnmanaged(u8) = .empty;
+    try renderGroupsRel(gblock.writer(arena), names);
+    switch (tpl.fillState(text, "proxy-groups")) {
+        .empty => text = try tpl.fillList(arena, text, "proxy-groups", gblock.items),
+        .non_empty => {}, // user-defined groups (may reference fixed names like PROXY)
+        .missing => text = try tpl.appendBlock(arena, text, "proxy-groups", gblock.items),
+    }
+
+    // rules: empty -> fill default, non-empty -> keep user content, missing -> append
+    switch (tpl.fillState(text, "rules")) {
+        .empty => text = try tpl.fillList(arena, text, "rules", "- MATCH,PROXY"),
+        .non_empty => {}, // user-defined rules
+        .missing => text = try tpl.appendBlock(arena, text, "rules", "- MATCH,PROXY"),
+    }
+
+    const file = try arena.alloc(render.File, 1);
+    file[0] = .{ .path = "config.yaml", .content = text };
+    return file;
+}
+
+/// built-in default template: fixed base structure with empty fill points.
+fn defaultClashBase(arena: std.mem.Allocator, opts: Options) ![]const u8 {
     var list: std.ArrayListUnmanaged(u8) = .empty;
     const w = list.writer(arena);
 
@@ -22,15 +65,15 @@ pub fn renderClash(arena: std.mem.Allocator, nodes: []const node.Node, opts: Opt
     try w.print("profile:\n  store-selected: true\n", .{});
     try w.print("dns:\n  enable: false\n", .{});
     try w.print("tun:\n  enable: false\n", .{});
+    try w.print("proxies: []\n", .{});
+    try w.print("proxy-groups: []\n", .{});
+    try w.print("rules: []\n", .{});
 
-    // proxies
-    try w.print("proxies:\n", .{});
-    for (nodes) |n| {
-        try renderProxy(w, n);
-    }
-    // proxy-groups
-    const names = try collectNames(arena, nodes);
-    try w.print("proxy-groups:\n", .{});
+    return list.toOwnedSlice(arena);
+}
+
+/// proxy-groups block (relative indent): PROXY selector + AUTO url-test.
+fn renderGroupsRel(w: anytype, names: []const []const u8) !void {
     try w.print("- name: PROXY\n  type: select\n  proxies:\n  - AUTO\n", .{});
     for (names) |nm| {
         try w.print("  - ", .{});
@@ -43,13 +86,6 @@ pub fn renderClash(arena: std.mem.Allocator, nodes: []const node.Node, opts: Opt
         try yamlStr(w, nm);
         try w.print("\n", .{});
     }
-
-    try w.print("rules:\n- MATCH,PROXY\n", .{});
-
-    const text = try list.toOwnedSlice(arena);
-    const file = try arena.alloc(render.File, 1);
-    file[0] = .{ .path = "config.yaml", .content = text };
-    return file;
 }
 
 fn collectNames(arena: std.mem.Allocator, nodes: []const node.Node) ![]const []const u8 {
@@ -60,18 +96,18 @@ fn collectNames(arena: std.mem.Allocator, nodes: []const node.Node) ![]const []c
     return names.toOwnedSlice(arena);
 }
 
-fn renderProxy(w: anytype, n: node.Node) !void {
+fn renderProxyRel(w: anytype, n: node.Node) !void {
     const S = struct {
         fn f(w2: anytype, key: []const u8, value: []const u8) !void {
-            try w2.print("    {s}: ", .{key});
+            try w2.print("  {s}: ", .{key});
             try yamlStr(w2, value);
             try w2.print("\n", .{});
         }
         fn fi(w2: anytype, key: []const u8, value: u16) !void {
-            try w2.print("    {s}: {d}\n", .{ key, value });
+            try w2.print("  {s}: {d}\n", .{ key, value });
         }
         fn fb(w2: anytype, key: []const u8, value: bool) !void {
-            try w2.print("    {s}: {}\n", .{ key, value });
+            try w2.print("  {s}: {}\n", .{ key, value });
         }
         fn fo(w2: anytype, key: []const u8, value: ?[]const u8) !void {
             if (value) |v| try f(w2, key, v);
@@ -79,7 +115,7 @@ fn renderProxy(w: anytype, n: node.Node) !void {
         fn falpn(w2: anytype, alpn: ?[]const []const u8) !void {
             const list = alpn orelse return;
             if (list.len == 0) return;
-            try w2.print("    alpn: [", .{});
+            try w2.print("  alpn: [", .{});
             for (list, 0..) |a, i| {
                 if (i > 0) try w2.print(", ", .{});
                 try yamlStr(w2, a);
@@ -93,7 +129,7 @@ fn renderProxy(w: anytype, n: node.Node) !void {
     const fo = S.fo;
     const falpn = S.falpn;
 
-    try w.print("  - name: ", .{});
+    try w.print("- name: ", .{});
     try yamlStr(w, n.name());
     try w.print("\n", .{});
 
@@ -107,18 +143,18 @@ fn renderProxy(w: anytype, n: node.Node) !void {
             if (v.plugin) |p| switch (p) {
                 .obfs_local => |o| {
                     try f(w, "plugin", "obfs-local");
-                    try w.print("    plugin-opts:\n      mode: {s}\n      host: {s}\n", .{ o.mode, o.host });
+                    try w.print("  plugin-opts:\n    mode: {s}\n    host: {s}\n", .{ o.mode, o.host });
                 },
                 .v2ray_plugin => |o| {
                     try f(w, "plugin", "v2ray-plugin");
-                    try w.print("    plugin-opts:\n      mode: {s}\n", .{o.mode});
-                    if (o.tls) try w.print("      tls: true\n", .{});
-                    if (o.host) |h| try w.print("      host: {s}\n", .{h});
-                    if (o.path) |path| try w.print("      path: {s}\n", .{path});
+                    try w.print("  plugin-opts:\n    mode: {s}\n", .{o.mode});
+                    if (o.tls) try w.print("    tls: true\n", .{});
+                    if (o.host) |h| try w.print("    host: {s}\n", .{h});
+                    if (o.path) |path| try w.print("    path: {s}\n", .{path});
                 },
                 .shadow_tls => |o| {
                     try f(w, "plugin", "shadow-tls");
-                    try w.print("    plugin-opts:\n      host: {s}\n      password: {s}\n      version: {d}\n", .{ o.host, o.password, o.version });
+                    try w.print("    plugin-opts:\n    host: {s}\n      password: {s}\n      version: {d}\n", .{ o.host, o.password, o.version });
                 },
             };
             try fb(w, "udp", true);
@@ -140,7 +176,7 @@ fn renderProxy(w: anytype, n: node.Node) !void {
             try f(w, "server", v.server);
             try fi(w, "port", v.port);
             try f(w, "uuid", v.uuid);
-            try w.print("    alterId: {d}\n", .{v.alter_id});
+            try w.print("  alterId: {d}\n", .{v.alter_id});
             try f(w, "cipher", "auto");
             try f(w, "network", @tagName(v.network));
             if (v.tls) try fb(w, "tls", true);
@@ -160,9 +196,9 @@ fn renderProxy(w: anytype, n: node.Node) !void {
             try fo(w, "servername", v.servername);
             try fo(w, "client-fingerprint", v.fingerprint);
             if (v.reality) |r| {
-                try w.print("    reality-opts:\n      public-key: {s}\n", .{r.public_key});
-                if (r.short_id) |sid| try w.print("      short-id: {s}\n", .{sid});
-                if (r.spider_x) |spx| try w.print("      spider-x: {s}\n", .{spx});
+                try w.print("  reality-opts:\n    public-key: {s}\n", .{r.public_key});
+                if (r.short_id) |sid| try w.print("    short-id: {s}\n", .{sid});
+                if (r.spider_x) |spx| try w.print("    spider-x: {s}\n", .{spx});
             }
             if (v.skip_cert_verify) try fb(w, "skip-cert-verify", true);
             try falpn(w, v.alpn);
@@ -225,17 +261,17 @@ fn renderProxy(w: anytype, n: node.Node) !void {
 
 fn renderWsGrpc(w: anytype, ws: ?node.WsOpts, grpc: ?node.GrpcOpts) !void {
     if (ws) |o| {
-        try w.print("    ws-opts:\n      path: ", .{});
+        try w.print("  ws-opts:\n    path: ", .{});
         try yamlStr(w, o.path);
         try w.print("\n", .{});
         if (o.host) |h| {
-            try w.print("      headers:\n        Host: ", .{});
+            try w.print("    headers:\n      Host: ", .{});
             try yamlStr(w, h);
             try w.print("\n", .{});
         }
     }
     if (grpc) |o| {
-        try w.print("    grpc-opts:\n      grpc-service-name: ", .{});
+        try w.print("  grpc-opts:\n    grpc-service-name: ", .{});
         try yamlStr(w, o.service_name);
         try w.print("\n", .{});
     }
@@ -328,7 +364,7 @@ const test_nodes = [_]node.Node{
 test "render clash config structure" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const yaml = try renderClash(arena.allocator(), &test_nodes, .{ .secret = "test-secret" });
+    const yaml = try renderClash(arena.allocator(), &test_nodes, .{ .secret = "test-secret" }, null);
     const yaml_text = yaml[0].content;
 
     // re-parse with libyaml to validate structure
@@ -376,9 +412,44 @@ test "yaml scalar quoting" {
     try std.testing.expectEqualStrings("café", try q(arena.allocator(), "café")); // non-ASCII plain is safe
 }
 
+test "clash with user template" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const tpl_text = "# my template\nmixed-port: 7890\nproxies: []\nproxy-groups: []\nrules: []\n";
+    const files = try renderClash(a, &test_nodes, .{}, tpl_text);
+    try std.testing.expectEqualStrings("config.yaml", files[0].path);
+    const yaml = files[0].content;
+    // template kept byte-for-byte except fill points
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "# my template") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "mixed-port: 7890") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "proxies: []") == null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "- name: HK-01-CM") != null);
+    // missing fill point -> error
+    try std.testing.expectError(error.MissingFillPoint, renderClash(a, &test_nodes, .{}, "a: 1\n"));
+    // non-empty fill point -> error
+    try std.testing.expectError(error.NonEmptyList, renderClash(a, &test_nodes, .{}, "proxies:\n  - x\n"));
+}
+
+test "clash user groups/rules kept" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // user-defined non-empty groups + rules are kept as-is; only proxies is filled
+    const tpl_text = "proxies: []\nproxy-groups:\n  - name: PROXY\n    type: select\n    proxies:\n      - DIRECT\nrules:\n- DOMAIN-SUFFIX,netflix.com,PROXY\n- MATCH,PROXY\n";
+    const files = try renderClash(a, &test_nodes, .{}, tpl_text);
+    const yaml = files[0].content;
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "proxies:\n  - name: HK-01-CM") != null);
+    // user groups kept (no AUTO url-test appended since non-empty)
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "type: url-test") == null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "DOMAIN-SUFFIX,netflix.com,PROXY") != null);
+}
+
 test "compile-check" {
     _ = &renderClash;
-    _ = &renderProxy;
+    _ = &renderProxyRel;
+    _ = &renderGroupsRel;
+    _ = &defaultClashBase;
     _ = &renderWsGrpc;
     _ = &yamlStr;
     _ = &isPlainSafe;

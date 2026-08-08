@@ -1,13 +1,22 @@
 const std = @import("std");
 const node = @import("node.zig");
 const render = @import("render.zig");
+const tpl = @import("template.zig");
 const Options = render.Options;
 
 const JsonValue = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
 
-/// render sing-box config.json (outbounds + selector + clash_api)
-pub fn renderSingbox(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
+/// render sing-box config.json (outbounds + selector + clash_api).
+/// with a user template: fills the `"outbounds": []` fill point (template keeps
+/// log/inbounds/route/experimental etc.). without a template: built-in default
+/// structure (same fill mechanism).
+pub fn renderSingbox(
+    arena: std.mem.Allocator,
+    nodes: []const node.Node,
+    opts: Options,
+    template: ?[]const u8,
+) ![]const render.File {
     var root = ObjectMap.init(arena);
 
     // log
@@ -26,41 +35,9 @@ pub fn renderSingbox(arena: std.mem.Allocator, nodes: []const node.Node, opts: O
     try inbounds.append(.{ .object = socks });
     try root.put("inbounds", .{ .array = inbounds });
 
-    // outbounds: direct + block + selector + nodes
-    var outbounds = std.json.Array.init(arena);
-
-    var direct = ObjectMap.init(arena);
-    try direct.put("type", .{ .string = "direct" });
-    try direct.put("tag", .{ .string = "direct" });
-    try outbounds.append(.{ .object = direct });
-
-    var block = ObjectMap.init(arena);
-    try block.put("type", .{ .string = "block" });
-    try block.put("tag", .{ .string = "block" });
-    try outbounds.append(.{ .object = block });
-
-    var selector = ObjectMap.init(arena);
-    try selector.put("type", .{ .string = "selector" });
-    try selector.put("tag", .{ .string = "PROXY" });
-    var sel_outbounds = std.json.Array.init(arena);
-    for (nodes) |n| {
-        try sel_outbounds.append(.{ .string = n.name() });
-    }
-    try selector.put("outbounds", .{ .array = sel_outbounds });
-    if (nodes.len > 0) {
-        try selector.put("default", .{ .string = nodes[0].name() });
-    }
-    try outbounds.append(.{ .object = selector });
-
-    var skipped: usize = 0;
-    for (nodes) |n| {
-        if (try renderOutbound(arena, n)) |ob| {
-            try outbounds.append(ob);
-        } else {
-            skipped += 1;
-        }
-    }
-    try root.put("outbounds", .{ .array = outbounds });
+    // outbounds fill point: root carries an empty array; the generated block is
+    // inserted textually afterwards (template keeps everything else intact)
+    try root.put("outbounds", .{ .array = std.json.Array.init(arena) });
 
     // route
     var route = ObjectMap.init(arena);
@@ -80,10 +57,71 @@ pub fn renderSingbox(arena: std.mem.Allocator, nodes: []const node.Node, opts: O
         try root.put("experimental", .{ .object = experimental });
     }
 
+    // serialize base (with empty outbounds), then fill the outbounds block
     var out: std.ArrayListUnmanaged(u8) = .empty;
     try @import("render.zig").writeJsonValue(out.writer(arena), .{ .object = root });
     try out.append(arena, '\n');
-    const text = try out.toOwnedSlice(arena);
+    var text: []const u8 = try out.toOwnedSlice(arena);
+
+    // outbounds block (relative indent, complete JSON array): direct + block + selector + nodes
+    var oblock: std.ArrayListUnmanaged(u8) = .empty;
+    const ow = oblock.writer(arena);
+    const wjv = @import("render.zig").writeJsonValue;
+
+    var elems: std.ArrayListUnmanaged(JsonValue) = .empty;
+
+    var direct = ObjectMap.init(arena);
+    try direct.put("type", .{ .string = "direct" });
+    try direct.put("tag", .{ .string = "direct" });
+    try elems.append(arena, .{ .object = direct });
+
+    var block = ObjectMap.init(arena);
+    try block.put("type", .{ .string = "block" });
+    try block.put("tag", .{ .string = "block" });
+    try elems.append(arena, .{ .object = block });
+
+    var selector = ObjectMap.init(arena);
+    try selector.put("type", .{ .string = "selector" });
+    try selector.put("tag", .{ .string = "PROXY" });
+    var sel_outbounds = std.json.Array.init(arena);
+    for (nodes) |n| {
+        try sel_outbounds.append(.{ .string = n.name() });
+    }
+    try selector.put("outbounds", .{ .array = sel_outbounds });
+    if (nodes.len > 0) {
+        try selector.put("default", .{ .string = nodes[0].name() });
+    }
+    try elems.append(arena, .{ .object = selector });
+
+    for (nodes) |n| {
+        if (try renderOutbound(arena, n)) |ob| {
+            try elems.append(arena, ob);
+        }
+    }
+
+    // serialize: open bracket + elements (separated by commas, each re-indented by 2) + close bracket
+    try ow.writeAll("[\n");
+    for (elems.items, 0..) |e, i| {
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        try wjv(buf.writer(arena), e);
+        var lines = std.mem.splitScalar(u8, buf.items, '\n');
+        while (lines.next()) |l| {
+            if (l.len == 0) continue;
+            try ow.writeAll("  ");
+            try ow.writeAll(l);
+            // comma joins elements on the closing brace line
+            if (lines.peek() == null and i + 1 < elems.items.len) try ow.writeAll(",");
+            try ow.writeAll("\n");
+        }
+    }
+    try ow.writeAll("\n]\n");
+
+    // user template or the just-serialized default base
+    if (template) |t| {
+        text = try arena.dupe(u8, t);
+    }
+    text = try tpl.fillList(arena, text, "\"outbounds\"", oblock.items);
+
     const file = try arena.alloc(render.File, 1);
     file[0] = .{ .path = "config.json", .content = text };
     return file;
@@ -369,7 +407,7 @@ test "render singbox json structure" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const text = (try renderSingbox(a, &test_nodes, .{ .secret = "sec" }))[0].content;
+    const text = (try renderSingbox(a, &test_nodes, .{ .secret = "sec" }, null))[0].content;
 
     // re-parse JSON to validate
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, text, .{});
@@ -399,6 +437,25 @@ test "render singbox json structure" {
     const api = root.get("experimental").?.object.get("clash_api").?.object;
     try std.testing.expectEqualStrings("127.0.0.1:65501", api.get("external_controller").?.string);
     try std.testing.expectEqualStrings("sec", api.get("secret").?.string);
+}
+
+test "singbox with user template" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const tpl_text = "{\n  \"log\": {\"level\": \"debug\"},\n  \"outbounds\": []\n}\n";
+    const files = try renderSingbox(a, &test_nodes, .{}, tpl_text);
+    try std.testing.expectEqualStrings("config.json", files[0].path);
+    const text = files[0].content;
+    // user log kept
+    try std.testing.expect(std.mem.indexOf(u8, text, "\"level\": \"debug\"") != null);
+    // outbounds filled (parse & count)
+    const v = try std.json.parseFromSliceLeaky(JsonValue, a, text, .{});
+    const outbounds = v.object.get("outbounds").?.array;
+    // direct + block + selector + 3 supported nodes (ssr skipped)
+    try std.testing.expectEqual(@as(usize, 6), outbounds.items.len);
+    // missing fill point -> error
+    try std.testing.expectError(error.MissingFillPoint, renderSingbox(a, &test_nodes, .{}, "{\n  \"log\": {}\n}\n"));
 }
 
 test "mbps format" {

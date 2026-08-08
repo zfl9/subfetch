@@ -180,7 +180,15 @@ pub fn main() !void {
     };
     var rendered: std.ArrayListUnmanaged(Rendered) = .empty;
     for (opts.outs.items) |o| {
-        const files = render_mod.render(arena, o.fmt, nodes, ropts) catch |e| {
+        // load user template (clash/singbox only)
+        var tpl_text: ?[]const u8 = null;
+        if (o.template) |tp| {
+            tpl_text = std.fs.cwd().readFileAlloc(arena, tp, 1 << 20) catch |e| {
+                logErr(null, "failed to read template {s}: {s}", .{ tp, @errorName(e) });
+                std.process.exit(1);
+            };
+        }
+        const files = render_mod.render(arena, o.fmt, nodes, ropts, tpl_text) catch |e| {
             logErr(null, "render {s} failed: {s}", .{ @tagName(o.fmt), @errorName(e) });
             std.process.exit(1);
         };

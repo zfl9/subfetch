@@ -64,6 +64,36 @@ subfetch --config subscriptions.zon -o clash=- -o singbox=/etc/sing-box/config.j
 
 `url` 支持 `https://`、`http://`、`file://`、本地文件路径。节点名格式：`订阅名@节点名`（分隔符可用 `--sep` 修改）。
 
+## 模板（clash / singbox）
+
+`-o clash:模板路径=输出` 或 `-o singbox:模板路径=输出` 使用自定义模板——模板是合法配置文件，节点部分用**单行空列表**占位，subfetch 填充：
+
+```yaml
+# clash 模板示例（其余部分完全保留，含注释）
+mixed-port: 7890
+dns:
+  enable: true
+proxies: []          # ← 填充点：节点列表
+proxy-groups: []     # ← 可选：默认 PROXY/AUTO 组（缺失则自动追加）
+rules: []            # ← 可选：默认 MATCH,PROXY（缺失则自动追加）
+```
+
+```json
+// singbox 模板示例
+{
+  "log": { "level": "debug" },
+  "inbounds": [{ "type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 2080 }],
+  "outbounds": [],   // ← 填充点：direct/block/PROXY selector + 节点
+  "route": { "final": "PROXY", "auto_detect_interface": true }
+}
+```
+
+规则：
+- `proxies` / `"outbounds"` 填充点：必须是**单行空列表**（缺失或非空 → 报错）
+- `proxy-groups` / `rules`：空列表 → 填默认（PROXY/AUTO 组、MATCH,PROXY）；**非空 → 保留用户内容**（可引用固定组名 PROXY/DIRECT）；缺失 → 自动追加默认
+- 节点块缩进自动模仿模板的缩进风格
+- 无模板时使用内置默认模板（同一机制）
+
 ## 输出格式
 
 | `-o` 格式 | 说明 | 校验 |

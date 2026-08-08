@@ -16,12 +16,13 @@
 - [x] 日志统一走 stderr（stdout 留给数据/`-` 输出）；-vv 简化（verbose=1）
 - [x] 阶段一遗留：多目标 -o a -o b 全部 verify 通过 → 统一落地（原子性）
 
-## 阶段三：模板机制
+## 阶段三：模板机制（完成）
 
-- [ ] 单行空列表填充点：proxies: [] / "outbounds": []
-- [ ] 定位（键+冒号+空白+[]）+ 缩进探测模仿
-- [ ] 非空/缺失 → 报错；无模板 → 内置默认模板同路径
-- [ ] clash YAML / singbox JSON 统一文本级替换
+- [x] 单行空列表填充点：proxies: [] / "outbounds": []
+- [x] 定位（键+冒号+空白+[]）+ 缩进探测模仿（template.zig：fillList/detectIndent）
+- [x] 非空/缺失 → 报错（MissingFillPoint/NonEmptyList）；无模板 → 内置默认模板同路径
+- [x] clash YAML / singbox JSON 统一文本级替换（src/template.zig）
+- [x] clash 补充：proxy-groups/rules 空则填充、缺失则追加
 
 ## 阶段四：去重下放 + filter 显式化
 
