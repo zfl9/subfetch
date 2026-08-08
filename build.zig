@@ -76,7 +76,6 @@ const release_matrix = [_]ReleaseMatrix{
     .{ .triple = "mips64-linux-muslabi64", .cpu = "mips64", .qemu = "qemu-mips64-static", .qemu_cpu = "5Kf" },
     .{ .triple = "mips64el-linux-muslabi64", .cpu = "mips64", .qemu = "qemu-mips64el-static", .qemu_cpu = "5Kf" },
     .{ .triple = "riscv64-linux-musl", .cpu = "baseline_rv64", .qemu = "qemu-riscv64-static", .qemu_cpu = "thead-c906" },
-    .{ .triple = "loongarch64-linux-musl", .cpu = "loongarch64", .qemu = "qemu-loongarch64-static", .qemu_cpu = "la464" },
 };
 
 pub fn build(b: *std.Build) !void {

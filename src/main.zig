@@ -469,16 +469,44 @@ fn printUsage() void {
     , .{version});
 }
 
+/// ANSI color for log prefixes: [error]/[html-error]=red, [warn]=yellow, [info]=cyan, [done]=green.
+/// Only the prefix is colored; the message body stays plain. Disabled when not a TTY
+/// or when NO_COLOR is set (https://no-color.org/).
+fn colorForPrefix(text: []const u8) ?[]const u8 {
+    if (std.mem.startsWith(u8, text, "[error]")) return "\x1b[31m";
+    if (std.mem.startsWith(u8, text, "[html-error]")) return "\x1b[31m";
+    if (std.mem.startsWith(u8, text, "[warn]")) return "\x1b[33m";
+    if (std.mem.startsWith(u8, text, "[info]")) return "\x1b[36m";
+    if (std.mem.startsWith(u8, text, "[done]")) return "\x1b[32m";
+    return null;
+}
+
+fn coloredWrite(file: std.fs.File, text: []const u8) void {
+    if (!file.isTty() or std.posix.getenv("NO_COLOR") != null) {
+        file.writeAll(text) catch {};
+        return;
+    }
+    const color = colorForPrefix(text) orelse {
+        file.writeAll(text) catch {};
+        return;
+    };
+    const end = std.mem.indexOfScalar(u8, text, ']') orelse text.len;
+    file.writeAll(color) catch {};
+    file.writeAll(text[0 .. end + 1]) catch {};
+    file.writeAll("\x1b[0m") catch {};
+    file.writeAll(text[end + 1 ..]) catch {};
+}
+
 fn outPrint(comptime fmt: []const u8, args: anytype) void {
     const text = std.fmt.allocPrint(std.heap.page_allocator, fmt, args) catch return;
     defer std.heap.page_allocator.free(text);
-    std.fs.File.stdout().writeAll(text) catch {};
+    coloredWrite(std.fs.File.stdout(), text);
 }
 
 fn errPrint(comptime fmt: []const u8, args: anytype) void {
     const text = std.fmt.allocPrint(std.heap.page_allocator, fmt, args) catch return;
     defer std.heap.page_allocator.free(text);
-    std.fs.File.stderr().writeAll(text) catch {};
+    coloredWrite(std.fs.File.stderr(), text);
 }
 
 test "compile-check" {
