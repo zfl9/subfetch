@@ -234,7 +234,9 @@ fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
 /// airport notice (info) node detection: names like "到期2026-12-21 剩余流量279.95G".
 /// strong keywords only, so real node names (e.g. "不限流量-香港") are never caught.
 pub fn isInfoNodeName(name: []const u8) bool {
-    const zh = [_][]const u8{ "到期", "剩余流量", "有效期", "套餐", "官网" };
+    // "剩余" (not just "剩余流量") covers "剩余流量：100 GB" and "距离下次重置剩余：21 天";
+    // real node names (香港1-电信优化 etc.) never contain it
+    const zh = [_][]const u8{ "到期", "剩余", "有效期", "套餐", "官网" };
     for (zh) |kw| {
         if (std.mem.indexOf(u8, name, kw) != null) return true;
     }
