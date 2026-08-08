@@ -26,7 +26,7 @@ pub fn renderClash(
     }
     text = try tpl.fillList(arena, text, "proxies", block.items);
 
-    // nested `proxies: []` inside user-defined proxy-groups: fill with node-name list
+    // `- __NODES__` anchor lines inside user proxy-groups: expand to node names
     var nblock: std.ArrayListUnmanaged(u8) = .empty;
     const nw = nblock.writer(arena);
     for (nodes) |n| {
@@ -34,7 +34,7 @@ pub fn renderClash(
         try yamlStr(nw, n.name());
         try nw.print("\n", .{});
     }
-    text = try tpl.fillNestedLists(arena, text, "proxies", nblock.items);
+    text = try tpl.expandAnchor(arena, text, tpl.nodes_anchor, nblock.items);
 
     // proxy-groups: empty -> fill default, non-empty -> keep user content, missing -> append
     const names = try collectNames(arena, nodes);
@@ -454,6 +454,22 @@ test "clash user groups/rules kept" {
     // user groups kept (no AUTO url-test appended since non-empty)
     try std.testing.expect(std.mem.indexOf(u8, yaml, "type: url-test") == null);
     try std.testing.expect(std.mem.indexOf(u8, yaml, "DOMAIN-SUFFIX,netflix.com,PROXY") != null);
+}
+
+test "clash anchor expansion in user groups" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const tpl_text = "proxies: []\nproxy-groups:\n  - name: PROXY\n    type: select\n    proxies:\n      - AUTO\n      - __NODES__\nrules: []\n";
+    const files = try renderClash(a, &test_nodes, .{}, tpl_text);
+    const yaml = files[0].content;
+    // anchor expanded between AUTO and rules
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "- AUTO\n      - HK-01-CM") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "__NODES__") == null);
+    // empty group list stays empty (explicit)
+    const tpl2 = "proxies: []\nproxy-groups:\n  - name: G\n    type: select\n    proxies: []\nrules: []\n";
+    const files2 = try renderClash(a, &test_nodes, .{}, tpl2);
+    try std.testing.expect(std.mem.indexOf(u8, files2[0].content, "proxies: []") != null);
 }
 
 test "compile-check" {

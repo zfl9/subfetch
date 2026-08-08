@@ -161,32 +161,44 @@ pub fn hasKey(text: []const u8, key: []const u8) bool {
     return false;
 }
 
-/// fill all nested (indent > 0) empty lists of `key` with `block`; nested
-/// non-empty lists are kept as-is. used for clash proxy-groups' inner
-/// `proxies: []` lists (filled with node-name lists). the outermost key line
-/// (indent 0, the node definitions themselves) is never touched here.
-pub fn fillNestedLists(
+/// reserved anchor name: a `- <anchor>` line inside user-defined clash proxy-groups
+/// is expanded to the real node-name list (macro-style). node names are
+/// "sub@node" so this can never collide with a real node.
+pub const nodes_anchor = "__NODES__";
+
+/// a line matches when: [ws]* "- " anchor [ws]* $.
+fn matchAnchorLine(line: []const u8, anchor: []const u8) bool {
+    var i: usize = 0;
+    while (i < line.len and (line[i] == ' ' or line[i] == '\t')) : (i += 1) {}
+    if (!std.mem.startsWith(u8, line[i..], "- ")) return false;
+    i += 2;
+    if (!std.mem.startsWith(u8, line[i..], anchor)) return false;
+    i += anchor.len;
+    while (i < line.len and (line[i] == ' ' or line[i] == '\t')) : (i += 1) {}
+    return i == line.len;
+}
+
+/// expand every `- <anchor>` line into `block` (one item per line, indented like
+/// the anchor line). non-matching lines are kept as-is; text is returned
+/// unchanged when no anchor line is present (no error: absence is explicit).
+pub fn expandAnchor(
     arena: std.mem.Allocator,
     text: []const u8,
-    key: []const u8,
+    anchor: []const u8,
     block: []const u8,
 ) ![]const u8 {
-    const unit = detectIndent(text);
     const src = std.mem.trimRight(u8, text, "\n");
     var out: std.ArrayListUnmanaged(u8) = .empty;
     var lines = std.mem.splitScalar(u8, src, '\n');
     while (lines.next()) |line| {
-        var li: usize = 0;
-        while (li < line.len and (line[li] == ' ' or line[li] == '\t')) : (li += 1) {}
-        if (li > 0 and matchKeyLine(line, key) and matchFillLine(line, key)) {
-            const key_end = li + key.len + 1;
-            try out.appendSlice(arena, line[0..key_end]);
-            try out.append(arena, '\n');
-            const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ line[0..li], unit });
+        if (matchAnchorLine(line, anchor)) {
+            var li: usize = 0;
+            while (li < line.len and (line[li] == ' ' or line[li] == '\t')) : (li += 1) {}
+            const indent = line[0..li];
             var bit = std.mem.splitScalar(u8, block, '\n');
             while (bit.next()) |bl| {
                 if (bl.len == 0) continue;
-                try out.appendSlice(arena, prefix);
+                try out.appendSlice(arena, indent);
                 try out.appendSlice(arena, bl);
                 try out.append(arena, '\n');
             }
@@ -295,28 +307,29 @@ test "fillState and appendBlock" {
     try std.testing.expectEqualStrings("a: 1\nproxy-groups:\n  - name: PROXY\n    type: select\n", out);
 }
 
-test "fillNestedLists" {
+test "expandAnchor" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
 
-    const tpl = "proxies: []\nproxy-groups:\n  - name: PROXY\n    type: select\n    proxies: []\n  - name: AUTO\n    proxies:\n      - DIRECT\n";
-    const out = try fillNestedLists(a, tpl, "proxies", "- n1\n- n2\n");
+    const tpl = "proxy-groups:\n  - name: PROXY\n    type: select\n    proxies:\n      - AUTO\n      - __NODES__\n  - name: AUTO\n    proxies:\n      - __NODES__\n      - DIRECT\n";
+    const out = try expandAnchor(a, tpl, nodes_anchor, "- n1\n- n2\n");
     try std.testing.expectEqualStrings(
-        "proxies: []\nproxy-groups:\n  - name: PROXY\n    type: select\n    proxies:\n      - n1\n      - n2\n  - name: AUTO\n    proxies:\n      - DIRECT\n",
+        "proxy-groups:\n  - name: PROXY\n    type: select\n    proxies:\n      - AUTO\n      - n1\n      - n2\n  - name: AUTO\n    proxies:\n      - n1\n      - n2\n      - DIRECT\n",
         out,
     );
-    // top-level proxies untouched, nested non-empty kept
-    try std.testing.expect(std.mem.indexOf(u8, out, "proxies: []") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "- DIRECT") != null);
+    // no anchor: unchanged
+    const plain = try expandAnchor(a, "a: 1\n- x\n", nodes_anchor, "- n1\n");
+    try std.testing.expectEqualStrings("a: 1\n- x\n", plain);
 }
 
 test "compile-check" {
     _ = &fillList;
-    _ = &fillNestedLists;
+    _ = &expandAnchor;
     _ = &appendBlock;
     _ = &detectIndent;
     _ = &fillState;
     _ = &matchFillLine;
     _ = &matchKeyLine;
+    _ = &matchAnchorLine;
 }
