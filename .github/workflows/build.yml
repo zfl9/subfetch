@@ -7,43 +7,6 @@ on:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # x86_64: x86-64 baseline (SSE2), compatible with every x86_64 CPU
-          - target: x86_64-linux-musl
-            cpu: x86_64
-          # aarch64: generic == ARMv8.0+neon, compatible with every ARMv8 CPU
-          - target: aarch64-linux-musl
-            cpu: generic
-          # arm: soft-float + ARMv6 (RPi 1 onward, incl. no-VFP chips); zig's arm baseline is
-          # v7 so generic+v6 is required; ARMv5 cannot link (no byte-atomic instructions)
-          - target: arm-linux-musleabi
-            cpu: generic+v6
-          # riscv64: baseline_rv64 = rv64imafdc; pinned explicitly (riscv 'generic' is broken,
-          # 'baseline' keyword is a moving target across zig versions)
-          - target: riscv64-linux-musl
-            cpu: baseline_rv64
-          # mipsel: MIPS32 rel1 + soft-float (widest legacy coverage: r1 chips, no-FPU SoCs;
-          # r2 chips like 24kc run r1 code fine)
-          - target: mipsel-linux-musleabi
-            cpu: mips32+soft_float
-          # mips: big-endian MIPS32 rel1 + soft-float (legacy BE routers, e.g. BCM47xx)
-          - target: mips-linux-musleabi
-            cpu: mips32+soft_float
-          # mips64el: little-endian MIPS64 rel1 (n64 ABI). hard-float only: zig 0.15.2
-          # forces -mdouble-float for mips64 (no soft-float support); MIPS64 hardware
-          # (Cavium Octeon class) always has an FPU, so this is safe
-          - target: mips64el-linux-muslabi64
-            cpu: mips64
-          # mips64: big-endian MIPS64 rel1 (n64 ABI), hard-float (see mips64el note)
-          - target: mips64-linux-muslabi64
-            cpu: mips64
-          # loongarch64: baseline = loongarch64 (64-bit + double-float, lp64d ABI).
-          # Loongson 3A (only personal LoongArch hardware) always has an FPU, hard-float is safe
-          - target: loongarch64-linux-musl
-            cpu: loongarch64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -53,47 +16,27 @@ jobs:
           tar xJf zig-x86_64-linux-0.15.2.tar.xz
           echo "$PWD/zig-x86_64-linux-0.15.2" >> "$GITHUB_PATH"
           "$PWD/zig-x86_64-linux-0.15.2/zig" version  # GITHUB_PATH only applies to later steps; use the full path here
-      - name: Build
-        run: zig build -Drelease=true -Dtarget=${{ matrix.target }} -Dcpu=${{ matrix.cpu }}
-      - name: Test
-        # only the native-arch target can run unit tests (musl static binary runs on ubuntu)
-        if: matrix.target == 'x86_64-linux-musl'
-        run: zig build test --summary all
-      - name: Smoke test (qemu)
-        # the 8 cross targets run for real under qemu-user: full fixtures smoke test (8 subscriptions + render + verify);
-        # the x86_64 native target already ran unit tests in the Test step above
-        if: matrix.target != 'x86_64-linux-musl'
+      - name: Install qemu-user-static (cross-target tests)
         run: |
           echo "::group::Install qemu-user-static"
           sudo apt-get update -qq
           sudo apt-get install -qq qemu-user-static
           echo "::endgroup::"
-          case "${{ matrix.target }}" in
-            aarch64*)    QEMU=qemu-aarch64-static    QEMU_CPU=cortex-a57 ;;
-            arm*)        QEMU=qemu-arm-static        QEMU_CPU=arm1136 ;;
-            riscv64*)    QEMU=qemu-riscv64-static    QEMU_CPU=thead-c906 ;;
-            mipsel*)     QEMU=qemu-mipsel-static     QEMU_CPU=4Kc ;;
-            mips64el*)   QEMU=qemu-mips64el-static   QEMU_CPU=5Kf ;;
-            mips64*)     QEMU=qemu-mips64-static     QEMU_CPU=5Kf ;;
-            mips*)       QEMU=qemu-mips-static       QEMU_CPU=4Kc ;;
-            loongarch64*) QEMU=qemu-loongarch64-static QEMU_CPU=la464 ;;
-          esac
-          $QEMU -cpu $QEMU_CPU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out clash --dry-run | grep -E "OK:|done" | tail -9
-          $QEMU -cpu $QEMU_CPU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out singbox --dry-run | grep "done"
-          $QEMU -cpu $QEMU_CPU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out xray --dry-run | grep "dry-run verify passed" || true
+      - name: Build all release targets
+        run: zig build release
+      - name: Test all release targets (unit tests + fixtures smoke, qemu for cross)
+        run: zig build release-test
       - name: Package
         run: |
           mkdir -p dist
-          for f in zig-out/bin/subfetch*; do
+          for f in zig-out/bin/subfetch-*; do
             base=$(basename "$f")
-            name="subfetch-${{ matrix.target }}"
-            if [[ "$base" == *.exe ]]; then name="$name.exe"; fi
-            cp "$f" "dist/$name"
+            cp "$f" "dist/$base"
           done
           ls -la dist/
       - uses: actions/upload-artifact@v7
         with:
-          name: subfetch-${{ matrix.target }}
+          name: subfetch-all
           path: dist/
 
   release:
