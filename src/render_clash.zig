@@ -485,7 +485,7 @@ test "clash anchor edge cases" {
     try std.testing.expect(std.mem.indexOf(u8, yaml, "__NODES__") == null);
     try std.testing.expect(std.mem.indexOf(u8, yaml, "- AUTO\n      - HK-01-CM") != null);
     try std.testing.expect(std.mem.indexOf(u8, yaml, "- name: 香港\n    type: select\n    proxies:\n      - AUTO") != null);
-    // re-parse with libyaml: PROXY group proxies = AUTO + 4 nodes + 香港 group = AUTO
+    // re-parse with libyaml: PROXY group proxies = AUTO + 4 nodes + HK group = AUTO
     const ymod = @import("yaml.zig");
     const root = try ymod.parse(a, yaml);
     const m = ymod.mappingOf(root).?;

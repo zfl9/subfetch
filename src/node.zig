@@ -231,17 +231,19 @@ fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
-/// airport notice (info) node detection: names like "到期2026-12-21 剩余流量279.95G".
-/// strong keywords only, so real node names (e.g. "不限流量-香港") are never caught.
-pub fn isInfoNodeName(name: []const u8) bool {
-    // "剩余" (not just "剩余流量") covers "剩余流量：100 GB" and "距离下次重置剩余：21 天";
-    // real node names (香港1-电信优化 etc.) never contain it
-    const zh = [_][]const u8{ "到期", "剩余", "有效期", "套餐", "官网" };
-    for (zh) |kw| {
-        if (std.mem.indexOf(u8, name, kw) != null) return true;
-    }
-    const en = [_][]const u8{ "expire", "traffic", "usage", "plan" };
-    for (en) |kw| {
+/// default info-node keywords (airport notice pseudo-nodes). strong words only:
+/// real node names (e.g. "unlimited traffic - HK" style) are never caught.
+/// override per-subscription-list via the `info_keywords` zon field.
+pub const default_info_keywords = [_][]const u8{
+    "到期", "剩余", "有效期", "套餐", "官网", // zh: expiry/remain/validity/plan/website
+    "expire", "traffic", "usage", "plan", // en (case-insensitive)
+};
+
+/// airport notice (info) node detection: name contains any keyword.
+/// the broad "remain" keyword (instead of only "remain-traffic") also catches
+/// variants like "days until next reset remain: 21".
+pub fn isInfoNodeName(name: []const u8, keywords: []const []const u8) bool {
+    for (keywords) |kw| {
         if (containsIgnoreCase(name, kw)) return true;
     }
     return false;
@@ -292,20 +294,20 @@ test "node name accessor" {
 
 test "isInfoNodeName" {
     // airport notice pseudo-nodes
-    try std.testing.expect(isInfoNodeName("到期2026-12-21 剩余流量279.95G"));
-    try std.testing.expect(isInfoNodeName("剩余流量：100GB"));
-    try std.testing.expect(isInfoNodeName("有效期至2027-01-01"));
-    try std.testing.expect(isInfoNodeName("套餐信息 官网：example.com"));
-    try std.testing.expect(isInfoNodeName("Expire: 2026-12-21"));
-    try std.testing.expect(isInfoNodeName("Traffic Used: 20GB"));
-    try std.testing.expect(isInfoNodeName("USAGE: 50%"));
-    try std.testing.expect(isInfoNodeName("My Plan Info"));
+    try std.testing.expect(isInfoNodeName("到期2026-12-21 剩余流量279.95G", &default_info_keywords));
+    try std.testing.expect(isInfoNodeName("剩余流量：100GB", &default_info_keywords));
+    try std.testing.expect(isInfoNodeName("有效期至2027-01-01", &default_info_keywords));
+    try std.testing.expect(isInfoNodeName("套餐信息 官网：example.com", &default_info_keywords));
+    try std.testing.expect(isInfoNodeName("Expire: 2026-12-21", &default_info_keywords));
+    try std.testing.expect(isInfoNodeName("Traffic Used: 20GB", &default_info_keywords));
+    try std.testing.expect(isInfoNodeName("USAGE: 50%", &default_info_keywords));
+    try std.testing.expect(isInfoNodeName("My Plan Info", &default_info_keywords));
     // real node names must NOT match (no false positives)
-    try std.testing.expect(!isInfoNodeName("香港1-电信优化"));
-    try std.testing.expect(!isInfoNodeName("不限流量-香港")); // bare 流量 alone must not match
-    try std.testing.expect(!isInfoNodeName("新加坡1-BGP优化"));
-    try std.testing.expect(!isInfoNodeName("日本4"));
-    try std.testing.expect(!isInfoNodeName("HK-01-optimized"));
+    try std.testing.expect(!isInfoNodeName("香港1-电信优化", &default_info_keywords));
+    try std.testing.expect(!isInfoNodeName("不限流量-香港", &default_info_keywords)); // bare 流量 alone must not match
+    try std.testing.expect(!isInfoNodeName("新加坡1-BGP优化", &default_info_keywords));
+    try std.testing.expect(!isInfoNodeName("日本4", &default_info_keywords));
+    try std.testing.expect(!isInfoNodeName("HK-01-optimized", &default_info_keywords));
 }
 
 test "compile-check" {

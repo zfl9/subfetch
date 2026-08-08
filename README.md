@@ -64,6 +64,17 @@ subfetch --config subscriptions.zon -o clash=- -o singbox=/etc/sing-box/config.j
 
 `url` 支持 `https://`、`http://`、`file://`、本地文件路径。节点名格式：`订阅名@节点名`（分隔符可用 `--sep` 修改）。
 
+## 信息节点过滤
+
+机场订阅常含"通知伪节点"（如 `到期2026-12-21 剩余流量279.95G`）——默认按强关键词自动过滤（`到期`/`剩余`/`有效期`/`套餐`/`官网` + `expire`/`traffic`/`usage`/`plan`），日志计数 `N info`，`-v` 列出被滤节点。可用 `info_keywords` 覆盖（空数组 = 不过滤）：
+
+```zig
+.{
+    .info_keywords = .{ "到期", "剩余流量" },  // 自定义关键词（覆盖默认）
+    .subscriptions = .{ ... },
+}
+```
+
 ## 模板（clash / singbox）
 
 `-o clash:模板路径=输出` 或 `-o singbox:模板路径=输出` 使用自定义模板——模板是合法配置文件，节点部分用**单行空列表**占位，subfetch 填充：

@@ -21,7 +21,7 @@ pub const ParseError = error{
 pub const ParseResult = struct {
     nodes: []const node.Node,
     skipped: usize,
-    /// info (notice) nodes filtered out: airport pseudo-nodes like "到期... 剩余流量..."
+    /// info (notice) nodes filtered out: airport pseudo-nodes (expiry/remain-traffic notices)
     info: usize,
     /// names of the filtered info nodes (for verbose display)
     info_names: []const []const u8,
@@ -33,6 +33,7 @@ pub fn parseSubscription(
     sub_name: []const u8,
     text: []const u8,
     sep: []const u8,
+    keywords: []const []const u8,
 ) ParseError!ParseResult {
     const s = sniff.sniff(arena, text) catch |e| return switch (e) {
         error.OutOfMemory => error.OutOfMemory,
@@ -50,7 +51,7 @@ pub fn parseSubscription(
                     skipped += 1;
                     continue;
                 };
-                if (try filterInfoNode(arena, n, sub_name, sep, &info, &info_names)) continue;
+                if (try filterInfoNode(arena, n, sub_name, sep, keywords, &info, &info_names)) continue;
                 nodes.append(arena, n) catch return error.OutOfMemory;
             }
         },
@@ -63,7 +64,7 @@ pub fn parseSubscription(
                                 skipped += 1;
                                 continue;
                             };
-                            if (try filterInfoNode(arena, n, sub_name, sep, &info, &info_names)) continue;
+                            if (try filterInfoNode(arena, n, sub_name, sep, keywords, &info, &info_names)) continue;
                             nodes.append(arena, n) catch return error.OutOfMemory;
                         },
                         .object => |obj| {
@@ -71,7 +72,7 @@ pub fn parseSubscription(
                                 skipped += 1;
                                 continue;
                             };
-                            if (try filterInfoNode(arena, n, sub_name, sep, &info, &info_names)) continue;
+                            if (try filterInfoNode(arena, n, sub_name, sep, keywords, &info, &info_names)) continue;
                             nodes.append(arena, n) catch return error.OutOfMemory;
                         },
                         else => skipped += 1,
@@ -96,7 +97,7 @@ pub fn parseSubscription(
                     skipped += 1;
                     continue;
                 };
-                if (try filterInfoNode(arena, n, sub_name, sep, &info, &info_names)) continue;
+                if (try filterInfoNode(arena, n, sub_name, sep, keywords, &info, &info_names)) continue;
                 nodes.append(arena, n) catch return error.OutOfMemory;
             }
         },
@@ -109,20 +110,21 @@ pub fn parseSubscription(
     };
 }
 
-/// filter airport notice nodes (info pseudo-nodes like "到期2026-12-21 剩余流量279.95G").
+/// filter airport notice nodes (info pseudo-nodes like "expiry 2026-12-21, remain traffic 279.95G").
 /// returns true when the node is an info node (already counted); caller skips it.
 fn filterInfoNode(
     arena: std.mem.Allocator,
     n: node.Node,
     sub_name: []const u8,
     sep: []const u8,
+    keywords: []const []const u8,
     info: *usize,
     info_names: *std.ArrayListUnmanaged([]const u8),
 ) ParseError!bool {
     // judge on the raw name (strip the "sub@sep" prefix so subscription names cannot match)
     const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ sub_name, sep });
     const raw = if (std.mem.startsWith(u8, n.name(), prefix)) n.name()[prefix.len..] else n.name();
-    if (!node.isInfoNodeName(raw)) return false;
+    if (!node.isInfoNodeName(raw, keywords)) return false;
     info.* += 1;
     try info_names.append(arena, n.name());
     return true;
@@ -390,7 +392,7 @@ test "parse base64 subscription" {
     const plain = "trojan://pass@hk1.example.com:443?sni=hk1.example.com#HK-01\ntrojan://pass@us1.example.com:443?sni=us1.example.com#US-01";
     const enc_buf = try a.alloc(u8, std.base64.standard.Encoder.calcSize(plain.len));
     _ = std.base64.standard.Encoder.encode(enc_buf, plain);
-    const r = try parseSubscription(a, "airport-a", enc_buf, "@");
+    const r = try parseSubscription(a, "airport-a", enc_buf, "@", &node.default_info_keywords);
     try std.testing.expectEqual(@as(usize, 2), r.nodes.len);
     try std.testing.expectEqualStrings("airport-a@HK-01", r.nodes[0].name());
 }
@@ -410,7 +412,7 @@ test "parse clash yaml subscription" {
         \\    server: 1.2.3.4
         \\    port: 1080
     ;
-    const r = try parseSubscription(arena.allocator(), "airport-b", text, "@");
+    const r = try parseSubscription(arena.allocator(), "airport-b", text, "@", &node.default_info_keywords);
     try std.testing.expectEqual(@as(usize, 1), r.nodes.len);
     try std.testing.expectEqual(@as(usize, 1), r.skipped);
     try std.testing.expectEqualStrings("airport-b@TW-01", r.nodes[0].name());
@@ -421,7 +423,7 @@ test "parse v2rayn json" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const text = "[{\"ps\":\"TW-01\",\"add\":\"tw2.example.com\",\"port\":\"443\",\"id\":\"11111111-2222-3333-4444-555555555555\",\"aid\":\"0\",\"net\":\"tcp\",\"type\":\"none\",\"host\":\"\",\"path\":\"\",\"tls\":\"tls\",\"sni\":\"tw2.example.com\"}]";
-    const r = try parseSubscription(arena.allocator(), "airport-c", text, "@");
+    const r = try parseSubscription(arena.allocator(), "airport-c", text, "@", &node.default_info_keywords);
     try std.testing.expectEqual(@as(usize, 1), r.nodes.len);
     try std.testing.expectEqualStrings("airport-c@TW-01", r.nodes[0].name());
     try std.testing.expectEqualStrings("tw2.example.com", r.nodes[0].vmess.server);
@@ -445,7 +447,7 @@ test "parse clash yaml alpn list" {
         \\      - h2
         \\      - http/1.1
     ;
-    const r = try parseSubscription(arena.allocator(), "airport-d", text, "@");
+    const r = try parseSubscription(arena.allocator(), "airport-d", text, "@", &node.default_info_keywords);
     try std.testing.expectEqual(@as(usize, 1), r.nodes.len);
     const alpn = r.nodes[0].vless.alpn.?;
     try std.testing.expectEqual(@as(usize, 2), alpn.len);
@@ -456,7 +458,7 @@ test "parse clash yaml alpn list" {
 test "parse errors propagate" {
     try std.testing.expectError(
         error.SniffError,
-        parseSubscription(std.testing.allocator, "airport-a", "<html>error</html>", "@"),
+        parseSubscription(std.testing.allocator, "airport-a", "<html>error</html>", "@", &node.default_info_keywords),
     );
 }
 
@@ -465,7 +467,7 @@ test "parse filters info nodes" {
     defer arena.deinit();
     const a = arena.allocator();
     const text = "trojan://pass@hk1.example.com:443?sni=hk1.example.com#香港1-电信优化\ntrojan://pass@hk2.example.com:443?sni=hk2.example.com#到期2026-12-21 剩余流量279.95G\ntrojan://pass@jp1.example.com:443?sni=jp1.example.com#日本1-电信优化\n";
-    const r = try parseSubscription(a, "sub", text, "@");
+    const r = try parseSubscription(a, "sub", text, "@", &node.default_info_keywords);
     try std.testing.expectEqual(@as(usize, 2), r.nodes.len);
     try std.testing.expectEqual(@as(usize, 1), r.info);
     try std.testing.expectEqual(@as(usize, 1), r.info_names.len);
@@ -473,7 +475,7 @@ test "parse filters info nodes" {
     try std.testing.expectEqualStrings("sub@香港1-电信优化", r.nodes[0].name());
     try std.testing.expectEqualStrings("sub@日本1-电信优化", r.nodes[1].name());
     // no info nodes: info == 0
-    const r2 = try parseSubscription(a, "sub", "trojan://pass@hk1.example.com:443#香港1\n", "@");
+    const r2 = try parseSubscription(a, "sub", "trojan://pass@hk1.example.com:443#香港1\n", "@", &node.default_info_keywords);
     try std.testing.expectEqual(@as(usize, 1), r2.nodes.len);
     try std.testing.expectEqual(@as(usize, 0), r2.info);
 }
