@@ -69,18 +69,18 @@ jobs:
           sudo apt-get install -qq qemu-user-static
           echo "::endgroup::"
           case "${{ matrix.target }}" in
-            aarch64*) QEMU=qemu-aarch64-static ;;
-            arm*)     QEMU=qemu-arm-static     ;;
-            riscv64*) QEMU=qemu-riscv64-static ;;
-            mipsel*)  QEMU=qemu-mipsel-static  ;;
-            mips64el*) QEMU=qemu-mips64el-static ;;
-            mips64*)  QEMU=qemu-mips64-static  ;;
-            mips*)    QEMU=qemu-mips-static    ;;
-            loongarch64*) QEMU=qemu-loongarch64-static ;;
+            aarch64*)    QEMU=qemu-aarch64-static    QEMU_CPU=cortex-a57 ;;
+            arm*)        QEMU=qemu-arm-static        QEMU_CPU=arm1176 ;;
+            riscv64*)    QEMU=qemu-riscv64-static    QEMU_CPU=thead-c906 ;;
+            mipsel*)     QEMU=qemu-mipsel-static     QEMU_CPU=4Kc ;;
+            mips64el*)   QEMU=qemu-mips64el-static   QEMU_CPU=5Kf ;;
+            mips64*)     QEMU=qemu-mips64-static     QEMU_CPU=5Kf ;;
+            mips*)       QEMU=qemu-mips-static       QEMU_CPU=4Kc ;;
+            loongarch64*) QEMU=qemu-loongarch64-static QEMU_CPU=la464 ;;
           esac
-          $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out clash --dry-run | grep -E "OK:|done" | tail -9
-          $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out singbox --dry-run | grep "done"
-          $QEMU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out xray --dry-run | grep "dry-run verify passed" || true
+          $QEMU -cpu $QEMU_CPU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out clash --dry-run | grep -E "OK:|done" | tail -9
+          $QEMU -cpu $QEMU_CPU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out singbox --dry-run | grep "done"
+          $QEMU -cpu $QEMU_CPU zig-out/bin/subfetch --config fixtures/subscriptions.zon --out xray --dry-run | grep "dry-run verify passed" || true
       - name: Package
         run: |
           mkdir -p dist
