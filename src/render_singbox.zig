@@ -7,7 +7,7 @@ const JsonValue = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
 
 /// render sing-box config.json (outbounds + selector + clash_api)
-pub fn renderSingbox(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const u8 {
+pub fn renderSingbox(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
     var root = ObjectMap.init(arena);
 
     // log
@@ -83,7 +83,10 @@ pub fn renderSingbox(arena: std.mem.Allocator, nodes: []const node.Node, opts: O
     var out: std.ArrayListUnmanaged(u8) = .empty;
     try @import("render.zig").writeJsonValue(out.writer(arena), .{ .object = root });
     try out.append(arena, '\n');
-    return out.toOwnedSlice(arena);
+    const text = try out.toOwnedSlice(arena);
+    const file = try arena.alloc(render.File, 1);
+    file[0] = .{ .path = "config.json", .content = text };
+    return file;
 }
 
 /// node -> sing-box outbound; unsupported protocols return null (caller counts skips)
@@ -366,7 +369,7 @@ test "render singbox json structure" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const text = try renderSingbox(a, &test_nodes, .{ .secret = "sec" });
+    const text = (try renderSingbox(a, &test_nodes, .{ .secret = "sec" }))[0].content;
 
     // re-parse JSON to validate
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, text, .{});

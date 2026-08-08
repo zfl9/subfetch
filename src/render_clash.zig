@@ -6,7 +6,7 @@ const Options = render.Options;
 const Writer = std.Io.Writer;
 
 /// render mihomo/clash config.yaml (hand-written emitter, fixed structure)
-pub fn renderClash(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const u8 {
+pub fn renderClash(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
     var list: std.ArrayListUnmanaged(u8) = .empty;
     const w = list.writer(arena);
 
@@ -44,10 +44,12 @@ pub fn renderClash(arena: std.mem.Allocator, nodes: []const node.Node, opts: Opt
         try w.print("\n", .{});
     }
 
-    // rules: no splitting, single MATCH
     try w.print("rules:\n- MATCH,PROXY\n", .{});
 
-    return list.toOwnedSlice(arena);
+    const text = try list.toOwnedSlice(arena);
+    const file = try arena.alloc(render.File, 1);
+    file[0] = .{ .path = "config.yaml", .content = text };
+    return file;
 }
 
 fn collectNames(arena: std.mem.Allocator, nodes: []const node.Node) ![]const []const u8 {
@@ -327,10 +329,11 @@ test "render clash config structure" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const yaml = try renderClash(arena.allocator(), &test_nodes, .{ .secret = "test-secret" });
+    const yaml_text = yaml[0].content;
 
     // re-parse with libyaml to validate structure
     const ymod = @import("yaml.zig");
-    const root = try ymod.parse(arena.allocator(), yaml);
+    const root = try ymod.parse(arena.allocator(), yaml_text);
     const m = ymod.mappingOf(root).?;
     try std.testing.expectEqualStrings("65500", ymod.mappingGetScalar(m, "mixed-port").?);
     try std.testing.expectEqualStrings("test-secret", ymod.mappingGetScalar(m, "secret").?);

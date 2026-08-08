@@ -34,12 +34,15 @@ zig build test                          # 单元测试（84 个）
 cp subscriptions.example.zon subscriptions.zon
 vim subscriptions.zon
 
-# 2. 预览（dry-run：打印配置并校验，不写文件）
-subfetch --config subscriptions.zon --output-format clash --dry-run
+# 2. 预览（dry-run：校验但不写文件；想看内容用 -o clash=- 输出到 stdout）
+subfetch --config subscriptions.zon -o clash --dry-run
 
-# 3. 安装并重载
-subfetch --config subscriptions.zon --output-format clash \
-    -o /etc/clash/config.yaml --reload-cmd "systemctl restart clash"
+# 3. 安装并重载（正式运行必须给输出路径）
+subfetch --config subscriptions.zon -o clash=/etc/clash/config.yaml \
+    --reload-cmd "systemctl restart clash"
+
+# 多目标：clash 到 stdout + singbox 落盘（一次运行）
+subfetch --config subscriptions.zon -o clash=- -o singbox=/etc/sing-box/config.json
 ```
 
 ## 配置（subscriptions.example.zon → subscriptions.zon）
@@ -63,9 +66,9 @@ subfetch --config subscriptions.zon --output-format clash \
 
 ## 输出格式
 
-| `--output-format` | 说明 | 校验 |
+| `-o` 格式 | 说明 | 校验 |
 |---|---|---|
-| `clash` | mihomo / clash 聚合配置（默认） | `mihomo -t` |
+| `clash` | mihomo / clash 聚合配置 | `mihomo -t` |
 | `singbox` | sing-box 聚合配置（clash_api 可选） | `sing-box check` |
 | `trojan` | trojan-go 每节点一个配置 | JSON 语法 |
 | `hysteria` | hysteria 1.x 每节点一个配置 | JSON 语法 |
@@ -73,7 +76,7 @@ subfetch --config subscriptions.zon --output-format clash \
 | `xray` | xray-core 每节点一个配置（vless） | `xray -test -c` |
 | `ss` | shadowsocks-libev/rust 每节点一个配置 | JSON 语法 |
 | `ssr` | shadowsocksr-libev 每节点一个配置 | JSON 语法 |
-| `raw` | 节点 JSON 列表（脚本消费） | — |
+| `raw` | 节点 JSON 列表（脚本消费；无 `-o` 时的默认格式） | — |
 
 原生格式（多文件）输出：**每节点一个配置文件**（文件名即节点名，如 `香港1.json`），当前激活节点由你自己的服务脚本管理。
 
@@ -83,11 +86,13 @@ subfetch --config subscriptions.zon --output-format clash \
 
 ```
 -c, --config <path>    订阅列表 zon（默认 ./subscriptions.zon）
-    --out <fmt>        输出格式: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw
--o, --output <path>    输出文件（clash/singbox/raw）或输出目录（原生格式）
+-o, --out <fmt>[:<tmpl>][=<path>]  输出目标（可多次；缺省默认 raw）
+                        fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw
+                        tmpl: 模板文件（clash/singbox，可选）
+                        path: 输出文件（单文件格式）或目录（原生格式）；'-' = stdout
     --node <uri>       直接粘贴节点 URI（可多次）
     --node-file <path> 节点列表文件（每行一个 URI）
-    --dry-run          只打印生成内容，不写文件
+    --dry-run          只校验不写文件（path 可省略；正式运行 path 必填）
     --ua <str>         默认 User-Agent
     --sep <str>        节点名前缀分隔符（默认 @）
     --timeout <sec>    单订阅拉取超时秒数

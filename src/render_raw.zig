@@ -1,11 +1,12 @@
 const std = @import("std");
 const node = @import("node.zig");
+const render = @import("render.zig");
 
 const JsonValue = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
 
 /// render raw format: node JSON list (for other tools/scripts)
-pub fn renderRaw(arena: std.mem.Allocator, nodes: []const node.Node) ![]const u8 {
+pub fn renderRaw(arena: std.mem.Allocator, nodes: []const node.Node) ![]const render.File {
     var arr = std.json.Array.init(arena);
     for (nodes) |n| {
         try arr.append(try nodeToJson(arena, n));
@@ -13,7 +14,10 @@ pub fn renderRaw(arena: std.mem.Allocator, nodes: []const node.Node) ![]const u8
     var out: std.ArrayListUnmanaged(u8) = .empty;
     try @import("render.zig").writeJsonValue(out.writer(arena), .{ .array = arr });
     try out.append(arena, '\n');
-    return out.toOwnedSlice(arena);
+    const text = try out.toOwnedSlice(arena);
+    const file = try arena.alloc(render.File, 1);
+    file[0] = .{ .path = "nodes.json", .content = text };
+    return file;
 }
 
 /// field names follow mihomo/clash YAML naming (mihomo covers all 8 protocols; no native fallback needed).
@@ -226,7 +230,7 @@ test "render raw" {
             .password = "ss-pass",
         } },
     };
-    const text = try renderRaw(a, &nodes);
+    const text = (try renderRaw(a, &nodes))[0].content;
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, text, .{});
     try std.testing.expectEqual(@as(usize, 2), v.array.items.len);
     const t = v.array.items[0].object;
@@ -274,7 +278,7 @@ test "raw full fields (vless reality + ws/grpc + alpn + plugin)" {
             .plugin = .{ .shadow_tls = .{ .host = "www.bing.com", .password = "st", .version = 3 } },
         } },
     };
-    const text = try renderRaw(a, &nodes);
+    const text = (try renderRaw(a, &nodes))[0].content;
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, text, .{});
     const arr = v.array.items;
 

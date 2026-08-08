@@ -47,36 +47,43 @@ pub const Options = struct {
     enable_clash_api: bool = true,
 };
 
-/// render result
-pub const Output = union(enum) {
-    /// single-file text (clash / singbox / raw)
-    single: []const u8,
-    /// multi-file (native formats: one json per node + current.json)
-    files: []const File,
-};
-
 pub const File = struct {
     path: []const u8,
     content: []const u8,
 };
 
-/// render all nodes for the given format. strings are allocated from the arena.
+/// renderer: one per output format. render() returns all output files
+/// (single-file formats return a one-element slice).
+pub const Renderer = struct {
+    name: Format,
+    /// node protocols this format accepts (filter basis; stage 4)
+    supported: []const node.Type,
+    /// render nodes to output files (allocated from arena)
+    render: *const fn (
+        arena: std.mem.Allocator,
+        nodes: []const Node,
+        opts: Options,
+    ) anyerror![]const File,
+};
+
+/// render all nodes for the given format. returns output files
+/// (single-file formats: one element; native formats: one file per node).
 pub fn render(
     arena: std.mem.Allocator,
     fmt: Format,
     nodes: []const Node,
     opts: Options,
-) !Output {
+) ![]const File {
     return switch (fmt) {
-        .clash => .{ .single = try @import("render_clash.zig").renderClash(arena, nodes, opts) },
-        .singbox => .{ .single = try @import("render_singbox.zig").renderSingbox(arena, nodes, opts) },
-        .trojan => .{ .files = try @import("render_native.zig").renderTrojan(arena, nodes, opts) },
-        .hysteria => .{ .files = try @import("render_native.zig").renderHysteria(arena, nodes, opts) },
-        .hysteria2 => .{ .files = try @import("render_native.zig").renderHysteria2(arena, nodes, opts) },
-        .xray => .{ .files = try @import("render_native.zig").renderXray(arena, nodes, opts) },
-        .ss => .{ .files = try @import("render_native.zig").renderSs(arena, nodes, opts) },
-        .ssr => .{ .files = try @import("render_native.zig").renderSsr(arena, nodes, opts) },
-        .raw => .{ .single = try @import("render_raw.zig").renderRaw(arena, nodes) },
+        .clash => @import("render_clash.zig").renderClash(arena, nodes, opts),
+        .singbox => @import("render_singbox.zig").renderSingbox(arena, nodes, opts),
+        .trojan => @import("render_native.zig").renderTrojan(arena, nodes, opts),
+        .hysteria => @import("render_native.zig").renderHysteria(arena, nodes, opts),
+        .hysteria2 => @import("render_native.zig").renderHysteria2(arena, nodes, opts),
+        .xray => @import("render_native.zig").renderXray(arena, nodes, opts),
+        .ss => @import("render_native.zig").renderSs(arena, nodes, opts),
+        .ssr => @import("render_native.zig").renderSsr(arena, nodes, opts),
+        .raw => @import("render_raw.zig").renderRaw(arena, nodes),
     };
 }
 

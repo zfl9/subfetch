@@ -9,16 +9,24 @@ const deploy_mod = @import("deploy.zig");
 
 const version = "0.1.0";
 
+/// one -o/--out target: format[:template][=path]
+const Out = struct {
+    fmt: render_mod.Format,
+    /// user template path (stage 3)
+    template: ?[]const u8 = null,
+    /// output path; null = dry-run only (error in real mode); "-" = stdout
+    path: ?[]const u8 = null,
+};
+
 const Options = struct {
     config: []const u8 = "subscriptions.zon",
-    out_fmt: []const u8 = "clash",
-    output: ?[]const u8 = null,
+    outs: std.ArrayListUnmanaged(Out) = .empty,
     dry_run: bool = false,
     ua: ?[]const u8 = null,
     /// node name separator between subscription name and node name (ASCII-friendly for filenames)
     sep: []const u8 = "@",
     timeout: ?u32 = null,
-    /// 0=normal, 1=-v (bytes + node list), 2=-vv (also dump generated config in dry-run)
+    /// 0=normal, 1=-v (bytes + node list)
     verbose: u8 = 0,
     nodes: std.ArrayListUnmanaged([]const u8) = .empty,
     node_files: std.ArrayListUnmanaged([]const u8) = .empty,
@@ -50,11 +58,13 @@ pub fn main() !void {
         std.process.exit(2);
     };
 
-    // validate output format
-    const fmt = render_mod.Format.parse(opts.out_fmt) orelse {
-        logErr(null, "unknown output format: {s} (supported: clash/singbox/trojan/hysteria/hysteria2/xray/ss/ssr/raw)\n", .{opts.out_fmt});
-        std.process.exit(2);
-    };
+    // validate output formats (default: raw)
+    if (opts.outs.items.len == 0) {
+        try opts.outs.append(arena, .{ .fmt = .raw });
+    }
+    for (opts.outs.items) |o| {
+        _ = o.fmt;
+    }
 
     // read subscription list
     const cfg_text = std.fs.cwd().readFileAlloc(arena, opts.config, 1 << 20) catch |e| {
@@ -163,117 +173,51 @@ pub fn main() !void {
         .enable_clash_api = !opts.no_clash_api,
     };
 
-    const output = render_mod.render(arena, fmt, nodes, ropts) catch |e| {
-        logErr(null, "render failed: {s}", .{@errorName(e)});
-        std.process.exit(1);
+    // render all targets
+    const Rendered = struct {
+        out: Out,
+        files: []const render_mod.File,
     };
+    var rendered: std.ArrayListUnmanaged(Rendered) = .empty;
+    for (opts.outs.items) |o| {
+        const files = render_mod.render(arena, o.fmt, nodes, ropts) catch |e| {
+            logErr(null, "render {s} failed: {s}", .{ @tagName(o.fmt), @errorName(e) });
+            std.process.exit(1);
+        };
+        try rendered.append(arena, .{ .out = o, .files = files });
+    }
 
-    switch (output) {
-        .single => |text| {
-            if (opts.dry_run) {
-                // generated config content only in verbose mode; normal/quiet just show the log lines
-                if (opts.verbose > 1) outPrint("{s}", .{text});
-                try verifyDryRun(arena, fmt, text);
-            } else {
-                const path = opts.output orelse defaultSinglePath(fmt);
-                if (std.mem.eql(u8, path, "-")) {
-                    // raw output goes to stdout
-                    try std.fs.File.stdout().writeAll(text);
+    // dry-run: verify all; content only when path == "-"
+    if (opts.dry_run) {
+        for (rendered.items) |r| {
+            if (r.out.path) |p| {
+                if (std.mem.eql(u8, p, "-")) {
+                    for (r.files) |f| outPrint("{s}", .{f.content});
+                }
+            }
+            try verifyDryRunFiles(arena, r.out.fmt, r.files);
+        }
+    } else {
+        // real mode: verify all first (atomic), then install all
+        for (rendered.items) |r| {
+            if (r.out.path) |p| {
+                if (std.mem.eql(u8, p, "-")) continue; // stdout: nothing to install
+                verifyAll(arena, r.out.fmt, r.files, p, opts.no_verify);
+            }
+        }
+        for (rendered.items) |r| {
+            if (r.out.path) |p| {
+                if (std.mem.eql(u8, p, "-")) {
+                    // stdout output
+                    for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
                 } else {
-                    const vr = deploy_mod.installSingle(arena, fmt, path, text) catch |e| {
-                        logErr(null, "install {s} failed: {s} (old config untouched)", .{ path, @errorName(e) });
-                        std.process.exit(1);
-                    };
-                    switch (vr) {
-                        .ok => logInfo(null, "installed {s} (verify passed)", .{path}),
-                        .skipped => logInfo(null, "installed {s} (verify skipped: verifier not found)", .{path}),
-                        .failed => unreachable,
-                    }
-                    if (!opts.no_reload) {
-                        if (opts.reload_cmd) |cmd| {
-                            // custom reload command takes priority (acme.sh --reloadcmd style)
-                            switch (deploy_mod.reloadCustom(arena, cmd)) {
-                                .custom => logInfo(null, "custom reload command executed", .{}),
-                                else => logWarn(null, "custom reload command failed (exit != 0)", .{}),
-                            }
-                        } else {
-                            const rr = switch (fmt) {
-                                .clash => deploy_mod.reloadClash(arena, opts.controller, ropts.secret, path),
-                                .singbox => deploy_mod.reloadSingbox(arena, opts.controller, ropts.secret, path),
-                                else => deploy_mod.ReloadResult.skipped,
-                            };
-                            switch (rr) {
-                                .api => logInfo(null, "reloaded via API", .{}),
-                                .systemctl => logInfo(null, "restarted via systemctl", .{}),
-                                .custom => unreachable,
-                                .skipped => logInfo(null, "no auto-reload for this format; restart manually (or use --reload-cmd)", .{}),
-                                .failed => logWarn(null, "reload failed; restart manually", .{}),
-                            }
-                        }
-                    }
+                    installAll(arena, r.out.fmt, r.files, p, opts, ropts);
                 }
-            }
-        },
-        .files => |files| {
-            if (opts.dry_run) {
-                if (opts.verbose > 1) {
-                    for (files) |f| {
-                        outPrint("===== {s} =====\n{s}\n", .{ f.path, f.content });
-                    }
-                }
-                try verifyDryRunFiles(arena, fmt, files);
             } else {
-                const dir = opts.output orelse defaultDirPath(fmt);
-                std.fs.cwd().makePath(dir) catch |e| {
-                    logErr(null, "failed to create directory {s}: {s}", .{ dir, @errorName(e) });
-                    std.process.exit(1);
-                };
-                for (files) |f| {
-                    const path = std.fs.path.join(arena, &.{ dir, f.path }) catch {
-                        logErr(null, "path join failed", .{});
-                        std.process.exit(1);
-                    };
-                    if (opts.no_verify) {
-                        deploy_mod.atomicWrite(arena, path, f.content) catch |e| {
-                            logErr(null, "failed to write {s}: {s}", .{ path, @errorName(e) });
-                            std.process.exit(1);
-                        };
-                    } else {
-                        // write .new first, verify, then rename (existing config untouched on failure).
-                        // note: xray -test infers format from extension, tmp must end with .json
-                        const tmp = std.fmt.allocPrint(arena, "{s}.new.json", .{path}) catch {
-                            logErr(null, "out of memory", .{});
-                            std.process.exit(1);
-                        };
-                        deploy_mod.atomicWrite(arena, tmp, f.content) catch |e| {
-                            logErr(null, "failed to write {s}: {s}", .{ path, @errorName(e) });
-                            std.process.exit(1);
-                        };
-                        const vr = deploy_mod.verifyContent(arena, fmt, f.content, tmp);
-                        if (vr == .failed) {
-                            std.fs.cwd().deleteFile(tmp) catch {};
-                            logErr(null, "verify failed, aborting: {s}", .{path});
-                            std.process.exit(1);
-                        }
-                        std.fs.cwd().rename(tmp, path) catch |e| {
-                            logErr(null, "failed to write {s}: {s}", .{ path, @errorName(e) });
-                            std.process.exit(1);
-                        };
-                    }
-                }
-                logInfo(null, "wrote {d} files to {s}", .{ files.len, dir });
-                if (!opts.no_reload) {
-                    if (opts.reload_cmd) |cmd| {
-                        switch (deploy_mod.reloadCustom(arena, cmd)) {
-                            .custom => logInfo(null, "custom reload command executed", .{}),
-                            else => logWarn(null, "custom reload command failed (exit != 0)", .{}),
-                        }
-                    } else {
-                        logInfo(null, "no auto-reload for this format; restart manually (or use --reload-cmd)", .{});
-                    }
-                }
+                logErr(null, "output path required for {s} (use -o {s}=<path> or --dry-run)", .{ @tagName(r.out.fmt), @tagName(r.out.fmt) });
+                std.process.exit(1);
             }
-        },
+        }
     }
 
     var summary = try std.fmt.allocPrint(arena, "subscriptions {d}/{d} ok, {d} failed", .{
@@ -282,31 +226,21 @@ pub fn main() !void {
     if (disabled_cnt > 0) {
         summary = try std.fmt.allocPrint(arena, "{s}, {d} disabled", .{ summary, disabled_cnt });
     }
-    summary = try std.fmt.allocPrint(arena, "{s}, {d} nodes, format {s}", .{ summary, nodes.len, opts.out_fmt });
-    logInfo(null, "{s}", .{summary});
-    if (opts.secret == null and (fmt == .clash or fmt == .singbox) and !opts.dry_run and opts.verbose > 0) {
-        logVerbose(null, "api secret: {s}", .{secret});
+    summary = try std.fmt.allocPrint(arena, "{s}, {d} nodes", .{ summary, nodes.len });
+    if (opts.outs.items.len == 1) {
+        summary = try std.fmt.allocPrint(arena, "{s}, format {s}", .{ summary, @tagName(opts.outs.items[0].fmt) });
+    } else {
+        var fmts: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (opts.outs.items) |o| try fmts.append(arena, @tagName(o.fmt));
+        summary = try std.fmt.allocPrint(arena, "{s}, formats {s}", .{ summary, try std.mem.join(arena, ",", fmts.items) });
     }
-}
-
-fn verifyDryRun(arena: std.mem.Allocator, fmt: render_mod.Format, content: []const u8) !void {
-    const ext = switch (fmt) {
-        .clash => "yaml",
-        .singbox => "json",
-        .trojan, .hysteria, .xray, .ss, .ssr => "json",
-        .hysteria2 => "yaml",
-        .raw => "json",
-    };
-    const tmp = try std.fmt.allocPrint(arena, "/tmp/subfetch-dryrun.{s}", .{ext});
-    deploy_mod.atomicWrite(arena, tmp, content) catch return;
-    const vr = deploy_mod.verifyContent(arena, fmt, content, tmp);
-    switch (vr) {
-        .ok => logInfo(null, "dry-run verify passed", .{}),
-        .skipped => logInfo(null, "dry-run verify skipped (verifier not found)", .{}),
-        .failed => {
-            logErr(null, "dry-run verify failed! generated content may be invalid", .{});
-            std.process.exit(1);
-        },
+    logInfo(null, "{s}", .{summary});
+    if (opts.secret == null and opts.verbose > 0 and !opts.dry_run) {
+        var need_secret = false;
+        for (opts.outs.items) |o| {
+            if (o.fmt == .clash or o.fmt == .singbox) need_secret = true;
+        }
+        if (need_secret) logVerbose(null, "api secret: {s}", .{secret});
     }
 }
 
@@ -327,24 +261,174 @@ fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render_mod.Format, files: []
     logInfo(null, "dry-run verify passed ({d} files)", .{files.len});
 }
 
-fn defaultSinglePath(fmt: render_mod.Format) []const u8 {
-    return switch (fmt) {
-        .clash => "/etc/clash/config.yaml",
-        .singbox => "/etc/sing-box/config.json",
-        .raw => "-",
-        else => "-",
-    };
+/// Stage A: verify all files of all targets before anything is installed.
+/// writes .new temp files next to targets and verifies them; on failure
+/// all temp files are removed and nothing is installed (atomic across targets).
+/// no-op when --no-verify (install stage writes directly).
+fn verifyAll(arena: std.mem.Allocator, fmt: render_mod.Format, files: []const render_mod.File, path: []const u8, no_verify: bool) void {
+    if (no_verify) return;
+    if (isDirFormat(fmt)) {
+        std.fs.cwd().makePath(path) catch |e| {
+            logErr(null, "failed to create directory {s}: {s}", .{ path, @errorName(e) });
+            std.process.exit(1);
+        };
+    }
+    for (files) |f| {
+        const target = if (isDirFormat(fmt))
+            std.fs.path.join(arena, &.{ path, f.path }) catch {
+                logErr(null, "path join failed", .{});
+                std.process.exit(1);
+            }
+        else
+            path;
+        // note: xray -test infers format from extension, tmp must end with .json
+        const tmp = if (isDirFormat(fmt))
+            std.fmt.allocPrint(arena, "{s}.new.json", .{target}) catch {
+                logErr(null, "out of memory", .{});
+                std.process.exit(1);
+            }
+        else
+            std.fmt.allocPrint(arena, "{s}.new", .{target}) catch {
+                logErr(null, "out of memory", .{});
+                std.process.exit(1);
+            };
+        deploy_mod.atomicWrite(arena, tmp, f.content) catch |e| {
+            logErr(null, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
+            std.process.exit(1);
+        };
+        const vr = deploy_mod.verifyContent(arena, fmt, f.content, tmp);
+        if (vr == .failed) {
+            std.fs.cwd().deleteFile(tmp) catch {};
+            logErr(null, "verify failed, aborting: {s} (nothing installed)", .{target});
+            std.process.exit(1);
+        }
+    }
 }
 
-fn defaultDirPath(fmt: render_mod.Format) []const u8 {
+/// Stage B: install all files (rename verified .new files into place, then reload).
+/// called only after verifyAll passed (or --no-verify).
+fn installAll(
+    arena: std.mem.Allocator,
+    fmt: render_mod.Format,
+    files: []const render_mod.File,
+    path: []const u8,
+    opts: Options,
+    ropts: render_mod.Options,
+) void {
+    if (isDirFormat(fmt)) {
+        const dir = path;
+        std.fs.cwd().makePath(dir) catch |e| {
+            logErr(null, "failed to create directory {s}: {s}", .{ dir, @errorName(e) });
+            std.process.exit(1);
+        };
+        for (files) |f| {
+            const fpath = std.fs.path.join(arena, &.{ dir, f.path }) catch {
+                logErr(null, "path join failed", .{});
+                std.process.exit(1);
+            };
+            if (opts.no_verify) {
+                deploy_mod.atomicWrite(arena, fpath, f.content) catch |e| {
+                    logErr(null, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
+                    std.process.exit(1);
+                };
+            } else {
+                const tmp = std.fmt.allocPrint(arena, "{s}.new.json", .{fpath}) catch {
+                    logErr(null, "out of memory", .{});
+                    std.process.exit(1);
+                };
+                // backup existing config (acme.sh style)
+                if (fileExists(fpath)) {
+                    const bak = std.fmt.allocPrint(arena, "{s}.bak", .{fpath}) catch {
+                        logErr(null, "out of memory", .{});
+                        std.process.exit(1);
+                    };
+                    std.fs.cwd().copyFile(fpath, std.fs.cwd(), bak, .{}) catch |e| {
+                        logErr(null, "failed to backup {s}: {s}", .{ fpath, @errorName(e) });
+                        std.process.exit(1);
+                    };
+                }
+                std.fs.cwd().rename(tmp, fpath) catch |e| {
+                    logErr(null, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
+                    std.process.exit(1);
+                };
+            }
+        }
+        logInfo(null, "wrote {d} files to {s}", .{ files.len, dir });
+        if (!opts.no_reload) {
+            if (opts.reload_cmd) |cmd| {
+                switch (deploy_mod.reloadCustom(arena, cmd)) {
+                    .custom => logInfo(null, "custom reload command executed", .{}),
+                    else => logWarn(null, "custom reload command failed (exit != 0)", .{}),
+                }
+            } else {
+                logInfo(null, "no auto-reload for this format; restart manually (or use --reload-cmd)", .{});
+            }
+        }
+    } else {
+        // single-file format
+        const f = files[0];
+        if (opts.no_verify) {
+            deploy_mod.atomicWrite(arena, path, f.content) catch |e| {
+                logErr(null, "failed to write {s}: {s}", .{ path, @errorName(e) });
+                std.process.exit(1);
+            };
+            logInfo(null, "installed {s}", .{path});
+        } else {
+            const tmp = std.fmt.allocPrint(arena, "{s}.new", .{path}) catch {
+                logErr(null, "out of memory", .{});
+                std.process.exit(1);
+            };
+            if (fileExists(path)) {
+                const bak = std.fmt.allocPrint(arena, "{s}.bak", .{path}) catch {
+                    logErr(null, "out of memory", .{});
+                    std.process.exit(1);
+                };
+                std.fs.cwd().copyFile(path, std.fs.cwd(), bak, .{}) catch |e| {
+                    logErr(null, "failed to backup {s}: {s}", .{ path, @errorName(e) });
+                    std.process.exit(1);
+                };
+            }
+            std.fs.cwd().rename(tmp, path) catch |e| {
+                logErr(null, "failed to write {s}: {s}", .{ path, @errorName(e) });
+                std.process.exit(1);
+            };
+            logInfo(null, "installed {s} (verify passed)", .{path});
+        }
+        if (!opts.no_reload) {
+            if (opts.reload_cmd) |cmd| {
+                // custom reload command takes priority (acme.sh --reloadcmd style)
+                switch (deploy_mod.reloadCustom(arena, cmd)) {
+                    .custom => logInfo(null, "custom reload command executed", .{}),
+                    else => logWarn(null, "custom reload command failed (exit != 0)", .{}),
+                }
+            } else {
+                const rr = switch (fmt) {
+                    .clash => deploy_mod.reloadClash(arena, opts.controller, ropts.secret, path),
+                    .singbox => deploy_mod.reloadSingbox(arena, opts.controller, ropts.secret, path),
+                    else => deploy_mod.ReloadResult.skipped,
+                };
+                switch (rr) {
+                    .api => logInfo(null, "reloaded via API", .{}),
+                    .systemctl => logInfo(null, "restarted via systemctl", .{}),
+                    .custom => unreachable,
+                    .skipped => logInfo(null, "no auto-reload for this format; restart manually (or use --reload-cmd)", .{}),
+                    .failed => logWarn(null, "reload failed; restart manually", .{}),
+                }
+            }
+        }
+    }
+}
+
+fn fileExists(path: []const u8) bool {
+    std.fs.cwd().access(path, .{}) catch return false;
+    return true;
+}
+
+/// multi-file formats output to a directory; single-file formats output to a file path
+fn isDirFormat(fmt: render_mod.Format) bool {
     return switch (fmt) {
-        .trojan => "./out-trojan",
-        .hysteria => "./out-hysteria",
-        .hysteria2 => "./out-hysteria2",
-        .xray => "./out-xray",
-        .ss => "./out-ss",
-        .ssr => "./out-ssr",
-        else => "./out",
+        .clash, .singbox, .raw => false,
+        .trojan, .hysteria, .hysteria2, .xray, .ss, .ssr => true,
     };
 }
 
@@ -380,10 +464,10 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
         } else if (std.mem.eql(u8, a, "--dry-run")) {
             opts.dry_run = true;
         } else if (std.mem.eql(u8, a, "--verbose")) {
-            opts.verbose += 1;
+            opts.verbose = 1;
         } else if (std.mem.startsWith(u8, a, "-v") and a.len >= 2 and a[1] == 'v') {
-            // -v, -vv, -vvv
-            opts.verbose += @intCast(a.len - 1);
+            // -v, -vv, -vvv: all mean verbose=1 (no deeper levels since -vv was replaced by -o fmt=-)
+            opts.verbose = 1;
         } else if (std.mem.eql(u8, a, "--no-clash-api")) {
             opts.no_clash_api = true;
         } else if (std.mem.eql(u8, a, "--no-verify")) {
@@ -396,12 +480,9 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
         } else if (takeValue(&i, args, a, "--config", "-c")) |v| {
             if (v.len == 0) return error.BadArg;
             opts.config = v;
-        } else if (takeValue(&i, args, a, "--output-format", "--out")) |v| {
+        } else if (takeValue(&i, args, a, "--out", "-o")) |v| {
             if (v.len == 0) return error.BadArg;
-            opts.out_fmt = v;
-        } else if (takeValue(&i, args, a, "--output", "-o")) |v| {
-            if (v.len == 0) return error.BadArg;
-            opts.output = v;
+            try opts.outs.append(arena, parseOut(v) catch return error.BadArg);
         } else if (takeValue(&i, args, a, "--node", null)) |v| {
             if (v.len == 0) return error.BadArg;
             try opts.nodes.append(arena, v);
@@ -434,6 +515,23 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
     }
 }
 
+/// parse -o/--out value: format[:template][=path]
+fn parseOut(v: []const u8) !Out {
+    var path: ?[]const u8 = null;
+    var rest = v;
+    if (std.mem.indexOfScalar(u8, v, '=')) |eq| {
+        path = v[eq + 1 ..];
+        rest = v[0..eq];
+    }
+    var template: ?[]const u8 = null;
+    if (std.mem.indexOfScalar(u8, rest, ':')) |colon| {
+        template = rest[colon + 1 ..];
+        rest = rest[0..colon];
+    }
+    const fmt = render_mod.Format.parse(rest) orelse return error.BadArg;
+    return .{ .fmt = fmt, .template = template, .path = path };
+}
+
 /// match --long value / --long=value / -s value, return the value; null if no match.
 fn takeValue(
     i: *usize,
@@ -461,11 +559,13 @@ fn printUsage() void {
         \\
         \\Options:
         \\  -c, --config <path>    subscription list zon (default ./subscriptions.zon)
-        \\      --output-format <fmt>  output format: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw (default clash; alias: --out)
-        \\  -o, --output <path>    output file (clash/singbox/raw) or directory (native formats)
+        \\  -o, --out <fmt>[:<tmpl>][=<path>]  output target (repeatable; default raw)
+        \\                          fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw
+        \\                          tmpl: template file (clash/singbox; optional)
+        \\                          path: output file (single-file) or directory (native); '-' = stdout
         \\      --node <uri>       directly pasted node URI (repeatable)
         \\      --node-file <path> node list file (one URI per line)
-        \\      --dry-run          print generated config only, write nothing
+        \\      --dry-run          verify only, write nothing
         \\      --ua <str>         default User-Agent
         \\      --sep <str>        node name separator between sub and node names (default @)
         \\      --timeout <sec>    per-subscription fetch timeout in seconds
@@ -478,7 +578,7 @@ fn printUsage() void {
         \\      --no-verify        skip verification
         \\      --no-reload        skip reload after install
         \\      --reload-cmd <cmd> custom reload command after install (sh -c, overrides auto reload; acme.sh style)
-        \\  -v, --verbose          verbose output (repeat -vv to also dump generated config in dry-run)
+        \\  -v, --verbose          verbose output (node list)
         \\  -h, --help             show this help
         \\
     , .{version});
@@ -560,7 +660,9 @@ fn colorizeKeywords(file: std.fs.File, text: []const u8) void {
 }
 
 fn log(level: LogLevel, source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
-    const file = if (level == .err or level == .warn) std.fs.File.stderr() else std.fs.File.stdout();
+    // all diagnostics go to stderr (unix convention); stdout is reserved for data
+    // (e.g. `-o clash=-` pipe output must be clean for scripts)
+    const file = std.fs.File.stderr();
     const text = std.fmt.allocPrint(std.heap.page_allocator, fmt, args) catch return;
     defer std.heap.page_allocator.free(text);
     const color = file.isTty() and std.posix.getenv("NO_COLOR") == null;
@@ -625,8 +727,6 @@ test "compile-check" {
     _ = &logErr;
     _ = &logVerbose;
     _ = &genSecret;
-    _ = &verifyDryRun;
     _ = &verifyDryRunFiles;
-    _ = &defaultSinglePath;
-    _ = &defaultDirPath;
+    _ = &isDirFormat;
 }
