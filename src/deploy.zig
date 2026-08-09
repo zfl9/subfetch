@@ -52,7 +52,7 @@ pub fn verifyContent(
                 .allocator = arena,
                 .argv = &.{ bin, "-t", "-d", dir, "-f", tmp_path },
             }) catch break :blk .failed;
-            break :blk if (r.term.Exited == 0) .ok else .failed;
+            break :blk if (r.term == .Exited and r.term.Exited == 0) .ok else .failed;
         },
         .singbox => blk: {
             const bin = findBin(arena, "sing-box") orelse break :blk .skipped;
@@ -60,7 +60,7 @@ pub fn verifyContent(
                 .allocator = arena,
                 .argv = &.{ bin, "check", "-c", tmp_path },
             }) catch break :blk .failed;
-            break :blk if (r.term.Exited == 0) .ok else .failed;
+            break :blk if (r.term == .Exited and r.term.Exited == 0) .ok else .failed;
         },
         .trojan, .hysteria, .ss, .ssr => blk: {
             // no check mode: JSON syntax validation
@@ -75,7 +75,7 @@ pub fn verifyContent(
                 .allocator = arena,
                 .argv = &.{ bin, "-test", "-c", tmp_path },
             }) catch break :blk .failed;
-            break :blk if (r.term.Exited == 0) .ok else .failed;
+            break :blk if (r.term == .Exited and r.term.Exited == 0) .ok else .failed;
         },
         .hysteria2 => blk: {
             // native config is yaml: validate with libyaml parser
@@ -152,7 +152,7 @@ pub fn reloadCustom(arena: std.mem.Allocator, cmd: []const u8) ReloadResult {
         .allocator = arena,
         .argv = &.{ "/bin/sh", "-c", cmd },
     }) catch return .failed;
-    return if (r.term.Exited == 0) .custom else .failed;
+    return if (r.term == .Exited and r.term.Exited == 0) .custom else .failed;
 }
 
 fn reloadApi(
@@ -188,7 +188,7 @@ fn reloadApi(
         .allocator = arena,
         .argv = &.{ sysctl, "restart", service },
     }) catch return .failed;
-    return if (r.term.Exited == 0) .systemctl else .failed;
+    return if (r.term == .Exited and r.term.Exited == 0) .systemctl else .failed;
 }
 
 // ---------------- tests ----------------
