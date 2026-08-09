@@ -41,6 +41,23 @@ pub fn renderSingbox(
         try tproxy.put("listen", .{ .string = opts.listen });
         try tproxy.put("listen_port", .{ .integer = tp });
         try inbounds.append(.{ .object = tproxy });
+        // ipv6: add a second tproxy inbound on the v6 loopback (one inbound, one address)
+        if (opts.ipv6) {
+            const v6: ?[]const u8 = if (std.mem.eql(u8, opts.listen, "127.0.0.1"))
+                "::1"
+            else if (std.mem.eql(u8, opts.listen, "0.0.0.0"))
+                "::"
+            else
+                null; // custom v4 listen has no obvious v6 counterpart; use a user template
+            if (v6) |addr| {
+                var tproxy6 = ObjectMap.init(arena);
+                try tproxy6.put("type", .{ .string = "tproxy" });
+                try tproxy6.put("tag", .{ .string = "tproxy-in-v6" });
+                try tproxy6.put("listen", .{ .string = addr });
+                try tproxy6.put("listen_port", .{ .integer = tp });
+                try inbounds.append(.{ .object = tproxy6 });
+            }
+        }
     }
     try root.put("inbounds", .{ .array = inbounds });
 
