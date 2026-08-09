@@ -1,8 +1,9 @@
 const std = @import("std");
 
 pub const Subscription = struct {
-    /// empty/omitted = anonymous: behaves like --node-file (no prefix, no info filtering)
-    name: []const u8 = "",
+    /// null/omitted = anonymous subscription (no "name@" prefix);
+    /// an explicit "" is rejected: omit the field instead
+    name: ?[]const u8 = null,
     url: []const u8,
     ua: ?[]const u8 = null,
     enable: bool = true,
@@ -13,16 +14,24 @@ pub const Config = struct {
     /// info-node (airport notice) keyword overrides; null = built-in defaults
     info_node_keywords: ?[]const []const u8 = null,
     subscriptions: []const Subscription = &.{},
+    /// inline node URIs (same semantics as --node)
+    nodes: []const []const u8 = &.{},
+    /// inline node list files (same semantics as --node-file)
+    node_files: []const []const u8 = &.{},
 
     /// free memory allocated by fromSlice (strings + slices).
     /// not needed with an arena; only for precise deallocation.
     pub fn deinit(cfg: *Config, allocator: std.mem.Allocator) void {
         for (cfg.subscriptions) |s| {
-            allocator.free(s.name);
+            if (s.name) |n| allocator.free(n);
             allocator.free(s.url);
             if (s.ua) |u| allocator.free(u);
         }
         allocator.free(cfg.subscriptions);
+        for (cfg.nodes) |n| allocator.free(n);
+        allocator.free(cfg.nodes);
+        for (cfg.node_files) |f| allocator.free(f);
+        allocator.free(cfg.node_files);
         if (cfg.default_ua) |u| allocator.free(u);
         cfg.* = undefined;
     }
@@ -32,6 +41,7 @@ pub const ParseError = error{
     OutOfMemory,
     ParseZon,
     InvalidSectionName,
+    EmptySectionName,
     DuplicateSection,
     MissingUrl,
 };
@@ -44,22 +54,27 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) ParseError!Conf
     errdefer cfg.deinit(allocator);
 
     for (cfg.subscriptions) |s| {
-        // empty name = anonymous subscription (like --node-file); any other name must be valid
-        if (s.name.len != 0 and !isValidName(s.name)) return error.InvalidSectionName;
+        // null name = anonymous; explicit "" is rejected (omit the field instead)
+        if (s.name) |n| {
+            if (n.len == 0) return error.EmptySectionName;
+            if (!isValidName(n)) return error.InvalidSectionName;
+        }
         if (s.url.len == 0) return error.MissingUrl;
     }
     // duplicate subscription name check (anonymous subscriptions may repeat)
     for (cfg.subscriptions, 0..) |s, i| {
-        if (s.name.len == 0) continue;
+        const sn = s.name orelse continue;
         for (cfg.subscriptions[i + 1 ..]) |t| {
-            if (std.mem.eql(u8, s.name, t.name)) return error.DuplicateSection;
+            if (t.name) |tn| {
+                if (std.mem.eql(u8, sn, tn)) return error.DuplicateSection;
+            }
         }
     }
     return cfg;
 }
 
 /// subscription name: ASCII alnum/_/- or any non-ASCII bytes (e.g. UTF-8 Chinese), length 1..=32
-fn isValidName(name: []const u8) bool {
+pub fn isValidName(name: []const u8) bool {
     if (name.len == 0 or name.len > 32) return false;
     for (name) |c| {
         if (c < 0x80) {
@@ -86,11 +101,11 @@ test "parse basic zon config" {
     const cfg = try parse(arena.allocator(), source);
     try std.testing.expectEqualStrings("clash-verge/v2.2.3", cfg.default_ua.?);
     try std.testing.expectEqual(@as(usize, 2), cfg.subscriptions.len);
-    try std.testing.expectEqualStrings("hk-airport", cfg.subscriptions[0].name);
+    try std.testing.expectEqualStrings("hk-airport", cfg.subscriptions[0].name.?);
     try std.testing.expectEqualStrings("https://example.com/sub?token=abc", cfg.subscriptions[0].url);
     try std.testing.expect(cfg.subscriptions[0].enable);
     try std.testing.expect(cfg.subscriptions[0].ua == null);
-    try std.testing.expectEqualStrings("us-airport", cfg.subscriptions[1].name);
+    try std.testing.expectEqualStrings("us-airport", cfg.subscriptions[1].name.?);
     try std.testing.expectEqualStrings("custom/1.0", cfg.subscriptions[1].ua.?);
     try std.testing.expect(!cfg.subscriptions[1].enable);
 }
@@ -109,7 +124,7 @@ test "anonymous subscription (omitted name)" {
         \\.{
         \\    .subscriptions = .{
         \\        .{ .url = "/tmp/nodes.txt" },
-        \\        .{ .name = "", .url = "/tmp/extra.txt" },
+        \\        .{ .url = "/tmp/extra.txt" },
         \\    },
         \\}
     ;
@@ -117,9 +132,36 @@ test "anonymous subscription (omitted name)" {
     defer arena.deinit();
     const cfg = try parse(arena.allocator(), source);
     try std.testing.expectEqual(@as(usize, 2), cfg.subscriptions.len);
-    try std.testing.expectEqualStrings("", cfg.subscriptions[0].name);
-    try std.testing.expectEqualStrings("", cfg.subscriptions[1].name);
+    try std.testing.expect(cfg.subscriptions[0].name == null);
+    try std.testing.expect(cfg.subscriptions[1].name == null);
     try std.testing.expectEqualStrings("/tmp/extra.txt", cfg.subscriptions[1].url);
+}
+
+test "reject explicit empty name" {
+    const source = ".{ .subscriptions = .{ .{ .name = \"\", .url = \"x\" } } }";
+    try std.testing.expectError(
+        error.EmptySectionName,
+        parse(std.testing.allocator, source),
+    );
+}
+
+test "parse inline nodes and node_files" {
+    const source =
+        \\.{
+        \\    .nodes = .{ "trojan://a@h1:443#hk", "ss://YQ@h2:8388" },
+        \\    .node_files = .{ "/tmp/nodes.txt" },
+        \\    .subscriptions = .{ .{ .name = "airport", .url = "https://x/sub" } },
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const cfg = try parse(arena.allocator(), source);
+    try std.testing.expectEqual(@as(usize, 2), cfg.nodes.len);
+    try std.testing.expectEqualStrings("trojan://a@h1:443#hk", cfg.nodes[0]);
+    try std.testing.expectEqual(@as(usize, 1), cfg.node_files.len);
+    try std.testing.expectEqualStrings("/tmp/nodes.txt", cfg.node_files[0]);
+    try std.testing.expectEqual(@as(usize, 1), cfg.subscriptions.len);
+    try std.testing.expectEqualStrings("airport", cfg.subscriptions[0].name.?);
 }
 
 test "reject duplicate name" {
@@ -136,11 +178,12 @@ test "reject invalid name" {
         error.InvalidSectionName,
         parse(std.testing.allocator, source),
     );
-    // empty name is valid: anonymous subscription
-    const anon = ".{ .subscriptions = .{ .{ .name = \"\", .url = \"x\" } } }";
-    const cfg = try parse(std.testing.allocator, anon);
+    // anonymous via omitted name is valid
+    const anon = ".{ .subscriptions = .{ .{ .url = \"x\" } } }";
+    var cfg = try parse(std.testing.allocator, anon);
+    defer cfg.deinit(std.testing.allocator);
     try std.testing.expectEqual(@as(usize, 1), cfg.subscriptions.len);
-    try std.testing.expectEqualStrings("", cfg.subscriptions[0].name);
+    try std.testing.expect(cfg.subscriptions[0].name == null);
 }
 
 test "reject empty url" {

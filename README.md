@@ -66,7 +66,7 @@ subfetch --config subscriptions.zon -o clash=- -o singbox=/etc/sing-box/config.j
 
 ### 匿名订阅
 
-`name` 省略或为 `""` 即匿名订阅——处理管线与普通订阅完全一致（格式探测/信息节点过滤照常），唯一区别是节点名**不带 `订阅名@` 前缀**，日志标签固定为 `[anonymous]`（不泄露 url，url 可能含 token）：
+`name` **省略**即匿名订阅——处理管线与普通订阅完全一致（格式探测/信息节点过滤照常），唯一区别是节点名**不带 `订阅名@` 前缀**，日志标签固定为 `[anonymous]`（不泄露 url，url 可能含 token）。**显式 `name = ""` 会被拒绝**——要匿名就省略字段：
 
 ```zig
 .{
@@ -76,6 +76,17 @@ subfetch --config subscriptions.zon -o clash=- -o singbox=/etc/sing-box/config.j
     },
 }
 ```
+
+### 输入源矩阵（CLI 与 .zon 对称）
+
+| 输入形态 | CLI | .zon |
+|---|---|---|
+| 具名订阅（sniff + 信息过滤 + `name@` 前缀） | `--url name=<url>` | `.subscriptions` 带 name |
+| 匿名订阅（同上，无前缀） | `--url <url>` | `.subscriptions` 省略 name |
+| 节点直连（不探测、不过滤、无前缀） | `--node <uri>` | `.nodes = .{ ... }` |
+| 节点文件（同上，文件批量 + `#` 注释） | `--node-file <path>` | `.node_files = .{ ... }` |
+
+处理顺序：节点（CLI 先于 .zon）→ 节点文件（CLI 先于 .zon）→ 订阅（CLI 先于 .zon）。订阅名跨 CLI/.zon 不允许重复（匿名订阅可多个）。
 
 ## 信息节点过滤
 

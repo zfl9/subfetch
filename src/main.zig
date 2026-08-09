@@ -31,6 +31,8 @@ const Options = struct {
     verbose: u8 = 0,
     nodes: std.ArrayListUnmanaged([]const u8) = .empty,
     node_files: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// CLI subscriptions (--url [name=]url), same semantics as .zon subscriptions
+    urls: std.ArrayListUnmanaged([]const u8) = .empty,
     // render customization fields
     listen: []const u8 = "127.0.0.1",
     port: u16 = 1080,
@@ -81,88 +83,48 @@ pub fn main() !void {
         std.process.exit(1);
     };
 
-    // collect all nodes
+    // collect all nodes: direct nodes first, then node files, then subscriptions
+    // (within each category: CLI first, then .zon)
     var all_nodes: std.ArrayListUnmanaged(node_mod.Node) = .empty;
     var ok_cnt: usize = 0;
     var fail_cnt: usize = 0;
     var disabled_cnt: usize = 0;
-    for (cfg.subscriptions) |s| {
-        // anonymous subscription (empty name): full parse pipeline, just no "name@" prefix.
-        // fixed "anonymous" label: short, and never leaks the url (may contain a token)
-        const sub_label = if (s.name.len == 0) "anonymous" else s.name;
-        if (!s.enable) {
-            logInfo(sub_label, "skipped (disabled)", .{});
-            disabled_cnt += 1;
-            continue;
-        }
-        const ua = s.ua orelse cfg.default_ua orelse opts.ua;
-        // CLI --timeout is in seconds, fetchWithTimeout expects milliseconds
-        const timeout_ms: ?u32 = if (opts.timeout) |t| t * 1000 else null;
-        const body = fetch_mod.fetchWithTimeout(arena, s.url, ua, timeout_ms) catch |e| {
-            logWarn(sub_label, "fetch failed: {s}", .{@errorName(e)});
-                        fail_cnt += 1;
-            continue;
-        };
-        const info_keywords = cfg.info_node_keywords orelse &node_mod.default_info_keywords;
-        const result = parse_mod.parseSubscription(arena, s.name, body, opts.sep, info_keywords) catch |e| {
-            logWarn(sub_label, "parse failed ({s})", .{@errorName(e)});
-                        fail_cnt += 1;
-            continue;
-        };
-        for (result.nodes) |n| {
-            try all_nodes.append(arena, n);
-        }
-        ok_cnt += 1;
-        // summary line is identical in normal and verbose mode: "OK, N nodes (M skipped, B bytes)"
-        const noun = if (result.nodes.len == 1) "node" else "nodes";
-        var msg = try std.fmt.allocPrint(arena, "OK, {d} {s}", .{ result.nodes.len, noun });
-        var extras: std.ArrayListUnmanaged([]const u8) = .empty;
-        if (result.skipped > 0) {
-            try extras.append(arena, try std.fmt.allocPrint(arena, "{d} skipped", .{result.skipped}));
-        }
-        if (result.info > 0) {
-            try extras.append(arena, try std.fmt.allocPrint(arena, "{d} info", .{result.info}));
-            // verbose: list filtered info (notice) nodes for debugging
-            if (opts.verbose > 0) {
-                for (result.info_names) |nm| {
-                    logVerbose(null, "  ! {s} (info node, filtered)", .{nm});
-                }
-            }
-        }
-        try extras.append(arena, try std.fmt.allocPrint(arena, "{d} bytes", .{body.len}));
-        msg = try std.fmt.allocPrint(arena, "{s}, {s}", .{ msg, try std.mem.join(arena, ", ", extras.items) });
-        logInfo(sub_label, "{s}", .{msg});
-        // verbose: short node list (strip the "sub-name<sep>" prefix), indented under the summary
-        if (opts.verbose > 0) {
-            const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ s.name, opts.sep });
-            for (result.nodes) |n| {
-                const short = if (std.mem.startsWith(u8, n.name(), prefix))
-                    n.name()[prefix.len..]
-                else
-                    n.name();
-                logVerbose(null, "  - {s} ({s})", .{ short, n.typeName() });
-            }
-        }
-    }
 
-    // --node-file node list
-    for (opts.node_files.items) |f| {
-        const text = std.fs.cwd().readFileAlloc(arena, f, 1 << 20) catch |e| {
-            logWarn(f, "read failed: {s}", .{@errorName(e)});
-                        fail_cnt += 1;
-            continue;
+    // 1. direct node URIs: --node, then .zon .nodes (no sniff, no info filtering, no prefix)
+    for (opts.nodes.items) |n| try addDirectNode(arena, &all_nodes, &fail_cnt, opts.sep, n);
+    for (cfg.nodes) |n| try addDirectNode(arena, &all_nodes, &fail_cnt, opts.sep, n);
+
+    // 2. node list files: --node-file, then .zon .node_files
+    for (opts.node_files.items) |f| try addNodeFile(arena, &all_nodes, &fail_cnt, opts.sep, f);
+    for (cfg.node_files) |f| try addNodeFile(arena, &all_nodes, &fail_cnt, opts.sep, f);
+
+    // 3. subscriptions: --url first, then .zon subscriptions (full pipeline:
+    //    sniff + info filtering + "name@" prefix; anonymous = no prefix)
+    var subs: std.ArrayListUnmanaged(config_mod.Subscription) = .empty;
+    for (opts.urls.items) |arg| {
+        const p = parseUrlArg(arg) catch {
+            logErr(null, "invalid --url: {s}", .{arg});
+            std.process.exit(2);
         };
-        const lines = try util.splitUriLines(arena, text);
-        for (lines) |l| try opts.nodes.append(arena, l);
+        if (p.url.len == 0) {
+            logErr(null, "invalid --url: missing url ({s})", .{arg});
+            std.process.exit(2);
+        }
+        try subs.append(arena, .{ .name = p.name, .url = p.url });
     }
-    // --node directly pasted URIs (no subscription prefix)
-    for (opts.nodes.items) |n| {
-        const parsed = uri_mod.parseUri(arena, n, "", opts.sep) catch |e| {
-            logWarn("node", "parse failed: {s} ({s})", .{ n, @errorName(e) });
-                        fail_cnt += 1;
-            continue;
-        };
-        try all_nodes.append(arena, parsed);
+    for (cfg.subscriptions) |s| try subs.append(arena, s);
+    // duplicate subscription name check across CLI and .zon (anonymous may repeat)
+    var used_names: std.StringHashMapUnmanaged(void) = .empty;
+    for (subs.items) |s| {
+        const n = s.name orelse continue;
+        if (used_names.contains(n)) {
+            logErr(null, "duplicate subscription name: {s}", .{n});
+            std.process.exit(1);
+        }
+        try used_names.put(arena, n, {});
+    }
+    for (subs.items) |s| {
+        try processSubscription(arena, &opts, &cfg, &all_nodes, &ok_cnt, &fail_cnt, &disabled_cnt, s);
     }
 
     if (all_nodes.items.len == 0) {
@@ -519,6 +481,9 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
         } else if (takeValue(&i, args, a, "--node-file", null)) |v| {
             if (v.len == 0) return error.BadArg;
             try opts.node_files.append(arena, v);
+        } else if (takeValue(&i, args, a, "--url", null)) |v| {
+            if (v.len == 0) return error.BadArg;
+            try opts.urls.append(arena, v);
         } else if (takeValue(&i, args, a, "--ua", null)) |v| {
             opts.ua = v;
         } else if (takeValue(&i, args, a, "--sep", null)) |v| {
@@ -543,6 +508,121 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
             return error.BadArg;
         }
     }
+}
+
+/// add a directly-pasted node URI (--node / .zon .nodes): no sniff, no info filtering, no prefix
+fn addDirectNode(
+    arena: std.mem.Allocator,
+    all_nodes: *std.ArrayListUnmanaged(node_mod.Node),
+    fail_cnt: *usize,
+    sep: []const u8,
+    n: []const u8,
+) !void {
+    const parsed = uri_mod.parseUri(arena, n, "", sep) catch |e| {
+        logWarn("node", "parse failed: {s} ({s})", .{ n, @errorName(e) });
+        fail_cnt.* += 1;
+        return;
+    };
+    try all_nodes.append(arena, parsed);
+}
+
+/// add a node list file (--node-file / .zon .node_files): shared line splitting
+fn addNodeFile(
+    arena: std.mem.Allocator,
+    all_nodes: *std.ArrayListUnmanaged(node_mod.Node),
+    fail_cnt: *usize,
+    sep: []const u8,
+    f: []const u8,
+) !void {
+    const text = std.fs.cwd().readFileAlloc(arena, f, 1 << 20) catch |e| {
+        logWarn(f, "read failed: {s}", .{@errorName(e)});
+        fail_cnt.* += 1;
+        return;
+    };
+    const lines = util.splitUriLines(arena, text) catch |e| {
+        logWarn(f, "parse failed ({s})", .{@errorName(e)});
+        fail_cnt.* += 1;
+        return;
+    };
+    for (lines) |l| try addDirectNode(arena, all_nodes, fail_cnt, sep, l);
+}
+
+/// process one subscription (--url or .zon): fetch + full parse pipeline + logging
+fn processSubscription(
+    arena: std.mem.Allocator,
+    opts: *const Options,
+    cfg: *const config_mod.Config,
+    all_nodes: *std.ArrayListUnmanaged(node_mod.Node),
+    ok_cnt: *usize,
+    fail_cnt: *usize,
+    disabled_cnt: *usize,
+    s: config_mod.Subscription,
+) !void {
+    // anonymous subscription (omitted name): full parse pipeline, just no "name@" prefix.
+    // fixed "anonymous" label: short, and never leaks the url (may contain a token)
+    const sub_label = if (s.name) |n| n else "anonymous";
+    if (!s.enable) {
+        logInfo(sub_label, "skipped (disabled)", .{});
+        disabled_cnt.* += 1;
+        return;
+    }
+    const ua = s.ua orelse cfg.default_ua orelse opts.ua;
+    // CLI --timeout is in seconds, fetchWithTimeout expects milliseconds
+    const timeout_ms: ?u32 = if (opts.timeout) |t| t * 1000 else null;
+    const body = fetch_mod.fetchWithTimeout(arena, s.url, ua, timeout_ms) catch |e| {
+        logWarn(sub_label, "fetch failed: {s}", .{@errorName(e)});
+        fail_cnt.* += 1;
+        return;
+    };
+    const info_keywords = cfg.info_node_keywords orelse &node_mod.default_info_keywords;
+    const result = parse_mod.parseSubscription(arena, s.name orelse "", body, opts.sep, info_keywords) catch |e| {
+        logWarn(sub_label, "parse failed ({s})", .{@errorName(e)});
+        fail_cnt.* += 1;
+        return;
+    };
+    for (result.nodes) |n| {
+        try all_nodes.append(arena, n);
+    }
+    ok_cnt.* += 1;
+    // summary line is identical in normal and verbose mode: "OK, N nodes (M skipped, B bytes)"
+    const noun = if (result.nodes.len == 1) "node" else "nodes";
+    var msg = try std.fmt.allocPrint(arena, "OK, {d} {s}", .{ result.nodes.len, noun });
+    var extras: std.ArrayListUnmanaged([]const u8) = .empty;
+    if (result.skipped > 0) {
+        try extras.append(arena, try std.fmt.allocPrint(arena, "{d} skipped", .{result.skipped}));
+    }
+    if (result.info > 0) {
+        try extras.append(arena, try std.fmt.allocPrint(arena, "{d} info", .{result.info}));
+        // verbose: list filtered info (notice) nodes for debugging
+        if (opts.verbose > 0) {
+            for (result.info_names) |nm| {
+                logVerbose(null, "  ! {s} (info node, filtered)", .{nm});
+            }
+        }
+    }
+    try extras.append(arena, try std.fmt.allocPrint(arena, "{d} bytes", .{body.len}));
+    msg = try std.fmt.allocPrint(arena, "{s}, {s}", .{ msg, try std.mem.join(arena, ", ", extras.items) });
+    logInfo(sub_label, "{s}", .{msg});
+    // verbose: short node list (strip the "sub-name<sep>" prefix), indented under the summary
+    if (opts.verbose > 0) {
+        const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ s.name orelse "", opts.sep });
+        for (result.nodes) |n| {
+            const short = if (std.mem.startsWith(u8, n.name(), prefix))
+                n.name()[prefix.len..]
+            else
+                n.name();
+            logVerbose(null, "  - {s} ({s})", .{ short, n.typeName() });
+        }
+    }
+}
+
+/// --url [name=]url: "name=" prefix is used only when it is a valid subscription name;
+/// otherwise the whole argument is the url (anonymous subscription)
+fn parseUrlArg(arg: []const u8) !struct { name: ?[]const u8, url: []const u8 } {
+    if (std.mem.indexOfScalar(u8, arg, '=')) |i| {
+        if (config_mod.isValidName(arg[0..i])) return .{ .name = arg[0..i], .url = arg[i + 1 ..] };
+    }
+    return .{ .name = null, .url = arg };
 }
 
 /// parse -o/--out value: format[:template][=path]
@@ -595,6 +675,8 @@ fn printUsage() void {
         \\                          path: output file (single-file) or directory (native); '-' = stdout
         \\      --node <uri>       directly pasted node URI (repeatable)
         \\      --node-file <path> node list file (one URI per line)
+        \\      --url [name=]<url> subscription url on the CLI (repeatable; same semantics
+        \\                          as .zon subscriptions; omit "name=" for anonymous)
         \\      --dry-run          verify only, write nothing
         \\      --ua <str>         default User-Agent
         \\      --sep <str>        node name separator between sub and node names (default @)
