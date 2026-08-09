@@ -87,8 +87,10 @@ pub fn main() !void {
     var fail_cnt: usize = 0;
     var disabled_cnt: usize = 0;
     for (cfg.subscriptions) |s| {
+        // anonymous subscription (empty name): full parse pipeline, just no "name@" prefix
+        const sub_label = if (s.name.len == 0) s.url else s.name;
         if (!s.enable) {
-            logInfo(s.name, "skipped (disabled)", .{});
+            logInfo(sub_label, "skipped (disabled)", .{});
             disabled_cnt += 1;
             continue;
         }
@@ -96,13 +98,13 @@ pub fn main() !void {
         // CLI --timeout is in seconds, fetchWithTimeout expects milliseconds
         const timeout_ms: ?u32 = if (opts.timeout) |t| t * 1000 else null;
         const body = fetch_mod.fetchWithTimeout(arena, s.url, ua, timeout_ms) catch |e| {
-            logWarn(s.name, "fetch failed: {s}", .{@errorName(e)});
+            logWarn(sub_label, "fetch failed: {s}", .{@errorName(e)});
                         fail_cnt += 1;
             continue;
         };
         const info_keywords = cfg.info_node_keywords orelse &node_mod.default_info_keywords;
         const result = parse_mod.parseSubscription(arena, s.name, body, opts.sep, info_keywords) catch |e| {
-            logWarn(s.name, "parse failed ({s})", .{@errorName(e)});
+            logWarn(sub_label, "parse failed ({s})", .{@errorName(e)});
                         fail_cnt += 1;
             continue;
         };
@@ -128,7 +130,7 @@ pub fn main() !void {
         }
         try extras.append(arena, try std.fmt.allocPrint(arena, "{d} bytes", .{body.len}));
         msg = try std.fmt.allocPrint(arena, "{s}, {s}", .{ msg, try std.mem.join(arena, ", ", extras.items) });
-        logInfo(s.name, "{s}", .{msg});
+        logInfo(sub_label, "{s}", .{msg});
         // verbose: short node list (strip the "sub-name<sep>" prefix), indented under the summary
         if (opts.verbose > 0) {
             const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ s.name, opts.sep });

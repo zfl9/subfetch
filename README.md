@@ -64,6 +64,19 @@ subfetch --config subscriptions.zon -o clash=- -o singbox=/etc/sing-box/config.j
 
 `url` 支持 `https://`、`http://`、`file://`、本地文件路径。节点名格式：`订阅名@节点名`（分隔符可用 `--sep` 修改）。
 
+### 匿名订阅
+
+`name` 省略或为 `""` 即匿名订阅——处理管线与普通订阅完全一致（格式探测/信息节点过滤照常），唯一区别是节点名**不带 `订阅名@` 前缀**：
+
+```zig
+.{
+    .subscriptions = .{
+        .{ .url = "/tmp/manual-nodes.txt" },   // 匿名：节点名无前缀
+        .{ .name = "airport", .url = "https://..." },  // 具名：airport@节点名
+    },
+}
+```
+
 ## 信息节点过滤
 
 机场订阅常含"通知伪节点"（如 `到期2026-12-21 剩余流量279.95G`）——默认按强关键词自动过滤（`到期`/`剩余`/`有效期`/`套餐`/`官网` + `expire`/`traffic`/`usage`/`plan`），日志计数 `N info`，`-v` 列出被滤节点。可用 `info_node_keywords` 覆盖（空数组 = 不过滤）：

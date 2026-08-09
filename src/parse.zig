@@ -478,6 +478,14 @@ test "parse filters info nodes" {
     const r2 = try parseSubscription(a, "sub", "trojan://pass@hk1.example.com:443#香港1\n", "@", &node.default_info_keywords);
     try std.testing.expectEqual(@as(usize, 1), r2.nodes.len);
     try std.testing.expectEqual(@as(usize, 0), r2.info);
+
+    // anonymous subscription (empty name): same pipeline, no "sub@" prefix, info filtering still active
+    const r3 = try parseSubscription(a, "", text, "@", &node.default_info_keywords);
+    try std.testing.expectEqual(@as(usize, 2), r3.nodes.len);
+    try std.testing.expectEqual(@as(usize, 1), r3.info);
+    try std.testing.expectEqualStrings("到期2026-12-21 剩余流量279.95G", r3.info_names[0]);
+    try std.testing.expectEqualStrings("香港1-电信优化", r3.nodes[0].name());
+    try std.testing.expectEqualStrings("日本1-电信优化", r3.nodes[1].name());
 }
 
 test "compile-check" {
