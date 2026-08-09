@@ -49,6 +49,8 @@ pub const Options = struct {
     ipv6: bool = false,
     /// tproxy inbound port (clash + sing-box built-in templates; null = off)
     tproxy_port: ?u16 = null,
+    /// client log level (built-in templates; null = info)
+    log_level: ?[]const u8 = null,
     /// whether sing-box enables clash_api (node switching via WebUI)
     enable_clash_api: bool = true,
 };

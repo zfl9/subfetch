@@ -44,6 +44,8 @@ const Options = struct {
     ipv6: bool = false,
     /// tproxy inbound port (clash + singbox built-in templates; null = off)
     tproxy_port: ?u16 = null,
+    /// client log level (built-in templates; null = info)
+    log_level: ?[]const u8 = null,
     no_verify: bool = false,
     no_reload: bool = false,
     /// user-defined reload command (acme.sh --reloadcmd style); overrides API/systemctl auto-reload
@@ -104,6 +106,7 @@ pub fn main() !void {
     opts.allow_lan = opts.allow_lan or (cfg.allow_lan orelse false);
     opts.ipv6 = opts.ipv6 or (cfg.ipv6 orelse false);
     opts.tproxy_port = opts.tproxy_port orelse cfg.tproxy_port;
+    opts.log_level = opts.log_level orelse cfg.log_level;
 
     // output targets: CLI -o/--output > .zon outputs > default raw (replace, never merge)
     if (opts.outputs.items.len == 0) {
@@ -182,6 +185,7 @@ pub fn main() !void {
         .allow_lan = opts.allow_lan,
         .ipv6 = opts.ipv6,
         .tproxy_port = opts.tproxy_port,
+        .log_level = opts.log_level,
     };
 
     // render all targets
@@ -574,6 +578,12 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
                 logErr(null, "invalid number for {s}: {s}", .{ a, v });
                 return error.BadArg;
             };
+        } else if (takeValue(&i, args, a, "--log-level", null)) |v| {
+            if (v.len == 0) {
+                logErr(null, "missing value for {s}", .{a});
+                return error.BadArg;
+            }
+            opts.log_level = v;
         } else if (takeValue(&i, args, a, "--tproxy-port", null)) |v| {
             opts.tproxy_port = std.fmt.parseInt(u16, v, 10) catch {
                 logErr(null, "invalid number for {s}: {s}", .{ a, v });
@@ -793,6 +803,8 @@ fn printUsage() void {
         \\      --ipv6             clash ipv6 in built-in template (default off)
         \\      --tproxy-port <n>  tproxy inbound port (clash + sing-box built-in
         \\                          templates; socks inbound stays; default off)
+        \\      --log-level <lvl>  client log level: debug|info|warning|error
+        \\                          (built-in templates; default info)
         \\
         \\Deploy:
         \\      --no-verify        skip verification

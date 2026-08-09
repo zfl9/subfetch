@@ -68,7 +68,7 @@ fn defaultClashBase(arena: std.mem.Allocator, opts: Options) ![]const u8 {
     }
     try w.print("allow-lan: {s}\n", .{if (opts.allow_lan) "true" else "false"});
     try w.print("mode: rule\n", .{});
-    try w.print("log-level: info\n", .{});
+    try w.print("log-level: {s}\n", .{opts.log_level orelse "info"});
     try w.print("ipv6: {s}\n", .{if (opts.ipv6) "true" else "false"});
     try w.print("external-controller: {s}\n", .{opts.controller});
     if (opts.secret) |s| {

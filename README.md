@@ -87,6 +87,7 @@ subfetch -c subscriptions.zon \
     .singbox_clash_api = true,         // sing-box 输出启用 clash_api
     .allow_lan = true,                 // clash 内置模板 allow-lan（clash 专用）
     .ipv6 = true,                      // clash 内置模板 ipv6 监听（clash 专用；ss-tproxy 支持 v6 透明代理时可开）
+    .log_level = "warning",            // 客户端日志级别 debug|info|warning|error（内置模板）
     .tproxy_port = 60080,              // tproxy 传入端口（clash tproxy-port / sing-box tproxy in；
                                        // 开启后 socks 传入保留，便于 debug/curl 测试；
                                        // 配合 .ipv6=true 实现 v4+v6 双栈 tproxy）
@@ -171,7 +172,7 @@ tproxy-port: 60080         # ← .tproxy_port（默认不启用）
 allow-lan: false           # ← .allow_lan
 ipv6: false                # ← .ipv6
 mode: rule
-log-level: info
+log-level: info                    # ← .log_level（warning|error 可降低路由器日志 IO）
 external-controller: 127.0.0.1:65501   # ← .controller
 secret: <自动UUID或配置>                 # ← .secret
 profile: { store-selected: true }
@@ -242,6 +243,7 @@ proxies: []                # 填充点
     --port <n>           原生客户端监听端口
     --mixed-port <n>     clash mixed-port
     --tproxy-port <n>    tproxy 传入端口（clash + sing-box 内置模板；socks 保留）
+    --log-level <lvl>    客户端日志级别 debug|info|warning|error（内置模板，默认 info）
     --allow-lan          clash allow-lan（内置模板，默认关）
     --ipv6               clash ipv6 / sing-box v6 tproxy（内置模板，默认关）
     --controller <a:p>   clash / sing-box external-controller

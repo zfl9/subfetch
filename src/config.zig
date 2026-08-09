@@ -45,6 +45,9 @@ pub const Config = struct {
     /// tproxy inbound port, clash + sing-box built-in templates only;
     /// socks inbound stays (debug/curl testing) (CLI --tproxy-port wins)
     tproxy_port: ?u16 = null,
+    /// client log level (clash log-level / sing-box log.level), built-in templates
+    /// only: debug|info|warning|error, default info (CLI --log-level wins)
+    log_level: ?[]const u8 = null,
     /// clash/singbox external-controller (CLI --controller wins)
     controller: ?[]const u8 = null,
     /// custom reload command after install (CLI --reload-cmd wins)
@@ -214,6 +217,7 @@ test "parse render/deploy config fields" {
         \\    .allow_lan = true,
         \\    .ipv6 = true,
         \\    .tproxy_port = 60080,
+        \\    .log_level = "warning",
         \\    .outputs = .{
         \\        .{ .fmt = .clash, .path = "/etc/clash/config.yaml" },
         \\        .{ .fmt = .singbox, .tmpl = "/etc/singbox.tmpl.json", .path = "/etc/sing-box/config.json" },
@@ -234,6 +238,7 @@ test "parse render/deploy config fields" {
     try std.testing.expect(cfg.allow_lan.?);
     try std.testing.expect(cfg.ipv6.?);
     try std.testing.expectEqual(@as(?u16, 60080), cfg.tproxy_port);
+    try std.testing.expectEqualStrings("warning", cfg.log_level.?);
     try std.testing.expectEqual(@as(usize, 2), cfg.outputs.?.len);
     try std.testing.expectEqual(render_mod.Format.clash, cfg.outputs.?[0].fmt);
     try std.testing.expectEqualStrings("/etc/clash/config.yaml", cfg.outputs.?[0].path.?);
