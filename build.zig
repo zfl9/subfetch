@@ -22,11 +22,11 @@ const libyaml_sources = &.{
 };
 
 /// bundled libyaml (MIT): C sources are compiled directly into the module, @cImport consumes the headers.
+/// single include path: yaml.h (public header) and config.h (moved from the
+/// repo root) both live in include/; yaml_private.h resolves via same-dir quotes.
 fn linkLibYaml(b: *std.Build, mod: *std.Build.Module) void {
     mod.link_libc = true;
     mod.addIncludePath(b.path("vendor/libyaml/include"));
-    mod.addIncludePath(b.path("vendor/libyaml/src"));
-    mod.addIncludePath(b.path("vendor/libyaml"));
     mod.addCSourceFiles(.{
         .files = libyaml_sources,
         // HAVE_CONFIG_H: use the static config.h (version macros); _GNU_SOURCE: strdup and other POSIX functions
