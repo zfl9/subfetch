@@ -697,30 +697,44 @@ fn printUsage() void {
         \\Usage: subfetch [options]
         \\
         \\Options:
-        \\  -c, --config <path>    subscription list zon (default ./subscriptions.zon)
-        \\  -o, --output <fmt>[:<tmpl>][=<path>] output target (repeatable; default raw)
+        \\  -c, --config <path>     subscription list zon (default ./subscriptions.zon)
+        \\
+        \\Output targets:
+        \\  -o, --output <fmt>[:<tmpl>][=<path>]  output target (repeatable; default raw)
         \\                          fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw
         \\                          tmpl: template file (clash/singbox; optional)
         \\                          path: output file (single-file) or directory (native); '-' = stdout
-        \\      --node <uri>       directly pasted node URI (repeatable)
-        \\      --node-file <path> node list file (one URI per line)
+        \\
+        \\Input sources:
         \\      --url [name=]<url> subscription url on the CLI (repeatable; same semantics
         \\                          as .zon subscriptions; omit "name=" for anonymous)
+        \\      --node <uri>       directly pasted node URI (repeatable)
+        \\      --node-file <path> node list file (one URI per line)
+        \\
+        \\Filtering & naming:
         \\      --info-keyword <kw> info-node keyword override (repeatable; "" clears all,
         \\                          i.e. disables filtering; overrides .zon info_keywords)
+        \\      --sep <str>        node name separator between sub and node names (default @)
+        \\
+        \\Run behavior:
         \\      --dry-run          verify only, write nothing
         \\      --ua <str>         default User-Agent
-        \\      --sep <str>        node name separator between sub and node names (default @)
         \\      --timeout <sec>    per-subscription fetch timeout in seconds
+        \\
+        \\Output config:
         \\      --listen <addr>    native client listen address (default 127.0.0.1)
         \\      --port <n>         native client listen port (default 1080)
         \\      --mixed-port <n>   clash mixed-port (default 65500)
         \\      --controller <a:p> clash/singbox external-controller (default 127.0.0.1:65501)
         \\      --secret <str>     API secret (auto-generated UUID if omitted)
         \\      --singbox-clash-api add clash_api to sing-box output (default off)
+        \\
+        \\Deploy:
         \\      --no-verify        skip verification
         \\      --no-reload        skip reload after install
         \\      --reload-cmd <cmd> custom reload command after install (sh -c, overrides auto reload; acme.sh style)
+        \\
+        \\Misc:
         \\  -v, --verbose          verbose output (node list)
         \\  -h, --help             show this help
         \\
