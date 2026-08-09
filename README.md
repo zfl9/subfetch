@@ -88,7 +88,8 @@ subfetch -c subscriptions.zon \
     .allow_lan = true,                 // clash 内置模板 allow-lan（clash 专用）
     .ipv6 = true,                      // clash 内置模板 ipv6 监听（clash 专用；ss-tproxy 支持 v6 透明代理时可开）
     .tproxy_port = 60080,              // tproxy 传入端口（clash tproxy-port / sing-box tproxy in；
-                                       // 开启后 socks 传入保留，便于 debug/curl 测试）
+                                       // 开启后 socks 传入保留，便于 debug/curl 测试；
+                                       // 配合 .ipv6=true 实现 v4+v6 双栈 tproxy）
     .outputs = .{                      // 输出目标（默认 raw）
         .{ .fmt = .clash, .path = "/etc/clash/config.yaml" },
         .{ .fmt = .singbox, .path = "/etc/sing-box/config.json" },
@@ -153,6 +154,61 @@ proxies: []          # 节点列表填充点（必填）
 
 **注意**：`.listen`/`.port`/`.mixed_port`/`.allow_lan`/`.controller`/`.secret`/`.singbox_clash_api` 等输出配置参数**只在内置模板（不提供模板时）生效**；其中 `mixed_port`/`allow_lan`/`ipv6` 为 clash 专用（字段名与 clash 配置一致）。一旦使用自定义模板，模板就是最终配置——subfetch 只做填充点/锚点/默认组追加，不注入、不覆盖模板里的任何字段。
 
+## 内置模板
+
+不提供模板时使用内置模板——它是为 **ss-tproxy 配套场景**设计的最小可用配置，每条固定值都是架构要求而非随意选择：
+
+- **DNS 分流归 chinadns-ng** → clash `dns: enable: false`、sing-box 无 dns 段
+- **L4 分流归 ss-tproxy** → clash `rules: MATCH,PROXY`、sing-box `route.final: PROXY`（进来即全走代理）
+- **不抢流量** → `tun: enable: false`
+- **监听本地** → 默认 `listen: 127.0.0.1`（ss-tproxy 同机重定向）
+
+### clash
+
+```yaml
+mixed-port: 65500          # ← .mixed_port
+tproxy-port: 60080         # ← .tproxy_port（默认不启用）
+allow-lan: false           # ← .allow_lan
+ipv6: false                # ← .ipv6
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:65501   # ← .controller
+secret: <自动UUID或配置>                 # ← .secret
+profile: { store-selected: true }
+dns: { enable: false }     # 固定：DNS 分流归 chinadns-ng
+tun: { enable: false }     # 固定：不抢流量
+proxies: []                # 填充点
+# proxy-groups / rules 缺失 → 追加默认（PROXY[AUTO,DIRECT,节点] + MATCH,PROXY）
+```
+
+### sing-box
+
+```json
+{
+  "log": { "level": "info", "timestamp": true },
+  "inbounds": [
+    { "type": "socks",  "tag": "socks-in",  "listen": "127.0.0.1", "listen_port": 1080 },
+    { "type": "tproxy", "tag": "tproxy-in", "listen": "127.0.0.1", "listen_port": 60080 }
+    // tproxy 可选（.tproxy_port）；socks 始终保留（debug/curl 测试）
+    // .ipv6=true 时追加 tproxy-in-v6（::1），实现 v4+v6 双栈 tproxy
+  ],
+  "outbounds": [],
+  "route": { "final": "PROXY" },
+  "experimental": { "clash_api": { ... } }   // ← .singbox_clash_api
+}
+```
+
+### 双栈 tproxy
+
+`.tproxy_port` + `.ipv6` 组合：
+
+| 格式 | 行为 |
+|---|---|
+| clash | `tproxy-port: 60080` + `ipv6: true` → 内部自动 v4+v6 监听（clash 无独立 listen 字段，`ipv6` 参数即双栈开关） |
+| sing-box | 两个 tproxy inbound：`tproxy-in`（127.0.0.1）+ `tproxy-in-v6`（::1）；listen 映射 `127.0.0.1→::1`、`0.0.0.0→::` |
+
+与 ipt2socks 对接场景对照：ipt2socks 自己监听 v4+v6 tproxy 端口对接 netfilter，客户端只需 socks；客户端直供 tproxy 时，`ipv6` 参数让两种方案的双栈语义一致。
+
 ## 输出格式
 
 | 格式 | 说明 | 校验 |
@@ -185,6 +241,9 @@ proxies: []          # 节点列表填充点（必填）
     --listen <addr>      原生客户端监听地址
     --port <n>           原生客户端监听端口
     --mixed-port <n>     clash mixed-port
+    --tproxy-port <n>    tproxy 传入端口（clash + sing-box 内置模板；socks 保留）
+    --allow-lan          clash allow-lan（内置模板，默认关）
+    --ipv6               clash ipv6 / sing-box v6 tproxy（内置模板，默认关）
     --controller <a:p>   clash / sing-box external-controller
     --secret <str>       API secret（默认自动生成 UUID）
     --singbox-clash-api  sing-box 输出启用 clash_api
