@@ -1,83 +1,89 @@
-// subfetch configuration: every field is optional unless noted.
-// CLI flags override .zon values; run `subfetch --help` for the CLI side.
+// # subfetch configuration: every field is optional unless noted.
+// # CLI flags override .zon values; run `subfetch --help` for the CLI side.
 .{
     // ── subscription list (the only required config) ────────────────
-    // one .{...} each; name + url required; ua/enable optional
+    //
+    // # one .{...} each; name + url required; ua/enable optional
     //   name   : subscription name (node name prefix, Chinese OK, length <= 32)
     //   url    : subscription URL (https://) or a local file path / file://
     //   ua     : custom User-Agent (optional, overrides the global .ua)
     //   enable : false temporarily disables the subscription (default true)
+    //
     .subscriptions = .{
         .{
             .name = "hk-airport",
             .url = "https://example.com/api/v1/client/subscribe?token=REPLACE_ME",
         },
-        // anonymous subscription: omit the name field entirely (no "name@" prefix)
+        // # anonymous subscription: omit the name field entirely (no "name@" prefix)
         // .{ .url = "https://example.com/anon-sub" },
     },
 
     // ── output targets (default: raw format) ────────────────────────
-    // one .{...} each; .fmt required, .tmpl/.path optional
+    //
+    // # one .{...} each; .fmt required, .tmpl/.path optional
     //   fmt  : clash | singbox | trojan | hysteria | hysteria2 | xray | ss | ssr | raw
     //   tmpl : user template path (clash/singbox only; replaces the built-in template)
     //   path : output file (single-file formats) or directory (native formats);
     //          "-" = stdout; omitted + --dry-run = verify only
+    //
     // .outputs = .{
     //     .{ .fmt = .clash, .path = "/etc/clash/config.yaml" },
     //     .{ .fmt = .singbox, .path = "/etc/sing-box/config.json" },
     // },
 
     // ── global behavior (all have defaults; uncomment to customize) ─
-    // global default User-Agent for subscriptions (per-subscription .ua overrides)
+
+    // # global default User-Agent for subscriptions (per-subscription .ua overrides)
     .ua = "clash-verge/v2.2.3",
 
-    // info-node (airport notice) keywords: pseudo-nodes like "expiry / remain traffic"
-    // are filtered out. defaults: 到期/剩余/有效期/套餐/官网/expire/traffic/usage/plan
+    // # info-node (airport notice) keywords: pseudo-nodes like "expiry / remain traffic"
+    // # are filtered out. defaults: 到期/剩余/有效期/套餐/官网/expire/traffic/usage/plan
     // .info_keywords = .{ "到期", "剩余" },
 
-    // node name separator between subscription name and node name (default "@")
+    // # node name separator between subscription name and node name (default "@")
     // .sep = "@",
 
-    // inline node URIs (same semantics as --node)
+    // # inline node URIs (same semantics as --node)
     // .nodes = .{ "trojan://pass@host:443#node1" },
 
-    // node list files, one URI per line (same semantics as --node-file)
+    // # node list files, one URI per line (same semantics as --node-file)
     // .node_files = .{ "/etc/nodes.txt" },
 
-    // fetch timeout in seconds
+    // # fetch timeout in seconds
     // .timeout = 30,
 
-    // API secret for clash / sing-box (default: auto-generated UUID)
+    // # API secret for clash / sing-box (default: auto-generated UUID)
     // .secret = "change-me",
 
-    // custom reload command after install (overrides API/systemctl auto-reload)
+    // # custom reload command after install (overrides API/systemctl auto-reload)
     // .reload_cmd = "systemctl restart clash",
 
     // ── built-in template parameters (only take effect without a user template) ─
-    // listen address: sing-box inbounds + native clients (default 127.0.0.1)
+
+    // # listen address: sing-box inbounds + native clients (default 127.0.0.1)
     // .listen = "127.0.0.1",
 
-    // listen port: sing-box socks inbound + native clients (default 1080)
+    // # listen port: sing-box socks inbound + native clients (default 1080)
     // .port = 1080,
 
-    // clash mixed-port (default 65500)
+    // # clash mixed-port (default 65500)
     // .mixed_port = 65500,
 
-    // tproxy inbound port (clash tproxy-port / sing-box tproxy-in; socks inbound stays)
+    // # tproxy inbound port (clash tproxy-port / sing-box tproxy-in; socks inbound stays)
     // .tproxy_port = 60080,
 
-    // clash allow-lan (default off)
+    // # clash allow-lan (default off)
     // .allow_lan = false,
 
-    // v6 tproxy dual-stack: clash ipv6 + sing-box tproxy-in-v6 (default off)
+    // # v6 tproxy dual-stack: clash ipv6 + sing-box tproxy-in-v6 (default off)
     // .tproxy_ipv6 = false,
 
-    // client log level: debug | info | warning | error (default info)
+    // # client log level: debug | info | warning | error (default info)
     // .log_level = "info",
 
-    // clash external-controller / sing-box clash_api (default 127.0.0.1:65501)
+    // # clash external-controller / sing-box clash_api (default 127.0.0.1:65501)
     // .controller = "127.0.0.1:65501",
 
-    // add clash_api to sing-box output (default off)
+    // # add clash_api to sing-box output (default off)
     // .singbox_clash_api = true,
 }
