@@ -45,8 +45,8 @@ fn createMod(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     return mod;
 }
 
-fn addSmokeTest(b: *std.Build, exe: *std.Build.Step.Compile, arg_out: []const u8, matrix: ?ReleaseMatrix) *std.Build.Step.Run {
-    const name = if (matrix) |m| b.fmt("smoke-test-{s}", .{m.triple}) else "smoke-test";
+fn addSmokeTest(b: *std.Build, exe: *std.Build.Step.Compile, arg_output: []const u8, matrix: ?ReleaseMatrix) *std.Build.Step.Run {
+    const name = if (matrix) |m| b.fmt("smoke-test {s}", .{m.triple}) else "smoke-test";
 
     const smoke_test = std.Build.Step.Run.create(b, name);
     smoke_test.stdio = .inherit;
@@ -54,7 +54,7 @@ fn addSmokeTest(b: *std.Build, exe: *std.Build.Step.Compile, arg_out: []const u8
 
     if (matrix) |m| smoke_test.addArgs(&.{ m.qemu, "-cpu", m.qemu_cpu });
     smoke_test.addArtifactArg(exe);
-    smoke_test.addArgs(&.{ "--config", "fixtures/config.zon", "-o", arg_out, "--dry-run" });
+    smoke_test.addArgs(&.{ "-c", "fixtures/config.zon", "-o", arg_output, "--dry-run" });
 
     return smoke_test;
 }

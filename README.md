@@ -1,72 +1,54 @@
 # subfetch
 
-订阅拉取 & 多格式配置生成工具：抓取订阅节点，生成 clash / sing-box / 原生客户端的配置文件，安装前真实校验，安装后自动重载。
-
-单二进制、零运行时依赖，适合服务器 / 路由器上 cron 定时运行。
+拉取订阅、生成 clash / sing-box / 原生客户端配置，安装前用真实客户端校验，安装后自动重载。单二进制、零运行时依赖，适合服务器和路由器上用 cron 定时运行。
 
 ## 特性
 
-- 8 种协议解析：ss / ssr / vmess / vless(+reality) / trojan / hysteria / hysteria2 / tuic
-- 订阅格式自动识别：URI 列表、base64、clash YAML、v2rayN JSON、sing-box JSON
-- 9 种输出格式：clash / sing-box 聚合配置，ss / ssr / trojan / xray / hysteria / hysteria2 原生配置，raw 节点列表
-- 安装前用真实客户端校验（`mihomo -t`、`sing-box check`、`xray -test`），校验失败不动旧配置
-- 安装后热重载（API 优先，失败回退 systemctl，也可自定义命令）
-- 机场通知节点（到期 / 流量提示）自动过滤，关键词可配置
-- `.zon` 类型安全配置，字段拼错直接报错
+- 解析 8 种协议：ss / ssr / vmess / vless / trojan / hysteria / hysteria2 / tuic
+- 自动识别订阅格式：URI 列表、base64、clash YAML、v2rayN JSON、sing-box JSON
+- 输出 9 种格式：clash / sing-box 聚合配置，ss / ssr / trojan / xray / hysteria / hysteria2 原生配置，raw 节点列表
+- 安装前校验（`mihomo -t` / `sing-box check` / `xray -test`），失败不覆盖旧配置
+- 安装后重载（clash API 优先，回退 systemctl，可自定义命令）
+- 自动过滤机场通知节点（到期 / 流量提示），关键词可配置
+- 配置用 .zon 类型安全格式，字段拼错直接报错
 
 ## 快速开始
 
 ```sh
-# 1. 复制配置模板
+# 1. 复制模板并编辑（覆盖全部字段，注释里写了每个字段的用途）
 cp config.example.zon config.zon
 vim config.zon
 
-# 2. 预览（不写文件，输出到 stdout）
+# 2. 预览（输出到 stdout，不写文件）
 subfetch -c config.zon -o clash=- --dry-run
 
-# 3. 正式安装并重载
+# 3. 安装并重载
 subfetch -c config.zon -o clash=/etc/clash/config.yaml \
     --reload-cmd "systemctl restart clash"
-
-# 4. 多个输出目标（一次运行）
-subfetch -c config.zon \
-    -o clash=/etc/clash/config.yaml \
-    -o singbox=/etc/sing-box/config.json
 ```
 
-**配置加载规则**（config.zon 可选）：不创建配置文件也能纯 CLI 使用（`--url`/`--node`/`--node-file` + 参数默认值）；默认运行会尝试加载当前目录的 `config.zon`（存在即生效，无需 `-c`），不存在则使用默认值并打印 `config: none, using defaults`；`-c <path>` 指定后只读该文件（缺失会报错，防拼写错误）。
+不建配置文件也能用：`--url` / `--node` 直接在命令行输入。默认运行会尝试加载当前目录的 `config.zon`（存在即生效）；用 `-c` 指定后只读该文件，文件缺失会报错。
 
 ## 配置
 
 ```zig
 .{
-    .ua = "clash-verge/v2.2.3",   // 默认 User-Agent
+    .ua = "clash-verge/v2.2.3",           // 默认 User-Agent
     .subscriptions = .{
         .{
-            .name = "香港机场",          // 订阅名，作为节点名前缀（≤32 字节）
+            .name = "香港机场",             // 节点名前缀，省略即匿名
             .url = "https://example.com/sub?token=xxx",
-            // .ua = "custom-ua/1.0",   // 本条订阅单独 UA
-            // .enable = false,         // 临时禁用
+            // .ua = "custom-ua/1.0",      // 本条订阅单独 UA
+            // .enable = false,            // 临时禁用
         },
-        .{ .name = "本地节点", .url = "/etc/nodes.txt" },
+        .{ .url = "/etc/nodes.txt" },      // 本地节点列表，匿名
     },
 }
 ```
 
-`url` 支持 https、http、file:// 和本地文件路径。节点名格式：`订阅名@节点名`（分隔符可用 `--sep` 修改）。
+`url` 支持 https / http / file:// / 本地路径。节点名格式为 `订阅名@节点名`，分隔符可用 `--sep` 修改。省略 `name` 即匿名订阅，节点名不带前缀。
 
-### 匿名订阅
-
-省略 `name` 即匿名订阅——行为和普通订阅完全一样，只是节点名不带前缀，适合临时节点：
-
-```zig
-.subscriptions = .{
-    .{ .name = "airport", .url = "https://..." },  // 节点名：airport@xxx
-    .{ .url = "/tmp/manual-nodes.txt" },           // 节点名：xxx（匿名）
-}
-```
-
-### CLI 与 .zon 输入对照
+CLI 与 .zon 输入一一对应：
 
 | 输入 | CLI | .zon |
 |---|---|---|
@@ -75,9 +57,7 @@ subfetch -c config.zon \
 | 节点 URI | `--node <uri>` | `.nodes = .{ ... }` |
 | 节点列表文件 | `--node-file <path>` | `.node_files = .{ ... }` |
 
-### 完整配置字段
-
-除 `--dry-run` 和 `-v` 外，所有 CLI 参数都能写进 `.zon`，优先级：CLI > .zon > 默认。全部配置进 .zon 后，一条命令即可部署：
+除 `--dry-run`、`-v` 外，所有 CLI 参数都能写进 .zon，优先级 CLI > .zon > 默认：
 
 ```zig
 .{
@@ -86,41 +66,37 @@ subfetch -c config.zon \
     .secret = "xxx",                   // API secret（默认自动生成）
     .timeout = 30,                     // 拉取超时（秒）
     .info_keywords = .{ "到期", "剩余流量" },  // 信息节点关键词
+    .listen = "127.0.0.1",             // 客户端监听地址
+    .port = 1080,                      // socks 端口
+    .mixed_port = 65500,               // clash mixed-port（clash 专用）
+    .allow_lan = true,                 // clash allow-lan（clash 专用）
+    .tproxy_port = 60080,              // tproxy 端口（clash + sing-box）
+    .tproxy_ipv6 = true,               // v6 tproxy 双栈（clash ipv6 / sing-box tproxy-in-v6）
+    .log_level = "warning",            // 客户端日志级别 debug|info|warning|error
+    .controller = "127.0.0.1:65501",   // clash external-controller / sing-box clash_api
     .singbox_clash_api = true,         // sing-box 输出启用 clash_api
-    .allow_lan = true,                 // clash 内置模板 allow-lan（clash 专用）
-    .tproxy_ipv6 = true,               // v6 tproxy 双栈：clash ipv6 + sing-box tproxy-in-v6
-                                       // （内置模板；ss-tproxy 支持 v6 透明代理时可开；
-                                       // socks 监听不受影响——本地监听地址只是内网传输端点，
-                                       // 流量 v4/v6 由上层应用决定）
-    .log_level = "warning",            // 客户端日志级别 debug|info|warning|error（内置模板；
-                                       // 三格式默认均为 info）
-    .tproxy_port = 60080,              // tproxy 传入端口（clash tproxy-port / sing-box tproxy in；
-                                       // 开启后 socks 传入保留，便于 debug/curl 测试；
-                                       // 配合 .tproxy_ipv6=true 实现 v4+v6 双栈 tproxy）
-    .outputs = .{                      // 输出目标（默认 raw）
+    .reload_cmd = "systemctl restart clash",
+    .outputs = .{                      // 输出目标，默认 raw
         .{ .fmt = .clash, .path = "/etc/clash/config.yaml" },
         .{ .fmt = .singbox, .path = "/etc/sing-box/config.json" },
     },
-    .listen = "127.0.0.1",             // 以下为客户端监听参数
-    .port = 1080,
-    .mixed_port = 65500,
-    .controller = "127.0.0.1:65501",
-    .reload_cmd = "systemctl restart clash",
     .subscriptions = .{ ... },
 }
 ```
 
+全部配置进 .zon 后，一条命令即可部署，cron / systemd timer 同样适用：
+
 ```sh
-subfetch -c config.zon    # 放进 cron / systemd timer 即可
+subfetch -c config.zon
 ```
 
-注意：`.secret` 是敏感信息，含它的 .zon 不要提交到仓库。
+`.secret` 是敏感信息，含它的 .zon 不要提交到仓库。
 
 ## 信息节点过滤
 
-机场订阅常夹带"通知节点"（如 `到期2026-12-21 剩余流量279.95G`），默认按关键词自动过滤。内置关键词：`到期` `剩余` `有效期` `套餐` `官网` + `expire` `traffic` `usage` `plan`（英文不区分大小写）。日志显示 `N info`，`-v` 可列出被过滤的节点。
+机场订阅常夹带通知节点（如 `到期2026-12-21 剩余流量279.95G`），默认按关键词过滤：`到期` `剩余` `有效期` `套餐` `官网` + `expire` `traffic` `usage` `plan`（英文不区分大小写）。日志显示 `N info`，`-v` 列出被过滤的节点。
 
-自定义关键词（覆盖内置默认；空数组 = 不过滤）：
+自定义关键词覆盖默认（空数组 = 不过滤）：
 
 ```zig
 .{
@@ -128,109 +104,39 @@ subfetch -c config.zon    # 放进 cron / systemd timer 即可
 }
 ```
 
-CLI 等价写法：`--info-keyword 到期 --info-keyword 剩余流量`（`--info-keyword ""` 清空 = 不过滤）。
-
-## 模板
-
-clash / sing-box 输出支持自定义模板：模板是一份完整的配置文件，节点部分用**单行空列表**占位：
-
-```yaml
-# clash 模板（其余内容原样保留）
-mixed-port: 7890
-proxies: []          # 节点列表填充点（必填）
-# proxy-groups / rules 不写即自动追加默认；写了就完全由你掌控
-```
-
-```json
-// sing-box 模板
-{
-  "log": { "level": "debug" },
-  "inbounds": [ ... ],
-  "outbounds": [],   // 节点列表填充点
-  "route": { "final": "PROXY" }
-}
-```
-
-使用：`-o clash:模板路径=输出文件`。
-
-规则：
-- `proxies` / `"outbounds"` 填充点必须是单行空列表，否则报错
-- `proxy-groups` / `rules`：模板中**缺失** → 自动追加默认；**写了**（无论内容）→ 完全保留你的内容
-- 自定义组内节点列表用 `__NODES__` 锚点标记插入位置，subfetch 展开为真实节点名
-- 不提供模板时使用内置默认模板
-
-**注意**：`.listen`/`.port`/`.mixed_port`/`.allow_lan`/`.controller`/`.secret`/`.singbox_clash_api` 等输出配置参数**只在内置模板（不提供模板时）生效**；其中 `mixed_port`/`allow_lan` 为 clash 专用（字段名与 clash 配置一致）；`tproxy_ipv6` 为双格式通用参数（clash 映射官方 `ipv6` 字段，sing-box 追加 v6 tproxy inbound）。一旦使用自定义模板，模板就是最终配置——subfetch 只做填充点/锚点/默认组追加，不注入、不覆盖模板里的任何字段。
-
-## 内置模板
-
-不提供模板时使用内置模板——它是为 **ss-tproxy 配套场景**设计的最小可用配置，每条固定值都是架构要求而非随意选择：
-
-- **DNS 分流归 chinadns-ng** → clash `dns: enable: false`、sing-box 无 dns 段
-- **L4 分流归 ss-tproxy** → clash `rules: MATCH,PROXY`、sing-box `route.final: PROXY`（进来即全走代理）
-- **不抢流量** → `tun: enable: false`
-- **监听本地** → 默认 `listen: 127.0.0.1`（ss-tproxy 同机重定向）
-
-### clash
-
-```yaml
-mixed-port: 65500          # ← .mixed_port
-tproxy-port: 60080         # ← .tproxy_port（默认不启用）
-allow-lan: false           # ← .allow_lan
-ipv6: false                # ← .tproxy_ipv6（clash 官方字段名仍为 ipv6）
-mode: rule
-log-level: info                    # ← .log_level（warning|error 可降低路由器日志 IO）
-external-controller: 127.0.0.1:65501   # ← .controller
-secret: <自动UUID或配置>                 # ← .secret
-profile: { store-selected: true }
-dns: { enable: false }     # 固定：DNS 分流归 chinadns-ng
-tun: { enable: false }     # 固定：不抢流量
-proxies: []                # 填充点
-# proxy-groups / rules 缺失 → 追加默认（PROXY[AUTO,DIRECT,节点] + MATCH,PROXY）
-```
-
-### sing-box
-
-```json
-{
-  "log": { "level": "info", "timestamp": true },
-  "inbounds": [
-    { "type": "socks",  "tag": "socks-in",  "listen": "127.0.0.1", "listen_port": 1080 },
-    { "type": "tproxy", "tag": "tproxy-in", "listen": "127.0.0.1", "listen_port": 60080 }
-    // tproxy 可选（.tproxy_port）；socks 始终保留（debug/curl 测试）
-    // .tproxy_ipv6=true 时追加 tproxy-in-v6（::1），实现 v4+v6 双栈 tproxy
-  ],
-  "outbounds": [],
-  "route": { "final": "PROXY" },
-  "experimental": { "clash_api": { ... } }   // ← .singbox_clash_api
-}
-```
-
-### 双栈 tproxy
-
-`.tproxy_port` + `.tproxy_ipv6` 组合：
-
-| 格式 | 行为 |
-|---|---|
-| clash | `tproxy-port: 60080` + `tproxy_ipv6: true`（渲染为官方 `ipv6: true`）→ 内部自动 v4+v6 监听（clash 无独立 listen 字段，此参数即双栈开关） |
-| sing-box | 两个 tproxy inbound：`tproxy-in`（127.0.0.1）+ `tproxy-in-v6`（::1）；listen 映射 `127.0.0.1→::1`、`0.0.0.0→::` |
-
-与 ipt2socks 对接场景对照：ipt2socks 自己监听 v4+v6 tproxy 端口对接 netfilter，客户端只需 socks（监听 127.0.0.1 即可——socks 本地监听地址只是内网传输端点，目标 v4/v6 由上层应用决定）；客户端直供 tproxy 时，`tproxy_ipv6` 参数让两种方案的双栈语义一致。
+CLI 等价写法：`--info-keyword 到期 --info-keyword 剩余流量`，`--info-keyword ""` 清空。
 
 ## 输出格式
 
-| 格式 | 说明 | 校验 |
+| 格式 | 说明 | 安装前校验 |
 |---|---|---|
 | `clash` | clash / mihomo 聚合配置 | `mihomo -t` |
 | `singbox` | sing-box 聚合配置 | `sing-box check` |
-| `trojan` | trojan-go，每节点一个文件 | JSON 语法 |
-| `hysteria` | hysteria 1.x，每节点一个文件 | JSON 语法 |
-| `hysteria2` | hysteria 2.x，每节点一个文件 | YAML |
-| `xray` | xray（vless），每节点一个文件 | `xray -test` |
-| `ss` | shadowsocks，每节点一个文件 | JSON 语法 |
-| `ssr` | shadowsocksr，每节点一个文件 | JSON 语法 |
+| `xray` | xray 配置，每节点一文件 | `xray -test` |
+| `trojan` `hysteria` `hysteria2` `ss` `ssr` | 原生客户端配置，每节点一文件 | JSON / YAML 语法检查 |
 | `raw` | 节点 JSON 列表（默认格式，脚本消费） | — |
 
-原生格式每个节点一个文件，文件名即节点名（如 `香港1.json`）。校验程序找不到时自动跳过。sing-box 不支持 ssr / v2ray-plugin，这些节点会跳过并在日志提示。
+`-o` 语法：`-o <fmt>[:模板路径]=<输出路径>`，可多次；路径写 `-` 则输出到 stdout（配合 `--dry-run` 预览）。原生格式文件名即节点名。校验程序不在 PATH 时自动跳过；sing-box 不支持的节点（ssr、v2ray-plugin）自动跳过并在日志提示。
+
+## 模板
+
+clash / sing-box 输出支持自定义模板：一份完整的配置文件，节点列表位置用单行空列表占位：
+
+```yaml
+proxies: []    # clash
+```
+
+```json
+"outbounds": []    // sing-box
+```
+
+- `proxy-groups` / `rules`：模板里缺失 → 自动追加默认；写了 → 完全保留
+- 自定义组内节点列表用 `__NODES__` 标记插入位置
+- 模板即最终配置：subfetch 只做填充，不注入、不覆盖任何字段
+
+## 内置模板
+
+不提供模板时使用内置模板，按 ss-tproxy 场景设计：DNS 分流归 chinadns-ng、L4 分流归 ss-tproxy（全部流量进代理）、不启用 tun、监听 127.0.0.1。配置字段中的 `listen` / `port` / `mixed_port` / `tproxy_port` / `allow_lan` / `tproxy_ipv6` / `log_level` / `controller` / `secret` / `singbox_clash_api` 即对应内置模板的参数，自定义模板下这些字段不生效。
 
 ## CLI 参数
 
@@ -245,16 +151,14 @@ proxies: []                # 填充点
     --dry-run            只校验不写文件
     --ua <str>           默认 User-Agent
     --timeout <sec>      拉取超时（秒）
-    --listen <addr>      sing-box 内置模板 + 原生客户端监听地址（默认 127.0.0.1）
-    --port <n>           sing-box 内置模板 + 原生客户端监听端口（默认 1080，socks5）
-    --mixed-port <n>     clash mixed-port（内置模板，默认 65500）
-    --tproxy-port <n>    tproxy 传入端口（clash + sing-box 内置模板；socks 保留）
-    --log-level <lvl>    客户端日志级别 debug|info|warning|error（内置模板，默认 info）
-    --allow-lan          clash allow-lan（内置模板，默认关）
-    --tproxy-ipv6        v6 tproxy 双栈（clash ipv6 + sing-box tproxy-in-v6；
-                         内置模板，默认关）
+    --listen <addr>      客户端监听地址（默认 127.0.0.1）
+    --port <n>           socks5 端口（默认 1080）
+    --mixed-port <n>     clash mixed-port（默认 65500）
+    --allow-lan          clash allow-lan（默认关）
+    --tproxy-port <n>    tproxy 端口（默认不启用）
+    --tproxy-ipv6        v6 tproxy 双栈（默认关）
+    --log-level <lvl>    客户端日志级别 debug|info|warning|error（默认 info）
     --controller <a:p>   clash external-controller / sing-box clash_api
-                         （sing-box 需配合 --singbox-clash-api）
     --secret <str>       API secret（默认自动生成 UUID）
     --singbox-clash-api  sing-box 输出启用 clash_api
     --no-verify          跳过校验
@@ -274,26 +178,26 @@ proxies: []                # 填充点
 | ss（obfs/v2ray-plugin/shadow-tls） | ✅ | ✅ | ✅ | ✅ sslocal |
 | ssr | ✅ | ✅ | ❌ | ✅ shadowsocksr |
 | hysteria 1.x | ✅ | ✅ | ✅ | ✅ hy1 |
-| hysteria 2.x（obfs） | ✅ | ✅ | ✅ | ✅ hy2 |
+| hysteria 2.x | ✅ | ✅ | ✅ | ✅ hy2 |
 | tuic | ✅ | ✅ | ✅ | — |
 
 不支持的协议（如 anytls / wireguard）按行跳过并在日志提示。
 
 ## 构建
 
-需要 Zig 0.15.2（版本锁定，其他版本会在编译期报错）。
+需要 Zig 0.15.2（版本锁定，其他版本编译期直接报错）。
 
 ```sh
-zig build -Doptimize=ReleaseSafe        # x86_64-linux-musl 静态
-zig build -Dtarget=aarch64-linux-musl   # 交叉编译（ARM 路由器等）
-zig build test                          # 单元测试
+zig build -Doptimize=ReleaseSmall                     # x86_64-linux-musl 静态二进制
+zig build -Dtarget=aarch64-linux-musl -Doptimize=ReleaseSmall   # 交叉编译
+zig build test                                        # 单元测试
 ```
 
 产物在 `zig-out/bin/subfetch`。
 
 ## 平台
 
-Linux 是目标平台（x86_64 / aarch64 / arm / riscv64 静态二进制）。macOS / Windows 保持可编译但不发布——本工具是 ss-tproxy 工具链的一环。
+Linux 是目标平台（x86_64 / aarch64 / arm / riscv64 等静态发布）。macOS / Windows 保持可编译但不发布——本工具是 ss-tproxy 工具链的一环。
 
 ## 相关项目
 
