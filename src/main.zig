@@ -40,8 +40,8 @@ const Options = struct {
     singbox_clash_api: bool = false,
     /// positive flag: clash allow-lan in built-in template (default off)
     allow_lan: bool = false,
-    /// positive flag: clash ipv6 in built-in template (default off)
-    ipv6: bool = false,
+    /// positive flag: v6 tproxy dual-stack in built-in templates (default off)
+    tproxy_ipv6: bool = false,
     /// tproxy inbound port (clash + singbox built-in templates; null = off)
     tproxy_port: ?u16 = null,
     /// client log level (built-in templates; null = info)
@@ -104,7 +104,7 @@ pub fn main() !void {
     opts.reload_cmd = opts.reload_cmd orelse cfg.reload_cmd;
     opts.singbox_clash_api = opts.singbox_clash_api or (cfg.singbox_clash_api orelse false);
     opts.allow_lan = opts.allow_lan or (cfg.allow_lan orelse false);
-    opts.ipv6 = opts.ipv6 or (cfg.ipv6 orelse false);
+    opts.tproxy_ipv6 = opts.tproxy_ipv6 or (cfg.tproxy_ipv6 orelse false);
     opts.tproxy_port = opts.tproxy_port orelse cfg.tproxy_port;
     opts.log_level = opts.log_level orelse cfg.log_level;
 
@@ -183,7 +183,7 @@ pub fn main() !void {
         .secret = secret,
         .enable_clash_api = opts.singbox_clash_api,
         .allow_lan = opts.allow_lan,
-        .ipv6 = opts.ipv6,
+        .tproxy_ipv6 = opts.tproxy_ipv6,
         .tproxy_port = opts.tproxy_port,
         .log_level = opts.log_level,
     };
@@ -505,8 +505,8 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
             opts.singbox_clash_api = true;
         } else if (std.mem.eql(u8, a, "--allow-lan")) {
             opts.allow_lan = true;
-        } else if (std.mem.eql(u8, a, "--ipv6")) {
-            opts.ipv6 = true;
+        } else if (std.mem.eql(u8, a, "--tproxy-ipv6")) {
+            opts.tproxy_ipv6 = true;
         } else if (std.mem.eql(u8, a, "--no-verify")) {
             opts.no_verify = true;
         } else if (std.mem.eql(u8, a, "--no-reload")) {
@@ -800,7 +800,9 @@ fn printUsage() void {
         \\      --secret <str>     API secret (auto-generated UUID if omitted)
         \\      --singbox-clash-api add clash_api to sing-box output (default off)
         \\      --allow-lan        clash allow-lan in built-in template (default off)
-        \\      --ipv6             clash ipv6 in built-in template (default off)
+        \\      --tproxy-ipv6     v6 tproxy dual-stack in built-in templates:
+        \\                          clash ipv6 flag + sing-box tproxy-in-v6
+        \\                          inbound (default off)
         \\      --tproxy-port <n>  tproxy inbound port (clash + sing-box built-in
         \\                          templates; socks inbound stays; default off)
         \\      --log-level <lvl>  client log level: debug|info|warning|error

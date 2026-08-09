@@ -40,8 +40,11 @@ pub const Config = struct {
     mixed_port: ?u16 = null,
     /// clash allow-lan, built-in template only (CLI --allow-lan wins)
     allow_lan: ?bool = null,
-    /// clash ipv6 listen, built-in template only (CLI --ipv6 wins)
-    ipv6: ?bool = null,
+    /// v6 tproxy dual-stack, built-in templates only: clash ipv6 flag +
+    /// sing-box extra tproxy-in-v6 inbound (CLI --tproxy-ipv6 wins);
+    /// socks inbound is unaffected (v4/v6 of relayed traffic is the upper layer's
+    /// business; the local listen address is just the transport endpoint)
+    tproxy_ipv6: ?bool = null,
     /// tproxy inbound port, clash + sing-box built-in templates only;
     /// socks inbound stays (debug/curl testing) (CLI --tproxy-port wins)
     tproxy_port: ?u16 = null,
@@ -215,7 +218,7 @@ test "parse render/deploy config fields" {
         \\    .reload_cmd = "systemctl restart clash",
         \\    .singbox_clash_api = true,
         \\    .allow_lan = true,
-        \\    .ipv6 = true,
+        \\    .tproxy_ipv6 = true,
         \\    .tproxy_port = 60080,
         \\    .log_level = "warning",
         \\    .outputs = .{
@@ -236,7 +239,7 @@ test "parse render/deploy config fields" {
     try std.testing.expectEqualStrings("systemctl restart clash", cfg.reload_cmd.?);
     try std.testing.expect(cfg.singbox_clash_api.?);
     try std.testing.expect(cfg.allow_lan.?);
-    try std.testing.expect(cfg.ipv6.?);
+    try std.testing.expect(cfg.tproxy_ipv6.?);
     try std.testing.expectEqual(@as(?u16, 60080), cfg.tproxy_port);
     try std.testing.expectEqualStrings("warning", cfg.log_level.?);
     try std.testing.expectEqual(@as(usize, 2), cfg.outputs.?.len);

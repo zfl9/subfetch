@@ -45,8 +45,8 @@ pub const Options = struct {
     secret: ?[]const u8 = null,
     /// clash allow-lan (built-in template only)
     allow_lan: bool = false,
-    /// clash ipv6 (built-in template only)
-    ipv6: bool = false,
+    /// v6 tproxy dual-stack (built-in templates only)
+    tproxy_ipv6: bool = false,
     /// tproxy inbound port (clash + sing-box built-in templates; null = off)
     tproxy_port: ?u16 = null,
     /// client log level (built-in templates; null = info)

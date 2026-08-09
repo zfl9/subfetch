@@ -45,8 +45,8 @@ pub fn renderSingbox(
         try tproxy.put("listen", .{ .string = opts.listen });
         try tproxy.put("listen_port", .{ .integer = tp });
         try inbounds.append(.{ .object = tproxy });
-        // ipv6: add a second tproxy inbound on the v6 loopback (one inbound, one address)
-        if (opts.ipv6) {
+        // tproxy_ipv6: add a second tproxy inbound on the v6 loopback (one inbound, one address)
+        if (opts.tproxy_ipv6) {
             const v6: ?[]const u8 = if (std.mem.eql(u8, opts.listen, "127.0.0.1"))
                 "::1"
             else if (std.mem.eql(u8, opts.listen, "0.0.0.0"))
