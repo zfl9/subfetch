@@ -191,7 +191,9 @@ fn applyWsGrpc(
 
 // ---------------- ss ----------------
 
-fn parseSsPlugin(allocator: std.mem.Allocator, plugin: []const u8) ParseError!node.SsPlugin {
+/// parse a TOR_PT-style plugin string ("obfs-local;obfs=http;obfs-host=x").
+/// shared by ss:// URIs and sing-box subscriptions (plugin;plugin_opts).
+pub fn parseSsPlugin(allocator: std.mem.Allocator, plugin: []const u8) ParseError!node.SsPlugin {
     const decoded = try urlDecode(allocator, plugin);
     const PluginKV = struct { key: []const u8, value: ?[]const u8 };
     var kv: std.ArrayListUnmanaged(PluginKV) = .empty;

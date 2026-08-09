@@ -182,6 +182,7 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
             .port = port,
             .cipher = get(m, "cipher") orelse return error.MissingField,
             .password = get(m, "password") orelse return error.MissingField,
+            .plugin = try ssPluginFromYaml(arena, m),
         } };
     }
     if (std.mem.eql(u8, type_str, "ssr")) {
@@ -299,6 +300,43 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
         } };
     }
     return error.UnsupportedType;
+}
+
+/// clash YAML ss plugin: plugin + plugin-opts (obfs-local / v2ray-plugin / shadow-tls)
+fn ssPluginFromYaml(arena: std.mem.Allocator, m: []const yaml.MappingEntry) ParseError!?node.SsPlugin {
+    _ = arena;
+    const get = yaml.mappingGetScalar;
+    const plugin = get(m, "plugin") orelse return null;
+    const opts = yaml.mappingGet(m, "plugin-opts");
+    const om = if (opts) |o| yaml.mappingOf(o) orelse return error.MissingField else null;
+
+    if (std.mem.eql(u8, plugin, "obfs-local")) {
+        return .{ .obfs_local = .{
+            .mode = if (om) |mm| get(mm, "mode") orelse "http" else "http",
+            .host = if (om) |mm| get(mm, "host") orelse "" else "",
+        } };
+    }
+    if (std.mem.eql(u8, plugin, "v2ray-plugin")) {
+        var result: node.SsPlugin = .{ .v2ray_plugin = .{} };
+        const vp = &result.v2ray_plugin;
+        if (om) |mm| {
+            if (get(mm, "mode")) |m2| vp.mode = m2;
+            vp.tls = yBool(get(mm, "tls"));
+            vp.host = get(mm, "host");
+            vp.path = get(mm, "path");
+        }
+        return result;
+    }
+    if (std.mem.eql(u8, plugin, "shadow-tls")) {
+        const ver = if (om) |mm| get(mm, "version") orelse "3" else "3";
+        const version: u8 = std.fmt.parseInt(u8, ver, 10) catch 3;
+        return .{ .shadow_tls = .{
+            .host = if (om) |mm| get(mm, "host") orelse "" else "",
+            .password = if (om) |mm| get(mm, "password") orelse "" else "",
+            .version = version,
+        } };
+    }
+    return error.UnsupportedPlugin;
 }
 
 /// clash YAML alpn (yaml sequence) -> []const []const u8
@@ -479,13 +517,26 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
         } };
     }
     if (std.mem.eql(u8, ob_type, "shadowsocks")) {
-        return .{ .ss = .{
+        var n: node.SS = .{
             .name = name,
             .server = server,
             .port = port,
             .cipher = getStr(obj, "method") orelse return error.MissingField,
             .password = getStr(obj, "password") orelse return error.MissingField,
-        } };
+        };
+        // sing-box plugin + plugin_opts (TOR_PT style, same as ss:// plugin param)
+        if (getStr(obj, "plugin")) |p| {
+            const opts_text = getStr(obj, "plugin_opts");
+            const full = if (opts_text) |po|
+                try std.fmt.allocPrint(arena, "{s};{s}", .{ p, po })
+            else
+                p;
+            n.plugin = uri.parseSsPlugin(arena, full) catch |e| switch (e) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => return error.UnsupportedPlugin,
+            };
+        }
+        return .{ .ss = n };
     }
     if (std.mem.eql(u8, ob_type, "hysteria2")) {
         var obfs: ?[]const u8 = null;
@@ -656,6 +707,62 @@ test "parse v2rayn json" {
     try std.testing.expect(r.nodes[0].vmess.tls);
 }
 
+test "parse clash yaml ss plugin" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const text =
+        \\proxies:
+        \\  - name: SG-OBSF
+        \\    type: ss
+        \\    server: sg1.example.com
+        \\    port: 8388
+        \\    cipher: aes-256-gcm
+        \\    password: p1
+        \\    plugin: obfs-local
+        \\    plugin-opts:
+        \\      mode: http
+        \\      host: www.bing.com
+        \\  - name: SG-STLS
+        \\    type: ss
+        \\    server: sg2.example.com
+        \\    port: 8443
+        \\    cipher: aes-256-gcm
+        \\    password: p2
+        \\    plugin: shadow-tls
+        \\    plugin-opts:
+        \\      host: www.bing.com
+        \\      password: st-pw
+        \\      version: 3
+    ;
+    const r = try parseSubscription(arena.allocator(), "airport", text, "@", &node.default_info_keywords);
+    try std.testing.expectEqual(@as(usize, 2), r.nodes.len);
+    const p0 = r.nodes[0].ss.plugin.?;
+    try std.testing.expectEqualStrings("http", p0.obfs_local.mode);
+    try std.testing.expectEqualStrings("www.bing.com", p0.obfs_local.host);
+    const p1 = r.nodes[1].ss.plugin.?;
+    try std.testing.expectEqualStrings("st-pw", p1.shadow_tls.password);
+    try std.testing.expectEqual(@as(u8, 3), p1.shadow_tls.version);
+}
+
+test "parse singbox shadowsocks plugin" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const text =
+        \\{
+        \\  "outbounds": [
+        \\    { "type": "shadowsocks", "tag": "ss-obfs", "server": "8.8.8.8", "server_port": 8388,
+        \\      "method": "aes-256-gcm", "password": "p",
+        \\      "plugin": "obfs-local", "plugin_opts": "obfs=http;obfs-host=www.bing.com" }
+        \\  ]
+        \\}
+    ;
+    const r = try parseSubscription(arena.allocator(), "sb", text, "@", &node.default_info_keywords);
+    try std.testing.expectEqual(@as(usize, 1), r.nodes.len);
+    const plugin = r.nodes[0].ss.plugin.?;
+    try std.testing.expectEqualStrings("http", plugin.obfs_local.mode);
+    try std.testing.expectEqualStrings("www.bing.com", plugin.obfs_local.host);
+}
+
 test "parse clash yaml alpn list" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -793,4 +900,5 @@ test "compile-check" {
     _ = &grpcOpts;
     _ = &yamlAlpn;
     _ = &alpnFromString;
+    _ = &ssPluginFromYaml;
 }
