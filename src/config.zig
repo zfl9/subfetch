@@ -222,7 +222,7 @@ test "parse render/deploy config fields" {
         \\    .tproxy_port = 60080,
         \\    .log_level = "warning",
         \\    .outputs = .{
-        \\        .{ .fmt = .clash, .path = "/etc/clash/config.yaml" },
+        \\        .{ .fmt = .clash, .path = "/etc/clash/config.yaml", .reload_cmd = "systemctl restart clash" },
         \\        .{ .fmt = .singbox, .tmpl = "/etc/singbox.tmpl.json", .path = "/etc/sing-box/config.json" },
         \\    },
         \\    .subscriptions = .{ .{ .name = "airport", .url = "https://x/sub" } },
@@ -245,10 +245,12 @@ test "parse render/deploy config fields" {
     try std.testing.expectEqual(@as(usize, 2), cfg.outputs.?.len);
     try std.testing.expectEqual(render_mod.Format.clash, cfg.outputs.?[0].fmt);
     try std.testing.expectEqualStrings("/etc/clash/config.yaml", cfg.outputs.?[0].path.?);
+    try std.testing.expectEqualStrings("systemctl restart clash", cfg.outputs.?[0].reload_cmd.?);
     try std.testing.expect(cfg.outputs.?[0].tmpl == null);
     try std.testing.expectEqual(render_mod.Format.singbox, cfg.outputs.?[1].fmt);
     try std.testing.expectEqualStrings("/etc/singbox.tmpl.json", cfg.outputs.?[1].tmpl.?);
     try std.testing.expectEqualStrings("/etc/sing-box/config.json", cfg.outputs.?[1].path.?);
+    try std.testing.expect(cfg.outputs.?[1].reload_cmd == null);
 }
 
 test "parse sep and secret config fields" {
