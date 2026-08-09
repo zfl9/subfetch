@@ -34,6 +34,8 @@ subfetch -c config.zon \
     -o singbox=/etc/sing-box/config.json
 ```
 
+**配置加载规则**（config.zon 可选）：不创建配置文件也能纯 CLI 使用（`--url`/`--node`/`--node-file` + 参数默认值）；默认运行会尝试加载当前目录的 `config.zon`（存在即生效，无需 `-c`），不存在则使用默认值并打印 `config: none, using defaults`；`-c <path>` 指定后只读该文件（缺失会报错，防拼写错误）。
+
 ## 配置
 
 ```zig
