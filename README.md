@@ -15,7 +15,7 @@
 ## 快速开始
 
 ```sh
-# 1. 复制配置example，并编辑
+# 1. 复制配置模板，并编辑
 cp config.example.zon config.zon
 vim config.zon
 
@@ -27,7 +27,7 @@ subfetch -c config.zon -o clash=/etc/clash/config.yaml \
     --reload-cmd "systemctl restart clash"
 ```
 
-或者直接通过命令行参数：`--url 订阅链接` / `--node 节点uri` 快速开始。
+也可以不用配置文件，直接命令行输入：`--url 订阅链接` / `--node 节点uri`。
 
 ## 配置
 
@@ -45,7 +45,7 @@ subfetch -c config.zon -o clash=/etc/clash/config.yaml \
 }
 ```
 
-`url` 也支持 `file://`、`本地路径`。节点名的输出格式为 `订阅名@节点名`，分隔符可用 `--sep` 修改。
+`url` 支持 https / http / `file://` / 本地路径。节点名的输出格式为 `订阅名@节点名`，分隔符可用 `--sep` 修改。
 
 CLI 与 .zon 输入一一对应：
 
@@ -56,7 +56,7 @@ CLI 与 .zon 输入一一对应：
 | 节点 URI | `--node <uri>` | `.nodes = .{ ... }` |
 | 节点列表文件 | `--node-file <path>` | `.node_files = .{ ... }` |
 
-除 `--dry-run`、`-v` 和 `--no-verify` / `--no-reload`（CLI 专用）外，所有 CLI 参数都能写进 .zon，优先级 CLI > .zon > 默认：
+基本所有的 CLI 参数都能写进 .zon，优先级 CLI > .zon > 程序默认：
 
 ```zig
 .{
@@ -66,7 +66,7 @@ CLI 与 .zon 输入一一对应：
     .timeout = 15,                     // 单订阅拉取超时（秒，默认 15）
     .info_keywords = .{ "到期", "剩余流量" },  // 信息节点关键词
     .listen = "127.0.0.1",             // 客户端监听地址
-    .port = 1080,                      // socks 端口
+    .port = 1080,                      // 客户端监听端口
     .mixed_port = 65500,               // clash mixed-port（clash 专用）
     .allow_lan = true,                 // clash allow-lan（clash 专用）
     .tproxy_port = 60080,              // tproxy 端口（clash + sing-box）
@@ -113,7 +113,9 @@ CLI 等价写法：`--info-keyword 到期 --info-keyword 剩余流量`，`--info
 | `trojan` `hysteria` `hysteria2` `ss` `ssr` | 原生客户端配置，每节点一文件 | JSON / YAML 语法检查 |
 | `raw` | 节点 JSON 列表（默认格式，脚本消费） | — |
 
-`-o` 语法：`-o <fmt>[:模板路径]=<输出路径>`，可多次；路径写 `-` 则输出到 stdout（配合 `--dry-run` 预览）。原生格式文件名即节点名。校验程序不在 PATH 时自动跳过；sing-box 不支持的节点（ssr、v2ray-plugin）自动跳过并在日志提示。
+- `-o` 语法：`-o <fmt>[:模板路径]=<输出路径>`，可多次
+- 路径写 `-` 则输出到 stdout（配合 `--dry-run` 预览）
+- 原生格式文件名即节点名；校验程序不在 PATH 时自动跳过；sing-box 不支持的节点（ssr、v2ray-plugin）自动跳过并在日志提示
 
 ## 模板
 
