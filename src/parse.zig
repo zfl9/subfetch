@@ -79,9 +79,29 @@ pub fn parseSubscription(
                     }
                 }
             },
-            // JSON object with a proxies key (clash JSON) does not exist in the wild:
-            // clash subscriptions are always YAML, so unsupported
-            .object => return error.UnknownFormat,
+            // sing-box subscription: {"outbounds": [...]}
+            .object => |obj| {
+                const ob = obj.get("outbounds") orelse return error.UnknownFormat;
+                const arr = switch (ob) {
+                    .array => |a| a,
+                    else => return error.UnknownFormat,
+                };
+                for (arr.items) |item| {
+                    const oobj = switch (item) {
+                        .object => |o| o,
+                        else => {
+                            skipped += 1;
+                            continue;
+                        },
+                    };
+                    const n = singboxOutboundToNode(arena, oobj, sub_name, sep) catch {
+                        skipped += 1;
+                        continue;
+                    };
+                    if (try filterInfoNode(arena, n, sub_name, sep, keywords, &info, &info_names)) continue;
+                    nodes.append(arena, n) catch return error.OutOfMemory;
+                }
+            },
             else => return error.UnknownFormat,
         },
         .clash => |root| {
@@ -313,6 +333,212 @@ fn alpnFromString(arena: std.mem.Allocator, s: []const u8) ParseError!?[]const [
 }
 
 /// v2rayN JSON node (with "add"/"ps" fields) -> Node
+/// sing-box outbound object (subscription format: {"outbounds": [...]}) -> Node.
+/// field layout differs from v2rayN: type/tag/server/server_port, tls{}, transport{}.
+fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_name: []const u8, sep: []const u8) ParseError!node.Node {
+    const getStr = struct {
+        fn get(o: std.json.ObjectMap, key: []const u8) ?[]const u8 {
+            const v = o.get(key) orelse return null;
+            return switch (v) {
+                .string => |s| s,
+                else => null,
+            };
+        }
+    }.get;
+    const getBool = struct {
+        fn get(o: std.json.ObjectMap, key: []const u8) bool {
+            const v = o.get(key) orelse return false;
+            return switch (v) {
+                .bool => |b| b,
+                else => false,
+            };
+        }
+    }.get;
+    const getPort = struct {
+        fn get(o: std.json.ObjectMap, key: []const u8) ParseError!u16 {
+            const v = o.get(key) orelse return error.MissingField;
+            return switch (v) {
+                .integer => |i| if (i >= 0 and i <= 65535) @intCast(i) else error.InvalidPort,
+                .string => |s| std.fmt.parseInt(u16, s, 10) catch error.InvalidPort,
+                else => error.InvalidPort,
+            };
+        }
+    }.get;
+    const getObj = struct {
+        fn get(o: std.json.ObjectMap, key: []const u8) ?std.json.ObjectMap {
+            const v = o.get(key) orelse return null;
+            return switch (v) {
+                .object => |m| m,
+                else => null,
+            };
+        }
+    }.get;
+
+    const server = getStr(obj, "server") orelse return error.MissingField;
+    const port = try getPort(obj, "server_port");
+    const raw_name = getStr(obj, "tag") orelse "";
+    const name = try nameFor(arena, raw_name, sub_name, sep, server, port);
+
+    // tls {} block
+    const tls = getObj(obj, "tls");
+    const tls_enabled = if (tls) |t| getBool(t, "enabled") else false;
+    const server_name = if (tls) |t| getStr(t, "server_name") else null;
+    const insecure = if (tls) |t| getBool(t, "insecure") else false;
+    const fingerprint = if (tls) |t| blk: {
+        if (getObj(t, "utls")) |u| break :blk getStr(u, "fingerprint");
+        break :blk null;
+    } else null;
+    const alpn: ?[]const []const u8 = if (tls) |t| blk: {
+        const v = t.get("alpn") orelse break :blk null;
+        const arr = switch (v) {
+            .array => |a| a,
+            else => break :blk null,
+        };
+        var list: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (arr.items) |item| {
+            switch (item) {
+                .string => |s| try list.append(arena, s),
+                else => {},
+            }
+        }
+        break :blk if (list.items.len > 0) list.items else null;
+    } else null;
+
+    // transport {} block (ws / grpc / http)
+    const transport = getObj(obj, "transport");
+    const t_type = if (transport) |tr| getStr(tr, "type") else null;
+    const network: node.Network = if (std.mem.eql(u8, t_type orelse "", "ws")) .ws else if (std.mem.eql(u8, t_type orelse "", "grpc")) .grpc else if (std.mem.eql(u8, t_type orelse "", "http")) .http else .tcp;
+    var ws: ?node.WsOpts = null;
+    var grpc: ?node.GrpcOpts = null;
+    if (transport) |tr| {
+        if (std.mem.eql(u8, getStr(tr, "type") orelse "", "ws")) {
+            var host: ?[]const u8 = null;
+            if (getObj(tr, "headers")) |h| host = getStr(h, "Host");
+            ws = .{ .path = getStr(tr, "path") orelse "/", .host = host };
+        } else if (std.mem.eql(u8, getStr(tr, "type") orelse "", "grpc")) {
+            grpc = .{ .service_name = getStr(tr, "service_name") orelse "" };
+        }
+    }
+
+    const ob_type = getStr(obj, "type") orelse return error.MissingField;
+    if (std.mem.eql(u8, ob_type, "vless")) {
+        var reality: ?node.RealityOpts = null;
+        if (tls) |t| {
+            if (getObj(t, "reality")) |r| {
+                if (getBool(r, "enabled")) {
+                    reality = .{
+                        .public_key = getStr(r, "public_key") orelse return error.MissingField,
+                        .short_id = getStr(r, "short_id"),
+                    };
+                }
+            }
+        }
+        return .{ .vless = .{
+            .name = name,
+            .server = server,
+            .port = port,
+            .uuid = getStr(obj, "uuid") orelse return error.MissingField,
+            .network = network,
+            .tls = tls_enabled,
+            .reality = reality,
+            .flow = getStr(obj, "flow"),
+            .servername = server_name,
+            .fingerprint = fingerprint,
+            .skip_cert_verify = insecure,
+            .alpn = alpn,
+            .ws = ws,
+            .grpc = grpc,
+        } };
+    }
+    if (std.mem.eql(u8, ob_type, "vmess")) {
+        return .{ .vmess = .{
+            .name = name,
+            .server = server,
+            .port = port,
+            .uuid = getStr(obj, "uuid") orelse return error.MissingField,
+            .network = network,
+            .tls = tls_enabled,
+            .servername = server_name,
+            .fingerprint = fingerprint,
+            .ws = ws,
+            .grpc = grpc,
+        } };
+    }
+    if (std.mem.eql(u8, ob_type, "trojan")) {
+        return .{ .trojan = .{
+            .name = name,
+            .server = server,
+            .port = port,
+            .password = getStr(obj, "password") orelse return error.MissingField,
+            .servername = server_name,
+            .skip_cert_verify = insecure,
+            .alpn = alpn,
+            .network = network,
+            .ws = ws,
+            .grpc = grpc,
+        } };
+    }
+    if (std.mem.eql(u8, ob_type, "shadowsocks")) {
+        return .{ .ss = .{
+            .name = name,
+            .server = server,
+            .port = port,
+            .cipher = getStr(obj, "method") orelse return error.MissingField,
+            .password = getStr(obj, "password") orelse return error.MissingField,
+        } };
+    }
+    if (std.mem.eql(u8, ob_type, "hysteria2")) {
+        var obfs: ?[]const u8 = null;
+        var obfs_pw: ?[]const u8 = null;
+        if (getObj(obj, "obfs")) |o| {
+            if (std.mem.eql(u8, getStr(o, "type") orelse "", "salamander")) {
+                obfs = getStr(o, "type");
+                obfs_pw = getStr(o, "password");
+            }
+        }
+        return .{ .hysteria2 = .{
+            .name = name,
+            .server = server,
+            .port = port,
+            .password = getStr(obj, "password") orelse return error.MissingField,
+            .servername = server_name,
+            .skip_cert_verify = insecure,
+            .obfs = obfs,
+            .obfs_password = obfs_pw,
+            .alpn = alpn,
+        } };
+    }
+    if (std.mem.eql(u8, ob_type, "hysteria")) {
+        return .{ .hysteria = .{
+            .name = name,
+            .server = server,
+            .port = port,
+            .auth_str = getStr(obj, "auth_str") orelse getStr(obj, "auth"),
+            .up = getStr(obj, "up"),
+            .down = getStr(obj, "down"),
+            .obfs = getStr(obj, "obfs"),
+            .sni = server_name,
+            .skip_cert_verify = insecure,
+            .alpn = alpn,
+        } };
+    }
+    if (std.mem.eql(u8, ob_type, "tuic")) {
+        return .{ .tuic = .{
+            .name = name,
+            .server = server,
+            .port = port,
+            .uuid = getStr(obj, "uuid") orelse return error.MissingField,
+            .password = getStr(obj, "password") orelse "",
+            .servername = server_name,
+            .skip_cert_verify = insecure,
+            .congestion_controller = getStr(obj, "congestion_control"),
+            .alpn = alpn,
+        } };
+    }
+    // non-node outbounds (direct/block/selector/dns/...)
+    return error.UnsupportedType;
+}
+
 fn jsonNodeToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_name: []const u8, sep: []const u8) ParseError!node.Node {
     const getStr = struct {
         fn get(o: std.json.ObjectMap, key: []const u8) ?[]const u8 {
@@ -478,8 +704,75 @@ test "parse filters info nodes" {
     const r2 = try parseSubscription(a, "sub", "trojan://pass@hk1.example.com:443#香港1\n", "@", &node.default_info_keywords);
     try std.testing.expectEqual(@as(usize, 1), r2.nodes.len);
     try std.testing.expectEqual(@as(usize, 0), r2.info);
+}
 
-    // anonymous subscription (empty name): same pipeline, no "sub@" prefix, info filtering still active
+test "parse singbox subscription (outbounds)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const text =
+        \\{
+        \\  "outbounds": [
+        \\    { "type": "vless", "tag": "reality-1", "server": "1.2.3.4", "server_port": 443,
+        \\      "uuid": "09ac0a61-777e-4048-ba72-84f1d30e3a82", "flow": "xtls-rprx-vision",
+        \\      "tls": { "enabled": true, "server_name": "osxapps.itunes.apple.com",
+        \\               "utls": { "enabled": true, "fingerprint": "chrome" },
+        \\               "reality": { "enabled": true, "public_key": "dNR9791Fyzm-c7ozAQ1z2ok5P0YXjrQKeBYPvbAKYks", "short_id": "51fb77f0b8e8c7a3" } } },
+        \\    { "type": "vless", "tag": "ws-1", "server": "5.6.7.8", "server_port": 8443,
+        \\      "uuid": "09ac0a61-777e-4048-ba72-84f1d30e3a82", "tls": { "enabled": true, "server_name": "ws.example.com" },
+        \\      "transport": { "type": "ws", "path": "/ws", "headers": { "Host": "ws.example.com" } } },
+        \\    { "type": "trojan", "tag": "tr-1", "server": "9.9.9.9", "server_port": 443,
+        \\      "password": "pw", "tls": { "enabled": true, "server_name": "tr.example.com" } },
+        \\    { "type": "shadowsocks", "tag": "ss-1", "server": "8.8.8.8", "server_port": 8388,
+        \\      "method": "aes-128-gcm", "password": "sp" },
+        \\    { "type": "hysteria2", "tag": "hy2-1", "server": "7.7.7.7", "server_port": 443,
+        \\      "password": "hp", "tls": { "enabled": true, "server_name": "hy2.example.com" },
+        \\      "obfs": { "type": "salamander", "password": "op" } },
+        \\    { "type": "direct", "tag": "direct-out" },
+        \\    { "type": "block", "tag": "block-out" }
+        \\  ]
+        \\}
+    ;
+    const r = try parseSubscription(a, "sb", text, "@", &node.default_info_keywords);
+    try std.testing.expectEqual(@as(usize, 5), r.nodes.len);
+    try std.testing.expectEqual(@as(usize, 2), r.skipped); // direct/block skipped
+    // vless reality
+    const v = r.nodes[0].vless;
+    try std.testing.expectEqualStrings("sb@reality-1", v.name);
+    try std.testing.expectEqualStrings("1.2.3.4", v.server);
+    try std.testing.expectEqual(@as(u16, 443), v.port);
+    try std.testing.expect(v.tls);
+    try std.testing.expect(v.reality != null);
+    try std.testing.expectEqualStrings("dNR9791Fyzm-c7ozAQ1z2ok5P0YXjrQKeBYPvbAKYks", v.reality.?.public_key);
+    try std.testing.expectEqualStrings("51fb77f0b8e8c7a3", v.reality.?.short_id.?);
+    try std.testing.expectEqualStrings("xtls-rprx-vision", v.flow.?);
+    try std.testing.expectEqualStrings("osxapps.itunes.apple.com", v.servername.?);
+    try std.testing.expectEqualStrings("chrome", v.fingerprint.?);
+    // vless ws
+    const w = r.nodes[1].vless;
+    try std.testing.expectEqual(node.Network.ws, w.network);
+    try std.testing.expectEqualStrings("/ws", w.ws.?.path);
+    try std.testing.expectEqualStrings("ws.example.com", w.ws.?.host.?);
+    // trojan
+    const t = r.nodes[2].trojan;
+    try std.testing.expectEqualStrings("pw", t.password);
+    try std.testing.expectEqualStrings("tr.example.com", t.servername.?);
+    // ss
+    const s = r.nodes[3].ss;
+    try std.testing.expectEqualStrings("aes-128-gcm", s.cipher);
+    try std.testing.expectEqualStrings("sp", s.password);
+    // hysteria2 with salamander obfs
+    const h = r.nodes[4].hysteria2;
+    try std.testing.expectEqualStrings("hp", h.password);
+    try std.testing.expectEqualStrings("salamander", h.obfs.?);
+    try std.testing.expectEqualStrings("op", h.obfs_password.?);
+}
+
+test "parse anonymous subscription (no prefix, info filtered)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const text = "trojan://pass@hk1.example.com:443?sni=hk1.example.com#香港1-电信优化\ntrojan://pass@hk2.example.com:443?sni=hk2.example.com#到期2026-12-21 剩余流量279.95G\ntrojan://pass@jp1.example.com:443?sni=jp1.example.com#日本1-电信优化\n";
     const r3 = try parseSubscription(a, "", text, "@", &node.default_info_keywords);
     try std.testing.expectEqual(@as(usize, 2), r3.nodes.len);
     try std.testing.expectEqual(@as(usize, 1), r3.info);

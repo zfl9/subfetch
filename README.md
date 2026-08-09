@@ -7,7 +7,7 @@
 ## 特性
 
 - 8 种协议解析：ss / ssr / vmess / vless(+reality) / trojan / hysteria / hysteria2 / tuic
-- 订阅格式自动识别：URI 列表、base64、clash YAML/JSON、v2rayN JSON
+- 订阅格式自动识别：URI 列表、base64、clash YAML、v2rayN JSON、sing-box JSON
 - 9 种输出格式：clash / sing-box 聚合配置，ss / ssr / trojan / xray / hysteria / hysteria2 原生配置，raw 节点列表
 - 安装前用真实客户端校验（`mihomo -t`、`sing-box check`、`xray -test`），校验失败不动旧配置
 - 安装后热重载（API 优先，失败回退 systemctl，也可自定义命令）
