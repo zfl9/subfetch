@@ -142,16 +142,31 @@ fn hysteriaJson(arena: std.mem.Allocator, v: node.Hysteria, opts: Options) !Json
     try fields.append(arena, .{ "server", str(server) });
     try fields.append(arena, .{ "protocol", str(v.protocol) });
     if (v.auth_str) |a| try fields.append(arena, .{ "auth_str", str(a) });
-    if (v.up) |u| try fields.append(arena, .{ "up_mbps", int(std.fmt.parseInt(i64, u, 10) catch 0) });
-    if (v.down) |d| try fields.append(arena, .{ "down_mbps", int(std.fmt.parseInt(i64, d, 10) catch 0) });
+    if (v.up) |u| {
+        if (std.fmt.parseInt(i64, u, 10)) |n| {
+            try fields.append(arena, .{ "up_mbps", int(n) });
+        } else |_| {} // unparseable -> omit, client default applies
+    }
+    if (v.down) |d| {
+        if (std.fmt.parseInt(i64, d, 10)) |n| {
+            try fields.append(arena, .{ "down_mbps", int(n) });
+        } else |_| {} // unparseable -> omit, client default applies
+    }
     if (v.obfs) |obfs| try fields.append(arena, .{ "obfs", str(obfs) });
     var socks = ObjectMap.init(arena);
     try socks.put("listen", str(try std.fmt.allocPrint(arena, "{s}:{d}", .{ opts.listen, opts.port })));
     try fields.append(arena, .{ "socks5", .{ .object = socks } });
-    if (v.sni != null or v.skip_cert_verify) {
+    if (v.sni != null or v.skip_cert_verify or v.alpn != null) {
         var tls = ObjectMap.init(arena);
         if (v.sni) |sni| try tls.put("sni", str(sni));
         try tls.put("insecure", .{ .bool = v.skip_cert_verify });
+        if (v.alpn) |alpn| {
+            if (alpn.len > 0) {
+                var arr = std.json.Array.init(arena);
+                for (alpn) |a| try arr.append(str(a));
+                try tls.put("alpn", .{ .array = arr });
+            }
+        }
         try fields.append(arena, .{ "tls", .{ .object = tls } });
     }
     return buildObj(arena, fields.items);
@@ -164,10 +179,16 @@ fn hysteria2Yaml(arena: std.mem.Allocator, v: node.Hysteria2, opts: Options) ![]
     const server = try std.fmt.allocPrint(arena, "{s}:{d}", .{ v.server, v.port });
     try w.print("server: {s}\n", .{server});
     try w.print("auth: {s}\n", .{v.password});
-    if (v.servername != null or v.skip_cert_verify) {
+    if (v.servername != null or v.skip_cert_verify or v.alpn != null) {
         try w.print("tls:\n", .{});
         if (v.servername) |sni| try w.print("  sni: {s}\n", .{sni});
         if (v.skip_cert_verify) try w.print("  insecure: true\n", .{});
+        if (v.alpn) |alpn| {
+            if (alpn.len > 0) {
+                try w.print("  alpn:\n", .{});
+                for (alpn) |a| try w.print("    - {s}\n", .{a});
+            }
+        }
     }
     if (v.obfs) |obfs| {
         try w.print("obfs:\n  type: {s}\n", .{obfs});
