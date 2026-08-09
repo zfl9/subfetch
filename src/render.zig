@@ -45,6 +45,8 @@ pub const Options = struct {
     secret: ?[]const u8 = null,
     /// clash allow-lan (built-in template only)
     allow_lan: bool = false,
+    /// clash ipv6 (built-in template only)
+    ipv6: bool = false,
     /// whether sing-box enables clash_api (node switching via WebUI)
     enable_clash_api: bool = true,
 };
