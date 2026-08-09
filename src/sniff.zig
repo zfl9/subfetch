@@ -190,6 +190,16 @@ test "sniff clash yaml" {
     try std.testing.expectEqual(@as(usize, 1), yaml.sequenceOf(pv).?.len);
 }
 
+test "sniff singbox json object" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const s = try sniff(arena.allocator(), "{\"outbounds\": [{\"type\": \"vless\", \"tag\": \"a\", \"server\": \"h1\", \"server_port\": 443}]}");
+    try std.testing.expect(s == .json);
+    // non-singbox object is still sniffed as json (parse stage rejects it)
+    const s2 = try sniff(arena.allocator(), "{\"foo\": 1}");
+    try std.testing.expect(s2 == .json);
+}
+
 test "sniff json array" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

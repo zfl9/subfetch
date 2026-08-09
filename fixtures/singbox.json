@@ -1,0 +1,58 @@
+{
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "hk-reality",
+      "server": "hk1.example.com",
+      "server_port": 443,
+      "uuid": "09ac0a61-777e-4048-ba72-84f1d30e3a82",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.example.com",
+        "utls": { "enabled": true, "fingerprint": "chrome" },
+        "reality": {
+          "enabled": true,
+          "public_key": "dNR9791Fyzm-c7ozAQ1z2ok5P0YXjrQKeBYPvbAKYks",
+          "short_id": "51fb77f0b8e8c7a3"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "jp-ws",
+      "server": "jp1.example.com",
+      "server_port": 8443,
+      "uuid": "09ac0a61-777e-4048-ba72-84f1d30e3a82",
+      "tls": { "enabled": true, "server_name": "jp1.example.com" },
+      "transport": { "type": "ws", "path": "/ws", "headers": { "Host": "jp1.example.com" } }
+    },
+    {
+      "type": "trojan",
+      "tag": "us-trojan",
+      "server": "us1.example.com",
+      "server_port": 443,
+      "password": "trojan-pass",
+      "tls": { "enabled": true, "server_name": "us1.example.com" }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "sg-ss",
+      "server": "sg1.example.com",
+      "server_port": 8388,
+      "method": "aes-128-gcm",
+      "password": "ss-pass"
+    },
+    {
+      "type": "hysteria2",
+      "tag": "kr-hy2",
+      "server": "kr1.example.com",
+      "server_port": 443,
+      "password": "hy2-pass",
+      "tls": { "enabled": true, "server_name": "kr1.example.com" },
+      "obfs": { "type": "salamander", "password": "obfs-pass" }
+    },
+    { "type": "direct", "tag": "direct-out" },
+    { "type": "block", "tag": "block-out" }
+  ]
+}
