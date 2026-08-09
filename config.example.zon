@@ -1,17 +1,8 @@
 // subfetch configuration: every field is optional unless noted.
 // CLI flags override .zon values; run `subfetch --help` for the CLI side.
 .{
-    // global default User-Agent for subscriptions (per-subscription .ua overrides)
-    .ua = "clash-verge/v2.2.3",
-
-    // info-node (airport notice) keywords: pseudo-nodes like "expiry / remain traffic"
-    // are filtered out. defaults: 到期/剩余/有效期/套餐/官网/expire/traffic/usage/plan
-    // .info_keywords = .{ "到期", "剩余" },
-
-    // node name separator between subscription name and node name (default "@")
-    // .sep = "@",
-
-    // subscription list: one .{...} each; name + url required; ua/enable optional
+    // ── subscription list (the only required config) ────────────────
+    // one .{...} each; name + url required; ua/enable optional
     //   name   : subscription name (node name prefix, Chinese OK, length <= 32)
     //   url    : subscription URL (https://) or a local file path / file://
     //   ua     : custom User-Agent (optional, overrides the global .ua)
@@ -25,17 +16,8 @@
         // .{ .url = "https://example.com/anon-sub" },
     },
 
-    // inline node URIs / node list files (same semantics as --node / --node-file)
-    // .nodes = .{ "trojan://pass@host:443#node1" },
-    // .node_files = .{ "/etc/nodes.txt" },
-
-    // fetch timeout in seconds
-    // .timeout = 30,
-
-    // API secret for clash / sing-box (default: auto-generated UUID)
-    // .secret = "change-me",
-
-    // output targets: one .{...} each; .fmt required, .tmpl/.path optional
+    // ── output targets (default: raw format) ────────────────────────
+    // one .{...} each; .fmt required, .tmpl/.path optional
     //   fmt  : clash | singbox | trojan | hysteria | hysteria2 | xray | ss | ssr | raw
     //   tmpl : user template path (clash/singbox only; replaces the built-in template)
     //   path : output file (single-file formats) or directory (native formats);
@@ -45,7 +27,25 @@
     //     .{ .fmt = .singbox, .path = "/etc/sing-box/config.json" },
     // },
 
-    // --- built-in template parameters (only take effect without a user template) ---
+    // ── global behavior (all have defaults; uncomment to customize) ─
+    // global default User-Agent for subscriptions (per-subscription .ua overrides)
+    .ua = "clash-verge/v2.2.3",
+    // info-node (airport notice) keywords: pseudo-nodes like "expiry / remain traffic"
+    // are filtered out. defaults: 到期/剩余/有效期/套餐/官网/expire/traffic/usage/plan
+    // .info_keywords = .{ "到期", "剩余" },
+    // node name separator between subscription name and node name (default "@")
+    // .sep = "@",
+    // inline node URIs / node list files (same semantics as --node / --node-file)
+    // .nodes = .{ "trojan://pass@host:443#node1" },
+    // .node_files = .{ "/etc/nodes.txt" },
+    // fetch timeout in seconds
+    // .timeout = 30,
+    // API secret for clash / sing-box (default: auto-generated UUID)
+    // .secret = "change-me",
+    // custom reload command after install (overrides API/systemctl auto-reload)
+    // .reload_cmd = "systemctl restart clash",
+
+    // ── built-in template parameters (only take effect without a user template) ─
     // listen address / port: sing-box inbounds + native clients (default 127.0.0.1 / 1080)
     // .listen = "127.0.0.1",
     // .port = 1080,
@@ -63,6 +63,4 @@
     // .controller = "127.0.0.1:65501",
     // add clash_api to sing-box output (default off)
     // .singbox_clash_api = true,
-    // custom reload command after install (overrides API/systemctl auto-reload)
-    // .reload_cmd = "systemctl restart clash",
 }
