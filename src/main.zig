@@ -73,7 +73,10 @@ pub fn main() !void {
         const text = std.fs.cwd().readFileAlloc(arena, opts.config, 1 << 20) catch |e| {
             switch (e) {
                 error.FileNotFound => {
-                    if (std.mem.eql(u8, opts.config, "config.zon")) break :blk config_mod.Config{};
+                    if (std.mem.eql(u8, opts.config, "config.zon")) {
+                        logInfo(null, "config: {s} not found, using defaults", .{opts.config});
+                        break :blk config_mod.Config{};
+                    }
                     logErr(null, "failed to read config {s}: FileNotFound", .{opts.config});
                     std.process.exit(1);
                 },
@@ -87,10 +90,12 @@ pub fn main() !void {
             logErr(null, "out of memory\n", .{});
             std.process.exit(1);
         };
-        break :blk config_mod.parse(arena, cfg_src) catch |e| {
+        const parsed = config_mod.parse(arena, cfg_src) catch |e| {
             logErr(null, "failed to parse config {s}: {s}\n", .{ opts.config, @errorName(e) });
             std.process.exit(1);
         };
+        logInfo(null, "config: {s}", .{opts.config});
+        break :blk parsed;
     };
 
     // merge CLI > .zon config: node name separator, API secret, info-node keywords
