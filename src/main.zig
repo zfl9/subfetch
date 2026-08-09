@@ -74,7 +74,7 @@ pub fn main() !void {
             switch (e) {
                 error.FileNotFound => {
                     if (std.mem.eql(u8, opts.config, "config.zon")) {
-                        logInfo(null, "config: {s} not found, using defaults", .{opts.config});
+                        logInfo(null, "config: none, using defaults", .{});
                         break :blk config_mod.Config{};
                     }
                     logErr(null, "failed to read config {s}: FileNotFound", .{opts.config});
