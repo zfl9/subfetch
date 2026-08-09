@@ -54,7 +54,8 @@ pub const Config = struct {
     log_level: ?[]const u8 = null,
     /// clash/singbox external-controller (CLI --controller wins)
     controller: ?[]const u8 = null,
-    /// custom reload command after install (CLI --reload-cmd wins)
+    /// global default reload command after install
+    /// (per-output outputs[].reload_cmd overrides; CLI --reload-cmd wins)
     reload_cmd: ?[]const u8 = null,
     /// add clash_api to sing-box output (default off; CLI --singbox-clash-api wins)
     singbox_clash_api: ?bool = null,

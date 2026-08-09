@@ -48,7 +48,8 @@ const Options = struct {
     log_level: ?[]const u8 = null,
     no_verify: bool = false,
     no_reload: bool = false,
-    /// user-defined reload command (acme.sh --reloadcmd style); overrides API/systemctl auto-reload
+    /// user-defined reload command (acme.sh --reloadcmd style);
+    /// overrides all .zon reload commands and API/systemctl auto-reload
     reload_cmd: ?[]const u8 = null,
 };
 
