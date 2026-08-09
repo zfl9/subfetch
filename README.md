@@ -244,7 +244,7 @@ proxies: []                # 填充点
     --ua <str>           默认 User-Agent
     --timeout <sec>      拉取超时（秒）
     --listen <addr>      sing-box 内置模板 + 原生客户端监听地址（默认 127.0.0.1）
-    --port <n>           sing-box 内置模板 + 原生客户端监听端口（默认 1080）
+    --port <n>           sing-box 内置模板 + 原生客户端监听端口（默认 1080/socks5）
     --mixed-port <n>     clash mixed-port（内置模板，默认 65500）
     --tproxy-port <n>    tproxy 传入端口（clash + sing-box 内置模板；socks 保留）
     --log-level <lvl>    客户端日志级别 debug|info|warning|error（内置模板，默认 info）
