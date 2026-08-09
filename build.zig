@@ -22,11 +22,11 @@ const libyaml_sources = &.{
 };
 
 /// bundled libyaml (MIT): C sources are compiled directly into the module, @cImport consumes the headers.
-fn linkLibYaml(mod: *std.Build.Module) void {
+fn linkLibYaml(b: *std.Build, mod: *std.Build.Module) void {
     mod.link_libc = true;
-    mod.addIncludePath(.{ .cwd_relative = "vendor/libyaml/include" });
-    mod.addIncludePath(.{ .cwd_relative = "vendor/libyaml/src" });
-    mod.addIncludePath(.{ .cwd_relative = "vendor/libyaml" });
+    mod.addIncludePath(b.path("vendor/libyaml/include"));
+    mod.addIncludePath(b.path("vendor/libyaml/src"));
+    mod.addIncludePath(b.path("vendor/libyaml"));
     mod.addCSourceFiles(.{
         .files = libyaml_sources,
         // HAVE_CONFIG_H: use the static config.h (version macros); _GNU_SOURCE: strdup and other POSIX functions
@@ -41,7 +41,7 @@ fn createMod(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         .optimize = optimize,
         .strip = (optimize != .Debug),
     });
-    linkLibYaml(mod);
+    linkLibYaml(b, mod);
     return mod;
 }
 
