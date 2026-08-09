@@ -90,15 +90,18 @@ subfetch --config subscriptions.zon -o clash=- -o singbox=/etc/sing-box/config.j
 
 ### 配置化运行参数
 
-`.zon` 还可配置 `sep`（节点名分隔符）与 `secret`（clash/sing-box API secret），优先级 **CLI > .zon > 代码默认**：
+`.zon` 还可配置 `sep`（节点名分隔符）、`secret`（clash/sing-box API secret）、`info_node_keywords`（信息节点关键词），优先级 **CLI > .zon > 代码默认**：
 
 ```zig
 .{
-    .sep = "|",          // 覆盖默认 "@"；--sep 可再覆盖
-    .secret = "xxx",     // 覆盖自动生成 UUID；--secret 可再覆盖
+    .sep = "|",            // 覆盖默认 "@"；--sep 可再覆盖
+    .secret = "xxx",       // 覆盖自动生成 UUID；--secret 可再覆盖
+    .info_node_keywords = .{ "到期", "剩余流量" },  // 覆盖内置默认；--info-keyword 可再覆盖
     ...
 }
 ```
+
+CLI 侧：`--info-keyword <kw>` 可重复（提供则覆盖 .zon/默认），`--info-keyword ""` 清空全部 = 不过滤。
 
 注意：secret 是敏感信息——含 secret 的 .zon 勿提交到仓库。
 

@@ -33,6 +33,9 @@ const Options = struct {
     node_files: std.ArrayListUnmanaged([]const u8) = .empty,
     /// CLI subscriptions (--url [name=]url), same semantics as .zon subscriptions
     urls: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// info-node keyword overrides (--info-keyword, repeatable; "" clears);
+    /// provided = override, else .zon info_node_keywords, else built-in defaults
+    info_keywords: std.ArrayListUnmanaged([]const u8) = .empty,
     // render customization fields
     listen: []const u8 = "127.0.0.1",
     port: u16 = 1080,
@@ -83,10 +86,19 @@ pub fn main() !void {
         std.process.exit(1);
     };
 
-    // merge CLI > .zon config: node name separator and API secret
-    // (CLI --sep wins over .zon sep; default "@"; secret: CLI > .zon > auto-generated UUID)
+    // merge CLI > .zon config: node name separator, API secret, info-node keywords
+    // (CLI --sep wins over .zon sep; default "@"; secret: CLI > .zon > auto-generated UUID;
+    //  info keywords: --info-keyword provided > .zon info_node_keywords > built-in defaults)
     const sep = opts.sep orelse cfg.sep orelse "@";
     opts.secret = opts.secret orelse cfg.secret;
+    const info_keywords: []const []const u8 = if (opts.info_keywords.items.len > 0) blk: {
+        // "" entries mean "clear": drop them, an all-empty set disables filtering
+        var kws: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (opts.info_keywords.items) |kw| {
+            if (kw.len > 0) try kws.append(arena, kw);
+        }
+        break :blk kws.items;
+    } else if (cfg.info_node_keywords) |k| k else &node_mod.default_info_keywords;
 
     // collect all nodes: direct nodes first, then node files, then subscriptions
     // (within each category: CLI first, then .zon)
@@ -129,7 +141,7 @@ pub fn main() !void {
         try used_names.put(arena, n, {});
     }
     for (subs.items) |s| {
-        try processSubscription(arena, sep, &opts, &cfg, &all_nodes, &ok_cnt, &fail_cnt, &disabled_cnt, s);
+        try processSubscription(arena, sep, info_keywords, &opts, &cfg, &all_nodes, &ok_cnt, &fail_cnt, &disabled_cnt, s);
     }
 
     if (all_nodes.items.len == 0) {
@@ -489,6 +501,9 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
         } else if (takeValue(&i, args, a, "--url", null)) |v| {
             if (v.len == 0) return error.BadArg;
             try opts.urls.append(arena, v);
+        } else if (takeValue(&i, args, a, "--info-keyword", null)) |v| {
+            // empty value allowed: "" clears all keywords (disables filtering)
+            try opts.info_keywords.append(arena, v);
         } else if (takeValue(&i, args, a, "--ua", null)) |v| {
             opts.ua = v;
         } else if (takeValue(&i, args, a, "--sep", null)) |v| {
@@ -556,6 +571,7 @@ fn addNodeFile(
 fn processSubscription(
     arena: std.mem.Allocator,
     sep: []const u8,
+    info_keywords: []const []const u8,
     opts: *const Options,
     cfg: *const config_mod.Config,
     all_nodes: *std.ArrayListUnmanaged(node_mod.Node),
@@ -580,7 +596,6 @@ fn processSubscription(
         fail_cnt.* += 1;
         return;
     };
-    const info_keywords = cfg.info_node_keywords orelse &node_mod.default_info_keywords;
     const result = parse_mod.parseSubscription(arena, s.name orelse "", body, sep, info_keywords) catch |e| {
         logWarn(sub_label, "parse failed ({s})", .{@errorName(e)});
         fail_cnt.* += 1;
@@ -683,6 +698,8 @@ fn printUsage() void {
         \\      --node-file <path> node list file (one URI per line)
         \\      --url [name=]<url> subscription url on the CLI (repeatable; same semantics
         \\                          as .zon subscriptions; omit "name=" for anonymous)
+        \\      --info-keyword <kw> info-node keyword override (repeatable; "" clears all,
+        \\                          i.e. disables filtering; overrides .zon info_node_keywords)
         \\      --dry-run          verify only, write nothing
         \\      --ua <str>         default User-Agent
         \\      --sep <str>        node name separator between sub and node names (default @)
