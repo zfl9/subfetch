@@ -152,15 +152,6 @@ pub fn fillState(text: []const u8, key: []const u8) FillState {
     return if (matchFillLine(t, key)) .empty else .non_empty;
 }
 
-/// check whether `key` appears as a top-level line (key ':'), regardless of value.
-pub fn hasKey(text: []const u8, key: []const u8) bool {
-    var lines = std.mem.splitScalar(u8, text, '\n');
-    while (lines.next()) |line| {
-        if (matchKeyLine(line, key)) return true;
-    }
-    return false;
-}
-
 /// reserved anchor name: a `- <anchor>` line inside user-defined clash proxy-groups
 /// is expanded to the real node-name list (macro-style). node names are
 /// "sub@node" so this can never collide with a real node.
