@@ -7,9 +7,9 @@ const Options = render.Options;
 const Writer = std.Io.Writer;
 
 /// render mihomo/clash config.yaml.
-/// with a user template: fills the `proxies: []` / `proxy-groups: []` / `rules: []`
-/// fill points (missing groups/rules are appended). without a template: uses the
-/// built-in default template (same fill mechanism).
+/// with a user template: fills the `proxies: []` fill point; proxy-groups/rules
+/// missing -> append defaults, present -> kept as user content (with `__NODES__`
+/// anchor expansion). without a template: uses the built-in default template.
 pub fn renderClash(
     arena: std.mem.Allocator,
     nodes: []const node.Node,
@@ -40,17 +40,16 @@ pub fn renderClash(
     const names = try collectNames(arena, nodes);
     var gblock: std.ArrayListUnmanaged(u8) = .empty;
     try renderGroupsRel(gblock.writer(arena), names);
+    // proxy-groups: missing -> append default; present (empty or not) -> user content
     switch (tpl.fillState(text, "proxy-groups")) {
-        .empty => text = try tpl.fillList(arena, text, "proxy-groups", gblock.items),
-        .non_empty => {}, // user-defined groups (may reference fixed names like PROXY)
         .missing => text = try tpl.appendBlock(arena, text, "proxy-groups", gblock.items),
+        else => {}, // user-defined (empty stays empty; __NODES__ anchors expand)
     }
 
-    // rules: empty -> fill default, non-empty -> keep user content, missing -> append
+    // rules: missing -> append default; present -> user content
     switch (tpl.fillState(text, "rules")) {
-        .empty => text = try tpl.fillList(arena, text, "rules", "- MATCH,PROXY"),
-        .non_empty => {}, // user-defined rules
         .missing => text = try tpl.appendBlock(arena, text, "rules", "- MATCH,PROXY"),
+        else => {}, // user-defined (empty stays empty)
     }
 
     const file = try arena.alloc(render.File, 1);
@@ -76,8 +75,6 @@ fn defaultClashBase(arena: std.mem.Allocator, opts: Options) ![]const u8 {
     try w.print("dns:\n  enable: false\n", .{});
     try w.print("tun:\n  enable: false\n", .{});
     try w.print("proxies: []\n", .{});
-    try w.print("proxy-groups: []\n", .{});
-    try w.print("rules: []\n", .{});
 
     return list.toOwnedSlice(arena);
 }
@@ -427,7 +424,8 @@ test "clash with user template" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const tpl_text = "# my template\nmixed-port: 7890\nproxies: []\nproxy-groups: []\nrules: []\n";
+    // proxy-groups/rules missing -> default groups/rules appended
+    const tpl_text = "# my template\nmixed-port: 7890\nproxies: []\n";
     const files = try renderClash(a, &test_nodes, .{}, tpl_text);
     try std.testing.expectEqualStrings("config.yaml", files[0].path);
     const yaml = files[0].content;
@@ -436,6 +434,9 @@ test "clash with user template" {
     try std.testing.expect(std.mem.indexOf(u8, yaml, "mixed-port: 7890") != null);
     try std.testing.expect(std.mem.indexOf(u8, yaml, "proxies: []") == null);
     try std.testing.expect(std.mem.indexOf(u8, yaml, "- name: HK-01-CM") != null);
+    // default groups/rules appended
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "- name: PROXY") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "- MATCH,PROXY") != null);
     // missing fill point -> error
     try std.testing.expectError(error.MissingFillPoint, renderClash(a, &test_nodes, .{}, "a: 1\n"));
     // non-empty fill point -> error
@@ -466,10 +467,14 @@ test "clash anchor expansion in user groups" {
     // anchor expanded between AUTO and rules
     try std.testing.expect(std.mem.indexOf(u8, yaml, "- AUTO\n      - HK-01-CM") != null);
     try std.testing.expect(std.mem.indexOf(u8, yaml, "__NODES__") == null);
-    // empty group list stays empty (explicit)
+    // empty rules stay empty (present = user content, no default fill)
+    try std.testing.expect(std.mem.indexOf(u8, yaml, "rules: []") != null);
+    // empty group list stays empty (explicit), empty rules stay empty (no default fill)
     const tpl2 = "proxies: []\nproxy-groups:\n  - name: G\n    type: select\n    proxies: []\nrules: []\n";
     const files2 = try renderClash(a, &test_nodes, .{}, tpl2);
     try std.testing.expect(std.mem.indexOf(u8, files2[0].content, "proxies: []") != null);
+    try std.testing.expect(std.mem.indexOf(u8, files2[0].content, "rules: []") != null);
+    try std.testing.expect(std.mem.indexOf(u8, files2[0].content, "- MATCH,PROXY") == null);
 }
 
 test "clash anchor edge cases" {

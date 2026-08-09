@@ -125,9 +125,8 @@ clash / sing-box 输出支持自定义模板：模板是一份完整的配置文
 ```yaml
 # clash 模板（其余内容原样保留）
 mixed-port: 7890
-proxies: []          # 节点列表填充点
-proxy-groups: []     # 可选：默认生成 PROXY/AUTO 组
-rules: []            # 可选：默认生成 MATCH,PROXY
+proxies: []          # 节点列表填充点（必填）
+# proxy-groups / rules 不写即自动追加默认；写了就完全由你掌控
 ```
 
 ```json
@@ -143,9 +142,9 @@ rules: []            # 可选：默认生成 MATCH,PROXY
 使用：`-o clash:模板路径=输出文件`。
 
 规则：
-- 填充点必须是单行空列表，否则报错
-- `proxy-groups` / `rules`：空 → 填默认；非空 → 保留用户内容；缺失 → 追加默认
-- 自定义组内节点列表用 `__NODES__` 锚点标记插入位置（不带锚点则组内列表保持用户内容）
+- `proxies` / `"outbounds"` 填充点必须是单行空列表，否则报错
+- `proxy-groups` / `rules`：模板中**缺失** → 自动追加默认；**写了**（无论内容）→ 完全保留你的内容
+- 自定义组内节点列表用 `__NODES__` 锚点标记插入位置，subfetch 展开为真实节点名
 - 不提供模板时使用内置默认模板
 
 ## 输出格式
