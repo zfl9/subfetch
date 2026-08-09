@@ -215,7 +215,14 @@ pub fn sanitizeName(allocator: std.mem.Allocator, n: []const u8) ![]const u8 {
     while (buf.items.len > 0 and buf.items[buf.items.len - 1] == ' ') {
         buf.items.len -= 1;
     }
-    if (buf.items.len > max_name_len) buf.items.len = max_name_len;
+    if (buf.items.len > max_name_len) {
+        var cut: usize = max_name_len;
+        // back off to a UTF-8 character boundary: while buf[cut] is a
+        // continuation byte (0b10xxxxxx) it belongs to a multi-byte char
+        // that started earlier; cutting there would emit invalid UTF-8
+        while (cut > 0 and (buf.items[cut] & 0xC0) == 0x80) : (cut -= 1) {}
+        buf.items.len = cut;
+    }
     return buf.toOwnedSlice(allocator);
 }
 
@@ -264,6 +271,21 @@ pub fn prefixed(
 }
 
 // ---------------- tests ----------------
+
+test "sanitizeName truncates at UTF-8 boundary" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    // 50 ASCII + "香港1-电信优化" (18 bytes) = 68 bytes; cut at 60 lands
+    // inside "电" (E7 94 B5) -> must back off to the full char boundary
+    const long = "A" ** 50 ++ "香港1-电信优化";
+    const n = try sanitizeName(arena.allocator(), long);
+    // 50 + 香(3) + 港(3) + 1(1) + -(1) = 58 bytes, all complete chars
+    try std.testing.expectEqual(@as(usize, 58), n.len);
+    try std.testing.expectEqualStrings("A" ** 50 ++ "香港1-", n);
+    // short names unaffected
+    const short = try sanitizeName(arena.allocator(), "香港1-电信优化");
+    try std.testing.expectEqualStrings("香港1-电信优化", short);
+}
 
 test "sanitizeName strips control chars and collapses spaces" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
