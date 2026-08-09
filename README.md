@@ -87,7 +87,8 @@ subfetch -c subscriptions.zon \
     .singbox_clash_api = true,         // sing-box 输出启用 clash_api
     .allow_lan = true,                 // clash 内置模板 allow-lan（clash 专用）
     .ipv6 = true,                      // clash 内置模板 ipv6 监听（clash 专用；ss-tproxy 支持 v6 透明代理时可开）
-    .log_level = "warning",            // 客户端日志级别 debug|info|warning|error（内置模板）
+    .log_level = "warning",            // 客户端日志级别 debug|info|warning|error（内置模板；
+                                       // xray 默认 warning，clash/sing-box 默认 info）
     .tproxy_port = 60080,              // tproxy 传入端口（clash tproxy-port / sing-box tproxy in；
                                        // 开启后 socks 传入保留，便于 debug/curl 测试；
                                        // 配合 .ipv6=true 实现 v4+v6 双栈 tproxy）
