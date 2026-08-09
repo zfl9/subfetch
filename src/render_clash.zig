@@ -89,7 +89,7 @@ fn renderGroupsRel(w: anytype, names: []const []const u8) !void {
         try yamlStr(w, nm);
         try w.print("\n", .{});
     }
-    try w.print("- name: AUTO\n  type: url-test\n  interval: 30\n  tolerance: 50\n  proxies:\n", .{});
+    try w.print("- name: AUTO\n  type: url-test\n  url: http://www.gstatic.com/generate_204\n  interval: 30\n  tolerance: 50\n  proxies:\n", .{});
     for (names) |nm| {
         try w.print("  - ", .{});
         try yamlStr(w, nm);
