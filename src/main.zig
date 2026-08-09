@@ -588,7 +588,7 @@ fn processSubscription(
         disabled_cnt.* += 1;
         return;
     }
-    const ua = s.ua orelse cfg.default_ua orelse opts.ua;
+    const ua = s.ua orelse cfg.ua orelse opts.ua;
     // CLI --timeout is in seconds, fetchWithTimeout expects milliseconds
     const timeout_ms: ?u32 = if (opts.timeout) |t| t * 1000 else null;
     const body = fetch_mod.fetchWithTimeout(arena, s.url, ua, timeout_ms) catch |e| {

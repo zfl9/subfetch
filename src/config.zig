@@ -10,7 +10,7 @@ pub const Subscription = struct {
 };
 
 pub const Config = struct {
-    default_ua: ?[]const u8 = null,
+    ua: ?[]const u8 = null,
     /// info-node (airport notice) keyword overrides; null = built-in defaults
     info_keywords: ?[]const []const u8 = null,
     subscriptions: []const Subscription = &.{},
@@ -36,7 +36,7 @@ pub const Config = struct {
         allocator.free(cfg.nodes);
         for (cfg.node_files) |f| allocator.free(f);
         allocator.free(cfg.node_files);
-        if (cfg.default_ua) |u| allocator.free(u);
+        if (cfg.ua) |u| allocator.free(u);
         if (cfg.sep) |s| allocator.free(s);
         if (cfg.secret) |s| allocator.free(s);
         cfg.* = undefined;
@@ -95,7 +95,7 @@ pub fn isValidName(name: []const u8) bool {
 test "parse basic zon config" {
     const source =
         \\.{
-        \\    .default_ua = "clash-verge/v2.2.3",
+        \\    .ua = "clash-verge/v2.2.3",
         \\    .subscriptions = .{
         \\        .{ .name = "hk-airport", .url = "https://example.com/sub?token=abc" },
         \\        .{ .name = "us-airport", .url = "/etc/sub.txt", .ua = "custom/1.0", .enable = false },
@@ -105,7 +105,7 @@ test "parse basic zon config" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const cfg = try parse(arena.allocator(), source);
-    try std.testing.expectEqualStrings("clash-verge/v2.2.3", cfg.default_ua.?);
+    try std.testing.expectEqualStrings("clash-verge/v2.2.3", cfg.ua.?);
     try std.testing.expectEqual(@as(usize, 2), cfg.subscriptions.len);
     try std.testing.expectEqualStrings("hk-airport", cfg.subscriptions[0].name.?);
     try std.testing.expectEqualStrings("https://example.com/sub?token=abc", cfg.subscriptions[0].url);
@@ -122,7 +122,7 @@ test "minimal config" {
     defer arena.deinit();
     const cfg = try parse(arena.allocator(), source);
     try std.testing.expectEqual(@as(usize, 1), cfg.subscriptions.len);
-    try std.testing.expect(cfg.default_ua == null);
+    try std.testing.expect(cfg.ua == null);
 }
 
 test "anonymous subscription (omitted name)" {

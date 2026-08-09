@@ -49,12 +49,12 @@ subfetch --config subscriptions.zon -o clash=- -o singbox=/etc/sing-box/config.j
 
 ```zig
 .{
-    .default_ua = "clash-verge/v2.2.3",          // 默认 User-Agent（可选）
+    .ua = "clash-verge/v2.2.3",          // 默认 User-Agent（可选）
     .subscriptions = .{
         .{
             .name = "香港机场",                    // 订阅名：节点名前缀（支持中文，≤32）
             .url = "https://example.com/sub?token=xxx",
-            // .ua = "custom-ua/1.0",              // 覆盖 default_ua（可选）
+            // .ua = "custom-ua/1.0",              // 覆盖 ua（可选）
             // .enable = false,                    // 临时禁用（可选，默认 true）
         },
         .{ .name = "美西节点", .url = "/etc/sub.txt" },
