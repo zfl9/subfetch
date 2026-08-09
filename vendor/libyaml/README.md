@@ -4,9 +4,7 @@
 trimmed to the files required for building:
 
 - `include/yaml.h` — public header
-- `src/` — 8 C sources + yaml_private.h
-- `config.h` — static config (version macros), required by `-DHAVE_CONFIG_H=1`
-- `License` — MIT license text
+- `src/` — 8 C sources + yaml_private.h (version macros inlined, no config.h)
 
-Bundled and statically compiled by subfetch (see `addLibyaml` in `build.zig`);
+Bundled and statically compiled by subfetch (see `linkLibYaml` in `build.zig`);
 no system libyaml installation needed.
