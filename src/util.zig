@@ -90,4 +90,5 @@ test "urlDecode passthrough and decode" {
 test "compile-check" {
     _ = &b64Decode;
     _ = &urlDecode;
+    _ = &splitUriLines;
 }

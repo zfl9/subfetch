@@ -1006,11 +1006,23 @@ test "compile-check" {
     _ = &takeValue;
     _ = &printUsage;
     _ = &outPrint;
+    _ = &log;
     _ = &logInfo;
     _ = &logWarn;
     _ = &logErr;
     _ = &logVerbose;
+    _ = &levelChar;
+    _ = &levelColor;
+    _ = &localTimestamp;
+    _ = &colorizeKeywords;
     _ = &genSecret;
+    _ = &parseUrlArg;
+    _ = &addDirectNode;
+    _ = &addNodeFile;
+    _ = &processSubscription;
     _ = &verifyDryRunFiles;
+    _ = &verifyAll;
+    _ = &installAll;
+    _ = &fileExists;
     _ = &isDirFormat;
 }

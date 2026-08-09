@@ -368,5 +368,6 @@ test "compile-check" {
     _ = &supports;
     _ = &Format.parse;
     _ = &writeJsonValue;
+    _ = &writeJsonValueLevel;
     _ = &writeJsonString;
 }

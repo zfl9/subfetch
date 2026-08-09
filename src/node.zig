@@ -335,6 +335,8 @@ test "isInfoNodeName" {
 test "compile-check" {
     _ = &sanitizeName;
     _ = &prefixed;
+    _ = &containsIgnoreCase;
+    _ = &isInfoNodeName;
     _ = &Node.name;
     _ = &Node.typeName;
 }

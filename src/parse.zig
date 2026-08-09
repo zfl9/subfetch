@@ -929,7 +929,9 @@ test "parse anonymous subscription (no prefix, info filtered)" {
 
 test "compile-check" {
     _ = &parseSubscription;
+    _ = &filterInfoNode;
     _ = &clashYamlToNode;
+    _ = &singboxOutboundToNode;
     _ = &jsonNodeToNode;
     _ = &parseNet;
     _ = &parsePort;
