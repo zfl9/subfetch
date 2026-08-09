@@ -66,7 +66,7 @@ subfetch --config subscriptions.zon -o clash=- -o singbox=/etc/sing-box/config.j
 
 ### 匿名订阅
 
-`name` 省略或为 `""` 即匿名订阅——处理管线与普通订阅完全一致（格式探测/信息节点过滤照常），唯一区别是节点名**不带 `订阅名@` 前缀**：
+`name` 省略或为 `""` 即匿名订阅——处理管线与普通订阅完全一致（格式探测/信息节点过滤照常），唯一区别是节点名**不带 `订阅名@` 前缀**，日志标签固定为 `[anonymous]`（不泄露 url，url 可能含 token）：
 
 ```zig
 .{

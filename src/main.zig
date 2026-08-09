@@ -87,8 +87,9 @@ pub fn main() !void {
     var fail_cnt: usize = 0;
     var disabled_cnt: usize = 0;
     for (cfg.subscriptions) |s| {
-        // anonymous subscription (empty name): full parse pipeline, just no "name@" prefix
-        const sub_label = if (s.name.len == 0) s.url else s.name;
+        // anonymous subscription (empty name): full parse pipeline, just no "name@" prefix.
+        // fixed "anonymous" label: short, and never leaks the url (may contain a token)
+        const sub_label = if (s.name.len == 0) "anonymous" else s.name;
         if (!s.enable) {
             logInfo(sub_label, "skipped (disabled)", .{});
             disabled_cnt += 1;
