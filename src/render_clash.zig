@@ -166,7 +166,7 @@ fn renderProxyRel(w: anytype, n: node.Node) !void {
                 },
                 .shadow_tls => |o| {
                     try f(w, "plugin", "shadow-tls");
-                    try w.print("    plugin-opts:\n    host: {s}\n      password: {s}\n      version: {d}\n", .{ o.host, o.password, o.version });
+                    try w.print("  plugin-opts:\n    host: {s}\n    password: {s}\n    version: {d}\n", .{ o.host, o.password, o.version });
                 },
             };
             try fb(w, "udp", true);
@@ -422,6 +422,33 @@ test "yaml scalar quoting" {
     try std.testing.expectEqualStrings("\"a: b\"", try q(arena.allocator(), "a: b")); // colon + space requires quotes
     try std.testing.expectEqualStrings("\"x\\\"y\"", try q(arena.allocator(), "x\"y"));
     try std.testing.expectEqualStrings("café", try q(arena.allocator(), "café")); // non-ASCII plain is safe
+}
+
+test "clash ss shadow-tls plugin yaml" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const nodes = [_]node.Node{
+        .{ .ss = .{
+            .name = "SG-STLS",
+            .server = "sg2.example.com",
+            .port = 8443,
+            .cipher = "aes-256-gcm",
+            .password = "p",
+            .plugin = .{ .shadow_tls = .{ .host = "www.bing.com", .password = "st-pw", .version = 3 } },
+        } },
+    };
+    const yaml_text = (try renderClash(arena.allocator(), &nodes, .{}, null))[0].content;
+    // re-parse with libyaml: the plugin-opts block must be structurally valid
+    const ymod = @import("yaml.zig");
+    const root = try ymod.parse(arena.allocator(), yaml_text);
+    const m = ymod.mappingOf(root).?;
+    const proxies = ymod.sequenceOf(ymod.mappingGet(m, "proxies").?).?;
+    const p0 = ymod.mappingOf(proxies[0]).?;
+    try std.testing.expectEqualStrings("shadow-tls", ymod.mappingGetScalar(p0, "plugin").?);
+    const po = ymod.mappingOf(ymod.mappingGet(p0, "plugin-opts").?).?;
+    try std.testing.expectEqualStrings("www.bing.com", ymod.mappingGetScalar(po, "host").?);
+    try std.testing.expectEqualStrings("st-pw", ymod.mappingGetScalar(po, "password").?);
+    try std.testing.expectEqualStrings("3", ymod.mappingGetScalar(po, "version").?);
 }
 
 test "clash with user template" {
