@@ -12,7 +12,9 @@
         .{ .name = "singbox-json", .url = "fixtures/singbox.json" },
         // anonymous subscription (no name): full pipeline, no "name@" prefix
         .{ .url = "fixtures/plain_uris.txt" },
-                // intentionally broken subscription (content is HTML): exercises the parse-error path;
+        // BOM-prefixed subscription: exercises the BOM stripping path
+        .{ .name = "bom", .url = "fixtures/bom_uris.txt" },
+        // intentionally broken subscription (content is HTML): exercises the parse-error path;
         // every run shows one W line, which is expected
         .{ .name = "broken-source", .url = "fixtures/html_error.html" },
         // intentionally disabled subscription: exercises the skip path (I line + disabled count)

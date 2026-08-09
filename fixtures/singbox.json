@@ -41,7 +41,9 @@
       "server": "sg1.example.com",
       "server_port": 8388,
       "method": "aes-128-gcm",
-      "password": "ss-pass"
+      "password": "ss-pass",
+      "plugin": "obfs-local",
+      "plugin_opts": "obfs=http;obfs-host=www.bing.com"
     },
     {
       "type": "hysteria2",

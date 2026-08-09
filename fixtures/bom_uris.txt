@@ -1,0 +1,1 @@
+﻿trojan://tw-pass-123@bom1.example.com:443?sni=bom1.example.com#BOM-01
