@@ -90,7 +90,16 @@ pub const ParseError = error{
 /// type-safe: unknown/missing fields and type errors are reported by std.zon.parse at parse time.
 /// returned slices are allocated with the given allocator (arena recommended).
 pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) ParseError!Config {
-    var cfg = try std.zon.parse.fromSlice(Config, allocator, source, null, .{});
+    var diag: std.zon.parse.Diagnostics = .{};
+    defer diag.deinit(allocator);
+    var cfg = std.zon.parse.fromSlice(Config, allocator, source, &diag, .{}) catch |e| {
+        // detailed diagnostics (position, message, notes) go to stderr, then the error name
+        var buf: [8192]u8 = undefined;
+        var w = std.fs.File.stderr().writer(&buf);
+        diag.format(&w.interface) catch {};
+        w.interface.flush() catch {};
+        return e;
+    };
     errdefer cfg.deinit(allocator);
 
     for (cfg.subscriptions) |s| {
