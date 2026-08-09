@@ -194,7 +194,7 @@ pub fn main() !void {
         .mixed_port = mixed_port,
         .controller = controller,
         .secret = secret,
-        .enable_clash_api = opts.singbox_clash_api,
+        .singbox_clash_api = opts.singbox_clash_api,
         .allow_lan = opts.allow_lan,
         .tproxy_ipv6 = opts.tproxy_ipv6,
         .tproxy_port = opts.tproxy_port,

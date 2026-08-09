@@ -54,7 +54,7 @@ pub const Options = struct {
     /// whether sing-box enables clash_api (node switching via WebUI).
     /// default off: main passes the CLI/.zon flag explicitly; the struct
     /// default is false so accidental Options{} construction cannot enable it
-    enable_clash_api: bool = false,
+    singbox_clash_api: bool = false,
 };
 
 pub const File = struct {

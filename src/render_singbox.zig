@@ -76,7 +76,7 @@ pub fn renderSingbox(
     try root.put("route", .{ .object = route });
 
     // clash_api (node switching via WebUI)
-    if (opts.enable_clash_api) {
+    if (opts.singbox_clash_api) {
         var experimental = ObjectMap.init(arena);
         var clash_api = ObjectMap.init(arena);
         try clash_api.put("external_controller", .{ .string = opts.controller });
@@ -437,7 +437,7 @@ test "render singbox json structure" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const text = (try renderSingbox(a, &test_nodes, .{ .secret = "sec", .enable_clash_api = true }, null))[0].content;
+    const text = (try renderSingbox(a, &test_nodes, .{ .secret = "sec", .singbox_clash_api = true }, null))[0].content;
 
     // re-parse JSON to validate
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, text, .{});
