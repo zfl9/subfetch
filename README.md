@@ -9,9 +9,8 @@
 - 可解析的代理协议：ss / ssr / vmess / vless / trojan / hysteria / hysteria2 / tuic
 - 可识别的订阅链接格式：URI 列表、base64、clash YAML、v2rayN JSON、sing-box JSON
 - 可输出的配置文件格式：clash / sing-box 聚合，ss / ssr / trojan / xray / hysteria / hysteria2 原生，raw 节点列表
-- 安装配置文件前**校验**（`mihomo -t` / `sing-box check` / `xray -test`），失败不覆盖旧配置
-- 安装配置文件后**重载**（clash API 优先，自动回退 systemctl，可自定义命令）
-- 自动过滤机场的通知类节点（到期 / 流量提示），过滤关键词可配置
+- 安装配置文件前校验：`mihomo -t` / `sing-box check` / `xray -test`，校验成功后才会覆盖旧配置
+- 安装配置文件后重载：clash controller API 优先，失败自动回退 systemctl，可自定义重载命令
 
 ## 快速开始
 
