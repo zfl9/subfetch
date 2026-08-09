@@ -80,9 +80,10 @@ fn defaultClashBase(arena: std.mem.Allocator, opts: Options) ![]const u8 {
 }
 
 /// proxy-groups block (relative indent): PROXY selector + AUTO url-test.
-/// PROXY lists DIRECT first so the UI can switch to direct connection on the fly.
+/// PROXY select list: AUTO first (default selection = auto speed-test), DIRECT second
+/// (UI can switch to direct connection on the fly), then all nodes.
 fn renderGroupsRel(w: anytype, names: []const []const u8) !void {
-    try w.print("- name: PROXY\n  type: select\n  proxies:\n  - DIRECT\n  - AUTO\n", .{});
+    try w.print("- name: PROXY\n  type: select\n  proxies:\n  - AUTO\n  - DIRECT\n", .{});
     for (names) |nm| {
         try w.print("  - ", .{});
         try yamlStr(w, nm);
