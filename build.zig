@@ -29,8 +29,8 @@ fn linkLibYaml(b: *std.Build, mod: *std.Build.Module) void {
     mod.addIncludePath(b.path("vendor/libyaml/include"));
     mod.addCSourceFiles(.{
         .files = libyaml_sources,
-        // HAVE_CONFIG_H: use the static config.h (version macros); _GNU_SOURCE: strdup and other POSIX functions
-        .flags = &.{ "-std=c99", "-DHAVE_CONFIG_H=1", "-D_GNU_SOURCE=1" },
+        // version macros inlined into yaml_private.h (no config.h); _GNU_SOURCE: strdup and other POSIX functions
+        .flags = &.{ "-std=c99", "-D_GNU_SOURCE=1" },
     });
 }
 
