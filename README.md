@@ -18,18 +18,18 @@
 
 ```sh
 # 1. 复制配置模板
-cp subscriptions.example.zon subscriptions.zon
-vim subscriptions.zon
+cp config.example.zon config.zon
+vim config.zon
 
 # 2. 预览（不写文件，输出到 stdout）
-subfetch -c subscriptions.zon -o clash=- --dry-run
+subfetch -c config.zon -o clash=- --dry-run
 
 # 3. 正式安装并重载
-subfetch -c subscriptions.zon -o clash=/etc/clash/config.yaml \
+subfetch -c config.zon -o clash=/etc/clash/config.yaml \
     --reload-cmd "systemctl restart clash"
 
 # 4. 多个输出目标（一次运行）
-subfetch -c subscriptions.zon \
+subfetch -c config.zon \
     -o clash=/etc/clash/config.yaml \
     -o singbox=/etc/sing-box/config.json
 ```
@@ -230,7 +230,7 @@ proxies: []                # 填充点
 ## CLI 参数
 
 ```
--c, --config <path>      订阅列表配置（默认 ./subscriptions.zon）
+-c, --config <path>      配置 zon（默认 ./config.zon）
 -o, --output <fmt>[:<tmpl>][=<path>]  输出目标（可多次；默认 raw）
     --url [name=]<url>   命令行订阅（可多次；省略 name= 即匿名）
     --node <uri>         直接粘贴节点 URI（可多次）

@@ -14,7 +14,7 @@ const version = "0.2.0";
 const Output = config_mod.Output;
 
 const Options = struct {
-    config: []const u8 = "subscriptions.zon",
+    config: []const u8 = "config.zon",
     outputs: std.ArrayListUnmanaged(Output) = .empty,
     dry_run: bool = false,
     ua: ?[]const u8 = null,
@@ -67,9 +67,9 @@ pub fn main() !void {
         std.process.exit(2);
     };
 
-    // read subscription list
+    // read config
     const cfg_text = std.fs.cwd().readFileAlloc(arena, opts.config, 1 << 20) catch |e| {
-        logErr(null, "failed to read subscription list {s}: {s}\n", .{ opts.config, @errorName(e) });
+        logErr(null, "failed to read config {s}: {s}\n", .{ opts.config, @errorName(e) });
         std.process.exit(1);
     };
     const cfg_src = arena.dupeZ(u8, cfg_text) catch {
@@ -77,7 +77,7 @@ pub fn main() !void {
         std.process.exit(1);
     };
     const cfg = config_mod.parse(arena, cfg_src) catch |e| {
-        logErr(null, "failed to parse subscription list {s}: {s}\n", .{ opts.config, @errorName(e) });
+        logErr(null, "failed to parse config {s}: {s}\n", .{ opts.config, @errorName(e) });
         std.process.exit(1);
     };
 
@@ -768,7 +768,7 @@ fn printUsage() void {
         \\Usage: subfetch [options]
         \\
         \\Options:
-        \\  -c, --config <path>     subscription list zon (default ./subscriptions.zon)
+        \\  -c, --config <path>     configuration zon (default ./config.zon)
         \\
         \\Output targets:
         \\  -o, --output <fmt>[:<tmpl>][=<path>]  output target (repeatable; default raw)

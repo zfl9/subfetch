@@ -96,7 +96,7 @@ pub const ParseError = error{
     MissingUrl,
 };
 
-/// parse the subscription list .zon config.
+/// parse the config .zon file.
 /// type-safe: unknown/missing fields and type errors are reported by std.zon.parse at parse time.
 /// returned slices are allocated with the given allocator (arena recommended).
 pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) ParseError!Config {
