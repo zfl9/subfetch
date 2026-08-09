@@ -10,7 +10,10 @@ pub const FetchError = error{
     Timeout,
 };
 
-const max_sub_size = 16 * 1024 * 1024;
+/// subscription content is plain text (URI lists / yaml / json); even full
+/// configs with rules stay well under 1MB. larger responses are malicious or
+/// broken (CDN error pages etc.) and get rejected.
+const max_sub_size = 1024 * 1024;
 
 /// fetch subscription content.
 /// url supports https://, http://, file://, and local file paths.
