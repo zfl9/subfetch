@@ -87,6 +87,8 @@ subfetch -c subscriptions.zon \
     .singbox_clash_api = true,         // sing-box 输出启用 clash_api
     .allow_lan = true,                 // clash 内置模板 allow-lan（clash 专用）
     .ipv6 = true,                      // clash 内置模板 ipv6 监听（clash 专用；ss-tproxy 支持 v6 透明代理时可开）
+    .tproxy_port = 60080,              // tproxy 传入端口（clash tproxy-port / sing-box tproxy in；
+                                       // 开启后 socks 传入保留，便于 debug/curl 测试）
     .outputs = .{                      // 输出目标（默认 raw）
         .{ .fmt = .clash, .path = "/etc/clash/config.yaml" },
         .{ .fmt = .singbox, .path = "/etc/sing-box/config.json" },

@@ -33,6 +33,15 @@ pub fn renderSingbox(
     try socks.put("listen", .{ .string = opts.listen });
     try socks.put("listen_port", .{ .integer = opts.port });
     try inbounds.append(.{ .object = socks });
+    // optional tproxy inbound (socks stays for debug/curl testing)
+    if (opts.tproxy_port) |tp| {
+        var tproxy = ObjectMap.init(arena);
+        try tproxy.put("type", .{ .string = "tproxy" });
+        try tproxy.put("tag", .{ .string = "tproxy-in" });
+        try tproxy.put("listen", .{ .string = opts.listen });
+        try tproxy.put("listen_port", .{ .integer = tp });
+        try inbounds.append(.{ .object = tproxy });
+    }
     try root.put("inbounds", .{ .array = inbounds });
 
     // outbounds fill point: root carries an empty array; the generated block is
