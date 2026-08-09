@@ -15,7 +15,7 @@
 ## 快速开始
 
 ```sh
-# 1. 复制模板并编辑（覆盖全部字段，注释里写了每个字段的用途）
+# 1. 复制配置example，并编辑
 cp config.example.zon config.zon
 vim config.zon
 
@@ -27,7 +27,7 @@ subfetch -c config.zon -o clash=/etc/clash/config.yaml \
     --reload-cmd "systemctl restart clash"
 ```
 
-不建配置文件也能用：`--url` / `--node` 直接在命令行输入。默认运行会尝试加载当前目录的 `config.zon`（存在即生效）；用 `-c` 指定后只读该文件，文件缺失会报错。
+或者直接通过命令行参数：`--url 订阅链接` / `--node 节点uri` 快速开始。
 
 ## 配置
 
@@ -36,17 +36,16 @@ subfetch -c config.zon -o clash=/etc/clash/config.yaml \
     .ua = "clash-verge/v2.2.3",           // 默认 User-Agent
     .subscriptions = .{
         .{
-            .name = "香港机场",             // 节点名前缀，省略即匿名
+            .name = "xx机场",              // 给订阅命个名，作为节点名的前缀
             .url = "https://example.com/sub?token=xxx",
-            // .ua = "custom-ua/1.0",      // 本条订阅单独 UA
-            // .enable = false,            // 临时禁用
+            // .ua = "custom-ua/1.0",      // 本条订阅的单独 UA
         },
-        .{ .url = "/etc/nodes.txt" },      // 本地节点列表，匿名
+        .{ .url = "/etc/nodes.txt" },      // 若不需要订阅名，直接省略 name 字段
     },
 }
 ```
 
-`url` 支持 https / http / file:// / 本地路径。节点名格式为 `订阅名@节点名`，分隔符可用 `--sep` 修改。省略 `name` 即匿名订阅，节点名不带前缀。
+`url` 也支持 `file://`、`本地路径`。节点名的输出格式为 `订阅名@节点名`，分隔符可用 `--sep` 修改。
 
 CLI 与 .zon 输入一一对应：
 
@@ -62,7 +61,7 @@ CLI 与 .zon 输入一一对应：
 ```zig
 .{
     .ua = "clash-verge/v2.2.3",
-    .sep = "|",                        // 节点名分隔符
+    .sep = "@",                        // 订阅名和节点名之间的分隔符
     .secret = "xxx",                   // API secret（默认自动生成）
     .timeout = 15,                     // 单订阅拉取超时（秒，默认 15）
     .info_keywords = .{ "到期", "剩余流量" },  // 信息节点关键词
@@ -75,22 +74,20 @@ CLI 与 .zon 输入一一对应：
     .log_level = "warning",            // 客户端日志级别 debug|info|warning|error
     .controller = "127.0.0.1:65501",   // clash external-controller / sing-box clash_api（需 .singbox_clash_api）
     .singbox_clash_api = true,         // sing-box 输出启用 clash_api
-    .reload_cmd = "systemctl restart clash",
-    .outputs = .{                      // 输出目标，默认 raw
-        .{ .fmt = .clash, .path = "/etc/clash/config.yaml" },
+    .reload_cmd = "systemctl restart clash",   // 所有输出的默认重载命令
+    .outputs = .{                               // 输出目标，默认 raw
+        .{ .fmt = .clash, .path = "/etc/clash/config.yaml", .reload_cmd = "systemctl restart clash" },
         .{ .fmt = .singbox, .path = "/etc/sing-box/config.json" },
     },
     .subscriptions = .{ ... },
 }
 ```
 
-全部配置进 .zon 后，一条命令即可部署，cron / systemd timer 同样适用：
+全部配置进 .zon 后，一条命令即可完成：订阅更新 & 代理进程重载。
 
 ```sh
 subfetch -c config.zon
 ```
-
-`.secret` 是敏感信息，含它的 .zon 不要提交到仓库。
 
 ## 信息节点过滤
 
@@ -164,7 +161,7 @@ proxies: []    # clash
     --singbox-clash-api  sing-box 输出启用 clash_api
     --no-verify          跳过校验
     --no-reload          安装后不重载
-    --reload-cmd <cmd>   安装后执行自定义命令（覆盖自动重载）
+    --reload-cmd <cmd>   安装后执行自定义命令（优先于 .zon 配置）
 -v, --verbose            详细输出
 -h, --help               帮助
 ```

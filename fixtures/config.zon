@@ -17,8 +17,6 @@
         // intentionally broken subscription (content is HTML): exercises the parse-error path;
         // every run shows one W line, which is expected
         .{ .name = "broken-source", .url = "fixtures/html_error.html" },
-        // intentionally disabled subscription: exercises the skip path (I line + disabled count)
-        .{ .name = "disabled-sample", .url = "fixtures/base64_trojan.txt", .enable = false },
     },
     // inline node URIs / node files (same semantics as --node / --node-file)
     .nodes = .{ "trojan://pass@cli1.example.com:443#inline-node" },

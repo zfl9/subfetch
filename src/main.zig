@@ -118,7 +118,6 @@ pub fn main() !void {
     const port = opts.port orelse cfg.port orelse 1080;
     const mixed_port = opts.mixed_port orelse cfg.mixed_port orelse 65500;
     const controller = opts.controller orelse cfg.controller orelse "127.0.0.1:65501";
-    opts.reload_cmd = opts.reload_cmd orelse cfg.reload_cmd;
     opts.singbox_clash_api = opts.singbox_clash_api or (cfg.singbox_clash_api orelse false);
     opts.allow_lan = opts.allow_lan or (cfg.allow_lan orelse false);
     opts.tproxy_ipv6 = opts.tproxy_ipv6 or (cfg.tproxy_ipv6 orelse false);
@@ -128,7 +127,7 @@ pub fn main() !void {
     // output targets: CLI -o/--output > .zon outputs > default raw (replace, never merge)
     if (opts.outputs.items.len == 0) {
         if (cfg.outputs) |os| {
-            for (os) |o| try opts.outputs.append(arena, .{ .fmt = o.fmt, .tmpl = o.tmpl, .path = o.path });
+            for (os) |o| try opts.outputs.append(arena, o);
         } else {
             try opts.outputs.append(arena, .{ .fmt = .raw });
         }
@@ -138,7 +137,6 @@ pub fn main() !void {
     var all_nodes: std.ArrayListUnmanaged(node_mod.Node) = .empty;
     var ok_cnt: usize = 0;
     var fail_cnt: usize = 0;
-    var disabled_cnt: usize = 0;
 
     // 1. direct node URIs: --node, then .zon .nodes (no sniff, no info filtering, no prefix)
     for (opts.nodes.items) |n| try addDirectNode(arena, &all_nodes, &fail_cnt, sep, n);
@@ -174,7 +172,7 @@ pub fn main() !void {
         try used_names.put(arena, n, {});
     }
     for (subs.items) |s| {
-        try processSubscription(arena, sep, info_keywords, &opts, &cfg, &all_nodes, &ok_cnt, &fail_cnt, &disabled_cnt, s);
+        try processSubscription(arena, sep, info_keywords, &opts, &cfg, &all_nodes, &ok_cnt, &fail_cnt, s);
     }
 
     if (all_nodes.items.len == 0) {
@@ -257,7 +255,7 @@ pub fn main() !void {
                     // stdout output
                     for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
                 } else {
-                    installAll(arena, r.out.fmt, r.files, p, opts, ropts);
+                    installAll(arena, r.out.fmt, r.files, p, opts, ropts, opts.reload_cmd orelse r.out.reload_cmd orelse cfg.reload_cmd);
                 }
             } else {
                 logErr(null, "output path required for {s} (use -o {s}=<path> or --dry-run)", .{ @tagName(r.out.fmt), @tagName(r.out.fmt) });
@@ -269,9 +267,6 @@ pub fn main() !void {
     var summary = try std.fmt.allocPrint(arena, "subscriptions {d}/{d} ok, {d} failed", .{
         ok_cnt, subs.items.len, fail_cnt,
     });
-    if (disabled_cnt > 0) {
-        summary = try std.fmt.allocPrint(arena, "{s}, {d} disabled", .{ summary, disabled_cnt });
-    }
     summary = try std.fmt.allocPrint(arena, "{s}, {d} nodes", .{ summary, nodes.len });
     if (opts.outputs.items.len == 1) {
         summary = try std.fmt.allocPrint(arena, "{s}, format {s}", .{ summary, @tagName(opts.outputs.items[0].fmt) });
@@ -360,6 +355,7 @@ fn installAll(
     path: []const u8,
     opts: Options,
     ropts: render_mod.Options,
+    reload_cmd: ?[]const u8,
 ) void {
     if (isDirFormat(fmt)) {
         const dir = path;
@@ -401,7 +397,7 @@ fn installAll(
         }
         logInfo(null, "wrote {d} files to {s}", .{ files.len, dir });
         if (!opts.no_reload) {
-            if (opts.reload_cmd) |cmd| {
+            if (reload_cmd) |cmd| {
                 switch (deploy_mod.reloadCustom(arena, cmd)) {
                     .custom => logInfo(null, "custom reload command executed", .{}),
                     else => logWarn(null, "custom reload command failed (exit != 0)", .{}),
@@ -441,7 +437,7 @@ fn installAll(
             logInfo(null, "installed {s} (verify passed)", .{path});
         }
         if (!opts.no_reload) {
-            if (opts.reload_cmd) |cmd| {
+            if (reload_cmd) |cmd| {
                 // custom reload command takes priority (acme.sh --reloadcmd style)
                 switch (deploy_mod.reloadCustom(arena, cmd)) {
                     .custom => logInfo(null, "custom reload command executed", .{}),
@@ -669,17 +665,11 @@ fn processSubscription(
     all_nodes: *std.ArrayListUnmanaged(node_mod.Node),
     ok_cnt: *usize,
     fail_cnt: *usize,
-    disabled_cnt: *usize,
     s: config_mod.Subscription,
 ) !void {
     // anonymous subscription (omitted name): full parse pipeline, just no "name@" prefix.
     // fixed "anonymous" label: short, and never leaks the url (may contain a token)
     const sub_label = if (s.name) |n| n else "anonymous";
-    if (!s.enable) {
-        logInfo(sub_label, "skipped (disabled)", .{});
-        disabled_cnt.* += 1;
-        return;
-    }
     const ua = s.ua orelse cfg.ua orelse opts.ua;
     // CLI --timeout is in seconds, fetchWithTimeout expects milliseconds
     const timeout_ms: ?u32 = if (opts.timeout) |t| t * 1000 else null;

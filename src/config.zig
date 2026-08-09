@@ -7,7 +7,6 @@ pub const Subscription = struct {
     name: ?[]const u8 = null,
     url: []const u8,
     ua: ?[]const u8 = null,
-    enable: bool = true,
 };
 
 /// one output target (mirrors -o/--output; .zon: .fmt = .clash etc.)
@@ -15,6 +14,8 @@ pub const Output = struct {
     fmt: render_mod.Format,
     tmpl: ?[]const u8 = null,
     path: ?[]const u8 = null,
+    /// per-output reload command (overrides global .reload_cmd; CLI --reload-cmd wins)
+    reload_cmd: ?[]const u8 = null,
 };
 
 pub const Config = struct {
@@ -83,6 +84,7 @@ pub const Config = struct {
             for (os) |o| {
                 if (o.tmpl) |t| allocator.free(t);
                 if (o.path) |p| allocator.free(p);
+                if (o.reload_cmd) |c| allocator.free(c);
             }
             allocator.free(os);
         }
@@ -154,7 +156,7 @@ test "parse basic zon config" {
         \\    .ua = "clash-verge/v2.2.3",
         \\    .subscriptions = .{
         \\        .{ .name = "hk-airport", .url = "https://example.com/sub?token=abc" },
-        \\        .{ .name = "us-airport", .url = "/etc/sub.txt", .ua = "custom/1.0", .enable = false },
+        \\        .{ .name = "us-airport", .url = "/etc/sub.txt", .ua = "custom/1.0" },
         \\    },
         \\}
     ;
@@ -165,11 +167,9 @@ test "parse basic zon config" {
     try std.testing.expectEqual(@as(usize, 2), cfg.subscriptions.len);
     try std.testing.expectEqualStrings("hk-airport", cfg.subscriptions[0].name.?);
     try std.testing.expectEqualStrings("https://example.com/sub?token=abc", cfg.subscriptions[0].url);
-    try std.testing.expect(cfg.subscriptions[0].enable);
     try std.testing.expect(cfg.subscriptions[0].ua == null);
     try std.testing.expectEqualStrings("us-airport", cfg.subscriptions[1].name.?);
     try std.testing.expectEqualStrings("custom/1.0", cfg.subscriptions[1].ua.?);
-    try std.testing.expect(!cfg.subscriptions[1].enable);
 }
 
 test "minimal config" {
