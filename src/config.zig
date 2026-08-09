@@ -1,4 +1,5 @@
 const std = @import("std");
+const render_mod = @import("render.zig");
 
 pub const Subscription = struct {
     /// null/omitted = anonymous subscription (no "name@" prefix);
@@ -7,6 +8,13 @@ pub const Subscription = struct {
     url: []const u8,
     ua: ?[]const u8 = null,
     enable: bool = true,
+};
+
+/// one output target (mirrors -o/--output; .zon: .fmt = .clash etc.)
+pub const Output = struct {
+    fmt: render_mod.Format,
+    tmpl: ?[]const u8 = null,
+    path: ?[]const u8 = null,
 };
 
 pub const Config = struct {
@@ -22,6 +30,22 @@ pub const Config = struct {
     sep: ?[]const u8 = null,
     /// clash / sing-box API secret (overrides auto-generated UUID; CLI --secret wins)
     secret: ?[]const u8 = null,
+    /// per-subscription fetch timeout in seconds (CLI --timeout wins)
+    timeout: ?u32 = null,
+    /// native client listen address (CLI --listen wins)
+    listen: ?[]const u8 = null,
+    /// native client listen port (CLI --port wins)
+    port: ?u16 = null,
+    /// clash mixed-port (CLI --mixed-port wins)
+    mixed_port: ?u16 = null,
+    /// clash/singbox external-controller (CLI --controller wins)
+    controller: ?[]const u8 = null,
+    /// custom reload command after install (CLI --reload-cmd wins)
+    reload_cmd: ?[]const u8 = null,
+    /// add clash_api to sing-box output (default off; CLI --singbox-clash-api wins)
+    singbox_clash_api: ?bool = null,
+    /// output targets (default raw; CLI -o/--output wins)
+    outputs: ?[]const Output = null,
 
     /// free memory allocated by fromSlice (strings + slices).
     /// not needed with an arena; only for precise deallocation.
@@ -39,6 +63,16 @@ pub const Config = struct {
         if (cfg.ua) |u| allocator.free(u);
         if (cfg.sep) |s| allocator.free(s);
         if (cfg.secret) |s| allocator.free(s);
+        if (cfg.listen) |s| allocator.free(s);
+        if (cfg.controller) |s| allocator.free(s);
+        if (cfg.reload_cmd) |s| allocator.free(s);
+        if (cfg.outputs) |os| {
+            for (os) |o| {
+                if (o.tmpl) |t| allocator.free(t);
+                if (o.path) |p| allocator.free(p);
+            }
+            allocator.free(os);
+        }
         cfg.* = undefined;
     }
 };
@@ -149,6 +183,42 @@ test "reject explicit empty name" {
         error.EmptySectionName,
         parse(std.testing.allocator, source),
     );
+}
+
+test "parse render/deploy config fields" {
+    const source =
+        \\.{
+        \\    .timeout = 42,
+        \\    .listen = "0.0.0.0",
+        \\    .port = 7890,
+        \\    .mixed_port = 7891,
+        \\    .controller = "0.0.0.0:9090",
+        \\    .reload_cmd = "systemctl restart clash",
+        \\    .singbox_clash_api = true,
+        \\    .outputs = .{
+        \\        .{ .fmt = .clash, .path = "/etc/clash/config.yaml" },
+        \\        .{ .fmt = .singbox, .tmpl = "/etc/singbox.tmpl.json", .path = "/etc/sing-box/config.json" },
+        \\    },
+        \\    .subscriptions = .{ .{ .name = "airport", .url = "https://x/sub" } },
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const cfg = try parse(arena.allocator(), source);
+    try std.testing.expectEqual(@as(?u32, 42), cfg.timeout);
+    try std.testing.expectEqualStrings("0.0.0.0", cfg.listen.?);
+    try std.testing.expectEqual(@as(?u16, 7890), cfg.port);
+    try std.testing.expectEqual(@as(?u16, 7891), cfg.mixed_port);
+    try std.testing.expectEqualStrings("0.0.0.0:9090", cfg.controller.?);
+    try std.testing.expectEqualStrings("systemctl restart clash", cfg.reload_cmd.?);
+    try std.testing.expect(cfg.singbox_clash_api.?);
+    try std.testing.expectEqual(@as(usize, 2), cfg.outputs.?.len);
+    try std.testing.expectEqual(render_mod.Format.clash, cfg.outputs.?[0].fmt);
+    try std.testing.expectEqualStrings("/etc/clash/config.yaml", cfg.outputs.?[0].path.?);
+    try std.testing.expect(cfg.outputs.?[0].tmpl == null);
+    try std.testing.expectEqual(render_mod.Format.singbox, cfg.outputs.?[1].fmt);
+    try std.testing.expectEqualStrings("/etc/singbox.tmpl.json", cfg.outputs.?[1].tmpl.?);
+    try std.testing.expectEqualStrings("/etc/sing-box/config.json", cfg.outputs.?[1].path.?);
 }
 
 test "parse sep and secret config fields" {

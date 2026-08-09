@@ -10,18 +10,12 @@ const deploy_mod = @import("deploy.zig");
 
 const version = "0.2.0";
 
-/// one -o/--out target: format[:template][=path]
-const Out = struct {
-    fmt: render_mod.Format,
-    /// user template path (stage 3)
-    template: ?[]const u8 = null,
-    /// output path; null = dry-run only (error in real mode); "-" = stdout
-    path: ?[]const u8 = null,
-};
+/// one -o/--output target: format[:template][=path] (shared with .zon outputs)
+const Output = config_mod.Output;
 
 const Options = struct {
     config: []const u8 = "subscriptions.zon",
-    outs: std.ArrayListUnmanaged(Out) = .empty,
+    outputs: std.ArrayListUnmanaged(Output) = .empty,
     dry_run: bool = false,
     ua: ?[]const u8 = null,
     /// node name separator; null = .zon sep or default "@"
@@ -36,13 +30,14 @@ const Options = struct {
     /// info-node keyword overrides (--info-keyword, repeatable; "" clears);
     /// provided = override, else .zon info_keywords, else built-in defaults
     info_keywords: std.ArrayListUnmanaged([]const u8) = .empty,
-    // render customization fields
-    listen: []const u8 = "127.0.0.1",
-    port: u16 = 1080,
-    mixed_port: u16 = 65500,
-    controller: []const u8 = "127.0.0.1:65501",
+    // render customization fields (null = use .zon or defaults)
+    listen: ?[]const u8 = null,
+    port: ?u16 = null,
+    mixed_port: ?u16 = null,
+    controller: ?[]const u8 = null,
     secret: ?[]const u8 = null,
-    no_clash_api: bool = false,
+    /// positive flag: add clash_api to sing-box output (default off)
+    singbox_clash_api: bool = false,
     no_verify: bool = false,
     no_reload: bool = false,
     /// user-defined reload command (acme.sh --reloadcmd style); overrides API/systemctl auto-reload
@@ -63,14 +58,6 @@ pub fn main() !void {
         printUsage();
         std.process.exit(2);
     };
-
-    // validate output formats (default: raw)
-    if (opts.outs.items.len == 0) {
-        try opts.outs.append(arena, .{ .fmt = .raw });
-    }
-    for (opts.outs.items) |o| {
-        _ = o.fmt;
-    }
 
     // read subscription list
     const cfg_text = std.fs.cwd().readFileAlloc(arena, opts.config, 1 << 20) catch |e| {
@@ -99,6 +86,27 @@ pub fn main() !void {
         }
         break :blk kws.items;
     } else if (cfg.info_keywords) |k| k else &node_mod.default_info_keywords;
+
+    // merge CLI > .zon > defaults for render/deploy/behavior fields
+    opts.timeout = opts.timeout orelse cfg.timeout;
+    const listen = opts.listen orelse cfg.listen orelse "127.0.0.1";
+    const port = opts.port orelse cfg.port orelse 1080;
+    const mixed_port = opts.mixed_port orelse cfg.mixed_port orelse 65500;
+    const controller = opts.controller orelse cfg.controller orelse "127.0.0.1:65501";
+    opts.reload_cmd = opts.reload_cmd orelse cfg.reload_cmd;
+    opts.singbox_clash_api = opts.singbox_clash_api or (cfg.singbox_clash_api orelse false);
+
+    // output targets: CLI -o/--output > .zon outputs > default raw (replace, never merge)
+    if (opts.outputs.items.len == 0) {
+        if (cfg.outputs) |os| {
+            for (os) |o| try opts.outputs.append(arena, .{ .fmt = o.fmt, .tmpl = o.tmpl, .path = o.path });
+        } else {
+            try opts.outputs.append(arena, .{ .fmt = .raw });
+        }
+    }
+    for (opts.outputs.items) |o| {
+        _ = o.fmt;
+    }
 
     // collect all nodes: direct nodes first, then node files, then subscriptions
     // (within each category: CLI first, then .zon)
@@ -156,21 +164,21 @@ pub fn main() !void {
     // render options
     const secret = opts.secret orelse try genSecret(arena);
     const ropts: render_mod.Options = .{
-        .listen = opts.listen,
-        .port = opts.port,
-        .mixed_port = opts.mixed_port,
-        .controller = opts.controller,
+        .listen = listen,
+        .port = port,
+        .mixed_port = mixed_port,
+        .controller = controller,
         .secret = secret,
-        .enable_clash_api = !opts.no_clash_api,
+        .enable_clash_api = opts.singbox_clash_api,
     };
 
     // render all targets
     const Rendered = struct {
-        out: Out,
+        out: Output,
         files: []const render_mod.File,
     };
     var rendered: std.ArrayListUnmanaged(Rendered) = .empty;
-    for (opts.outs.items) |o| {
+    for (opts.outputs.items) |o| {
         // verbose: report nodes skipped due to unsupported protocol (explicit filter)
         if (opts.verbose > 0) {
             var unsupported: usize = 0;
@@ -183,7 +191,7 @@ pub fn main() !void {
         }
         // load user template (clash/singbox only)
         var tpl_text: ?[]const u8 = null;
-        if (o.template) |tp| {
+        if (o.tmpl) |tp| {
             tpl_text = std.fs.cwd().readFileAlloc(arena, tp, 1 << 20) catch |e| {
                 logErr(null, "failed to read template {s}: {s}", .{ tp, @errorName(e) });
                 std.process.exit(1);
@@ -236,17 +244,17 @@ pub fn main() !void {
         summary = try std.fmt.allocPrint(arena, "{s}, {d} disabled", .{ summary, disabled_cnt });
     }
     summary = try std.fmt.allocPrint(arena, "{s}, {d} nodes", .{ summary, nodes.len });
-    if (opts.outs.items.len == 1) {
-        summary = try std.fmt.allocPrint(arena, "{s}, format {s}", .{ summary, @tagName(opts.outs.items[0].fmt) });
+    if (opts.outputs.items.len == 1) {
+        summary = try std.fmt.allocPrint(arena, "{s}, format {s}", .{ summary, @tagName(opts.outputs.items[0].fmt) });
     } else {
         var fmts: std.ArrayListUnmanaged([]const u8) = .empty;
-        for (opts.outs.items) |o| try fmts.append(arena, @tagName(o.fmt));
+        for (opts.outputs.items) |o| try fmts.append(arena, @tagName(o.fmt));
         summary = try std.fmt.allocPrint(arena, "{s}, formats {s}", .{ summary, try std.mem.join(arena, ",", fmts.items) });
     }
     logInfo(null, "{s}", .{summary});
     if (opts.secret == null and opts.verbose > 0 and !opts.dry_run) {
         var need_secret = false;
-        for (opts.outs.items) |o| {
+        for (opts.outputs.items) |o| {
             if (o.fmt == .clash or o.fmt == .singbox) need_secret = true;
         }
         if (need_secret) logVerbose(null, "api secret: {s}", .{secret});
@@ -412,8 +420,8 @@ fn installAll(
                 }
             } else {
                 const rr = switch (fmt) {
-                    .clash => deploy_mod.reloadClash(arena, opts.controller, ropts.secret, path),
-                    .singbox => deploy_mod.reloadSingbox(arena, opts.controller, ropts.secret, path),
+                    .clash => deploy_mod.reloadClash(arena, ropts.controller, ropts.secret, path),
+                    .singbox => deploy_mod.reloadSingbox(arena, ropts.controller, ropts.secret, path),
                     else => deploy_mod.ReloadResult.skipped,
                 };
                 switch (rr) {
@@ -477,8 +485,8 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
         } else if (std.mem.startsWith(u8, a, "-v") and a.len >= 2 and a[1] == 'v') {
             // -v, -vv, -vvv: all mean verbose=1 (no deeper levels since -vv was replaced by -o fmt=-)
             opts.verbose = 1;
-        } else if (std.mem.eql(u8, a, "--no-clash-api")) {
-            opts.no_clash_api = true;
+        } else if (std.mem.eql(u8, a, "--singbox-clash-api")) {
+            opts.singbox_clash_api = true;
         } else if (std.mem.eql(u8, a, "--no-verify")) {
             opts.no_verify = true;
         } else if (std.mem.eql(u8, a, "--no-reload")) {
@@ -489,9 +497,9 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
         } else if (takeValue(&i, args, a, "--config", "-c")) |v| {
             if (v.len == 0) return error.BadArg;
             opts.config = v;
-        } else if (takeValue(&i, args, a, "--out", "-o")) |v| {
+        } else if (takeValue(&i, args, a, "--output", "-o")) |v| {
             if (v.len == 0) return error.BadArg;
-            try opts.outs.append(arena, parseOut(v) catch return error.BadArg);
+            try opts.outputs.append(arena, parseOutput(v) catch return error.BadArg);
         } else if (takeValue(&i, args, a, "--node", null)) |v| {
             if (v.len == 0) return error.BadArg;
             try opts.nodes.append(arena, v);
@@ -646,8 +654,8 @@ fn parseUrlArg(arg: []const u8) !struct { name: ?[]const u8, url: []const u8 } {
     return .{ .name = null, .url = arg };
 }
 
-/// parse -o/--out value: format[:template][=path]
-fn parseOut(v: []const u8) !Out {
+/// parse -o/--output value: format[:template][=path]
+fn parseOutput(v: []const u8) !Output {
     var path: ?[]const u8 = null;
     var rest = v;
     if (std.mem.indexOfScalar(u8, v, '=')) |eq| {
@@ -660,7 +668,7 @@ fn parseOut(v: []const u8) !Out {
         rest = rest[0..colon];
     }
     const fmt = render_mod.Format.parse(rest) orelse return error.BadArg;
-    return .{ .fmt = fmt, .template = template, .path = path };
+    return .{ .fmt = fmt, .tmpl = template, .path = path };
 }
 
 /// match --long value / --long=value / -s value, return the value; null if no match.
@@ -690,7 +698,7 @@ fn printUsage() void {
         \\
         \\Options:
         \\  -c, --config <path>    subscription list zon (default ./subscriptions.zon)
-        \\  -o, --out <fmt>[:<tmpl>][=<path>]  output target (repeatable; default raw)
+        \\  -o, --output <fmt>[:<tmpl>][=<path>] output target (repeatable; default raw)
         \\                          fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw
         \\                          tmpl: template file (clash/singbox; optional)
         \\                          path: output file (single-file) or directory (native); '-' = stdout
@@ -709,7 +717,7 @@ fn printUsage() void {
         \\      --mixed-port <n>   clash mixed-port (default 65500)
         \\      --controller <a:p> clash/singbox external-controller (default 127.0.0.1:65501)
         \\      --secret <str>     API secret (auto-generated UUID if omitted)
-        \\      --no-clash-api     disable clash_api in sing-box
+        \\      --singbox-clash-api add clash_api to sing-box output (default off)
         \\      --no-verify        skip verification
         \\      --no-reload        skip reload after install
         \\      --reload-cmd <cmd> custom reload command after install (sh -c, overrides auto reload; acme.sh style)
@@ -851,44 +859,44 @@ fn outPrint(comptime fmt: []const u8, args: anytype) void {
     std.fs.File.stdout().writeAll(text) catch {};
 }
 
-test "parseOut grammar" {
+test "parseOutput grammar" {
     // format only
-    const o1 = try parseOut("clash");
+    const o1 = try parseOutput("clash");
     try std.testing.expectEqual(render_mod.Format.clash, o1.fmt);
-    try std.testing.expect(o1.template == null);
+    try std.testing.expect(o1.tmpl == null);
     try std.testing.expect(o1.path == null);
     // format + template
-    const o2 = try parseOut("clash:tmpl.yaml");
+    const o2 = try parseOutput("clash:tmpl.yaml");
     try std.testing.expectEqual(render_mod.Format.clash, o2.fmt);
-    try std.testing.expectEqualStrings("tmpl.yaml", o2.template.?);
+    try std.testing.expectEqualStrings("tmpl.yaml", o2.tmpl.?);
     try std.testing.expect(o2.path == null);
     // format + path
-    const o3 = try parseOut("singbox=/etc/sing-box/config.json");
+    const o3 = try parseOutput("singbox=/etc/sing-box/config.json");
     try std.testing.expectEqual(render_mod.Format.singbox, o3.fmt);
     try std.testing.expectEqualStrings("/etc/sing-box/config.json", o3.path.?);
-    try std.testing.expect(o3.template == null);
+    try std.testing.expect(o3.tmpl == null);
     // full: format + template + path
-    const o4 = try parseOut("clash:tmpl.yaml=out/c.yaml");
+    const o4 = try parseOutput("clash:tmpl.yaml=out/c.yaml");
     try std.testing.expectEqual(render_mod.Format.clash, o4.fmt);
-    try std.testing.expectEqualStrings("tmpl.yaml", o4.template.?);
+    try std.testing.expectEqualStrings("tmpl.yaml", o4.tmpl.?);
     try std.testing.expectEqualStrings("out/c.yaml", o4.path.?);
     // stdout path
-    const o5 = try parseOut("raw=-");
+    const o5 = try parseOutput("raw=-");
     try std.testing.expectEqual(render_mod.Format.raw, o5.fmt);
     try std.testing.expectEqualStrings("-", o5.path.?);
     // unknown format errors
-    try std.testing.expectError(error.BadArg, parseOut("bogus"));
-    try std.testing.expectError(error.BadArg, parseOut(""));
+    try std.testing.expectError(error.BadArg, parseOutput("bogus"));
+    try std.testing.expectError(error.BadArg, parseOutput(""));
     // extra '=' belongs to the path (first '=' splits path, then ':' splits template)
-    const o6 = try parseOut("clash:tmpl=path=extra");
-    try std.testing.expectEqualStrings("tmpl", o6.template.?);
+    const o6 = try parseOutput("clash:tmpl=path=extra");
+    try std.testing.expectEqualStrings("tmpl", o6.tmpl.?);
     try std.testing.expectEqualStrings("path=extra", o6.path.?);
 }
 
 test "compile-check" {
     _ = &main;
     _ = &parseArgs;
-    _ = &parseOut;
+    _ = &parseOutput;
     _ = &takeValue;
     _ = &printUsage;
     _ = &outPrint;

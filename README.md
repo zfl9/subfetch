@@ -90,16 +90,31 @@ subfetch --config subscriptions.zon -o clash=- -o singbox=/etc/sing-box/config.j
 
 ### 配置化运行参数
 
-`.zon` 还可配置 `sep`（节点名分隔符）、`secret`（clash/sing-box API secret）、`info_keywords`（信息节点关键词），优先级 **CLI > .zon > 代码默认**：
+除 `--dry-run`/`-v` 外，所有 CLI 参数都可配置进 `.zon`（优先级 **CLI > .zon > 代码默认**），理想场景：`subfetch -c config.zon` 单命令入 systemd timer / crontab：
 
 ```zig
 .{
-    .sep = "|",            // 覆盖默认 "@"；--sep 可再覆盖
-    .secret = "xxx",       // 覆盖自动生成 UUID；--secret 可再覆盖
-    .info_keywords = .{ "到期", "剩余流量" },  // 覆盖内置默认；--info-keyword 可再覆盖
-    ...
+    .ua = "clash-verge/v2.2.3",
+    .sep = "|",                    // 分隔符；--sep 可再覆盖
+    .secret = "xxx",               // API secret；--secret 可再覆盖
+    .info_keywords = .{ "到期", "剩余流量" },  // 信息节点关键词；--info-keyword 可再覆盖
+    .timeout = 30,                 // 拉取超时（秒）；--timeout 可再覆盖
+    .listen = "127.0.0.1",         // 原生客户端监听；--listen 可再覆盖
+    .port = 1080,                  // --port 可再覆盖
+    .mixed_port = 65500,           // --mixed-port 可再覆盖
+    .controller = "127.0.0.1:65501", // --controller 可再覆盖
+    .reload_cmd = "systemctl restart clash",  // --reload-cmd 可再覆盖
+    .singbox_clash_api = true,     // sing-box 输出启用 clash_api（默认关）；--singbox-clash-api 可再覆盖
+    .outputs = .{                  // 输出目标（默认 raw）；CLI -o/--output 完全替换
+        .{ .fmt = .clash, .path = "/etc/clash/config.yaml" },
+        .{ .fmt = .singbox, .path = "/etc/sing-box/config.json" },
+    },
+    .subscriptions = .{ ... },
+    .nodes = .{ ... }, .node_files = .{ ... },
 }
 ```
+
+`--no-verify`/`--no-reload` 保持 CLI 独有（反向开关语义：默认开启校验/重载）。
 
 CLI 侧：`--info-keyword <kw>` 可重复（提供则覆盖 .zon/默认），`--info-keyword ""` 清空全部 = 不过滤。
 
@@ -169,12 +184,14 @@ rules: []            # ← 可选：默认 MATCH,PROXY（缺失则自动追加�
 
 ```
 -c, --config <path>    订阅列表 zon（默认 ./subscriptions.zon）
--o, --out <fmt>[:<tmpl>][=<path>]  输出目标（可多次；缺省默认 raw）
+-o, --output <fmt>[:<tmpl>][=<path>]  输出目标（可多次；缺省默认 raw）
                         fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw
                         tmpl: 模板文件（clash/singbox，可选）
                         path: 输出文件（单文件格式）或目录（原生格式）；'-' = stdout
     --node <uri>       直接粘贴节点 URI（可多次）
     --node-file <path> 节点列表文件（每行一个 URI）
+    --url [name=]<url> 命令行订阅（可多次；语义与 .zon 订阅一致；省略 name= 即匿名）
+    --info-keyword <kw> 信息节点关键词覆盖（可多次；"" 清空 = 不过滤）
     --dry-run          只校验不写文件（path 可省略；正式运行 path 必填）
     --ua <str>         默认 User-Agent
     --sep <str>        节点名前缀分隔符（默认 @）
@@ -184,7 +201,7 @@ rules: []            # ← 可选：默认 MATCH,PROXY（缺失则自动追加�
     --mixed-port <n>   clash mixed-port（默认 65500）
     --controller <a:p> clash/singbox external-controller（默认 127.0.0.1:65501）
     --secret <str>     API secret（缺省自动生成 UUID）
-    --no-clash-api     sing-box 不启用 clash_api
+    --singbox-clash-api  sing-box 输出启用 clash_api（默认不启用）
     --no-verify        跳过校验
     --no-reload        安装后不热重载
     --reload-cmd <cmd> 安装后执行自定义 reload 命令（sh -c，覆盖自动重载；acme.sh 风格）
