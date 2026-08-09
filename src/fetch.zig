@@ -112,7 +112,10 @@ pub fn fetchWithTimeout(
 
     const ctx = std.heap.page_allocator.create(ThreadCtx) catch return error.OutOfMemory;
     ctx.* = .{ .url = url, .ua = ua };
-    const t = std.Thread.spawn(.{}, worker, .{ctx}) catch {
+    // 512KB stack: the worker only runs one serialized fetch; the default
+    // 16MB thread stack is pure virtual-address overhead for this job.
+    // (deepest path is TLS handshake; verified against real https + timeout tests)
+    const t = std.Thread.spawn(.{ .stack_size = 512 * 1024 }, worker, .{ctx}) catch {
         std.heap.page_allocator.destroy(ctx);
         return error.NetworkError;
     };
