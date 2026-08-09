@@ -113,7 +113,7 @@ pub fn main() !void {
     } else if (cfg.info_keywords) |k| k else &node_mod.default_info_keywords;
 
     // merge CLI > .zon > defaults for render/deploy/behavior fields
-    opts.timeout = opts.timeout orelse cfg.timeout;
+    opts.timeout = opts.timeout orelse cfg.timeout orelse 15; // per-subscription default
     const listen = opts.listen orelse cfg.listen orelse "127.0.0.1";
     const port = opts.port orelse cfg.port orelse 1080;
     const mixed_port = opts.mixed_port orelse cfg.mixed_port orelse 65500;
@@ -803,7 +803,7 @@ fn printUsage() void {
         \\Run behavior:
         \\      --dry-run          verify only, write nothing
         \\      --ua <str>         default User-Agent
-        \\      --timeout <sec>    per-subscription fetch timeout in seconds
+        \\      --timeout <sec>    per-subscription fetch timeout in seconds (default 15)
         \\
         \\Output config:
         \\      --listen <addr>    native client listen address (default 127.0.0.1)

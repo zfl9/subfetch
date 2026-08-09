@@ -49,8 +49,8 @@
     // # node list files, one URI per line (same semantics as --node-file)
     // .node_files = .{ "/etc/nodes.txt" },
 
-    // # fetch timeout in seconds
-    // .timeout = 30,
+    // # fetch timeout in seconds per subscription (default 15)
+    // .timeout = 15,
 
     // # API secret for clash / sing-box (default: auto-generated UUID)
     // .secret = "change-me",
