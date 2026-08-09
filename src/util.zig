@@ -32,6 +32,19 @@ pub fn urlDecode(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
     return std.Uri.percentDecodeInPlace(buf);
 }
 
+/// split text into URI lines: trim whitespace, skip empty lines and '#' comment lines.
+/// shared by --node-file (main) and subscription sniffing, so both behave identically.
+pub fn splitUriLines(arena: std.mem.Allocator, text: []const u8) ![][]const u8 {
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0 or line[0] == '#') continue;
+        try out.append(arena, line);
+    }
+    return out.toOwnedSlice(arena);
+}
+
 // ---------------- tests ----------------
 
 test "b64Decode standard with padding" {
@@ -54,6 +67,15 @@ test "b64Decode rejects garbage" {
     defer arena.deinit();
     try std.testing.expect(try b64Decode(arena.allocator(), "not-base64-!!!") == null);
     try std.testing.expect(try b64Decode(arena.allocator(), "abc") == null);
+}
+
+test "splitUriLines skips empty and comment lines" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lines = try splitUriLines(arena.allocator(), "trojan://a@h1:443#hk1\n\n# comment line\n   \ntrojan://b@h2:443#hk2\r\n");
+    try std.testing.expectEqual(@as(usize, 2), lines.len);
+    try std.testing.expectEqualStrings("trojan://a@h1:443#hk1", lines[0]);
+    try std.testing.expectEqualStrings("trojan://b@h2:443#hk2", lines[1]);
 }
 
 test "urlDecode passthrough and decode" {

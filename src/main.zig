@@ -4,6 +4,7 @@ const fetch_mod = @import("fetch.zig");
 const parse_mod = @import("parse.zig");
 const uri_mod = @import("uri.zig");
 const node_mod = @import("node.zig");
+const util = @import("util.zig");
 const render_mod = @import("render.zig");
 const deploy_mod = @import("deploy.zig");
 
@@ -148,12 +149,8 @@ pub fn main() !void {
                         fail_cnt += 1;
             continue;
         };
-        var lines = std.mem.splitScalar(u8, text, '\n');
-        while (lines.next()) |line| {
-            const l = std.mem.trim(u8, line, " \t\r");
-            if (l.len == 0 or l[0] == '#') continue;
-            try opts.nodes.append(arena, l);
-        }
+        const lines = try util.splitUriLines(arena, text);
+        for (lines) |l| try opts.nodes.append(arena, l);
     }
     // --node directly pasted URIs (no subscription prefix)
     for (opts.nodes.items) |n| {

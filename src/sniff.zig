@@ -62,20 +62,17 @@ fn sniffDepth(arena: std.mem.Allocator, text: []const u8, depth: usize) SniffErr
     }
 
     // plain-text URI line list
+    // shared line splitting: trim, skip empty lines and '#' comments (same as --node-file)
+    const lines = try util.splitUriLines(arena, t);
     var all_uris = true;
-    var uri_lines: std.ArrayListUnmanaged([]const u8) = .empty;
-    var lines = std.mem.splitScalar(u8, t, '\n');
-    while (lines.next()) |raw| {
-        const line = std.mem.trim(u8, raw, " \t\r");
-        if (line.len == 0) continue;
+    for (lines) |line| {
         if (!looksLikeUri(line)) {
             all_uris = false;
             break;
         }
-        try uri_lines.append(arena, line);
     }
-    if (all_uris and uri_lines.items.len > 0) {
-        return .{ .uris = try uri_lines.toOwnedSlice(arena) };
+    if (all_uris and lines.len > 0) {
+        return .{ .uris = lines };
     }
 
     // base64 recursion
