@@ -4,6 +4,12 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      optimize:
+        description: 'optimize mode'
+        type: choice
+        default: ReleaseSafe
+        options: [ReleaseSafe, ReleaseSmall, ReleaseFast]
 
 jobs:
   build:
@@ -28,12 +34,12 @@ jobs:
           sudo apt-get install -qq qemu-user-static
           echo "::endgroup::"
       - name: Build release target
-        run: zig build release -Doptimize=ReleaseSafe -Drelease_filter=${{ matrix.target }}
+        run: zig build release -Doptimize=${{ inputs.optimize || 'ReleaseSafe' }} -Drelease_filter=${{ matrix.target }}
       - name: Test release target (unit tests + fixtures smoke, qemu for cross)
         # note: qemu-mips (big-endian 32-bit O32) emulation has a musl libc
         # 64-bit-return bug (localtime_r shows 1970-01-01 timestamps); it only
         # affects log timestamps under qemu, real mips hardware is unaffected.
-        run: zig build release-test -Doptimize=ReleaseSafe -Drelease_filter=${{ matrix.target }}
+        run: zig build release-test -Doptimize=${{ inputs.optimize || 'ReleaseSafe' }} -Drelease_filter=${{ matrix.target }}
       - name: Package
         run: |
           mkdir -p dist
