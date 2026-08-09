@@ -85,6 +85,7 @@ subfetch -c subscriptions.zon \
     .timeout = 30,                     // 拉取超时（秒）
     .info_keywords = .{ "到期", "剩余流量" },  // 信息节点关键词
     .singbox_clash_api = true,         // sing-box 输出启用 clash_api
+    .allow_lan = true,                 // clash 内置模板 allow-lan（clash 专用）
     .outputs = .{                      // 输出目标（默认 raw）
         .{ .fmt = .clash, .path = "/etc/clash/config.yaml" },
         .{ .fmt = .singbox, .path = "/etc/sing-box/config.json" },
@@ -147,7 +148,7 @@ proxies: []          # 节点列表填充点（必填）
 - 自定义组内节点列表用 `__NODES__` 锚点标记插入位置，subfetch 展开为真实节点名
 - 不提供模板时使用内置默认模板
 
-**注意**：`.listen`/`.port`/`.mixed_port`/`.controller`/`.secret`/`.singbox_clash_api` 等输出配置参数**只在内置模板（不提供模板时）生效**。一旦使用自定义模板，模板就是最终配置——subfetch 只做填充点/锚点/默认组追加，不注入、不覆盖模板里的任何字段。
+**注意**：`.listen`/`.port`/`.mixed_port`/`.allow_lan`/`.controller`/`.secret`/`.singbox_clash_api` 等输出配置参数**只在内置模板（不提供模板时）生效**；其中 `mixed_port`/`allow_lan` 为 clash 专用（字段名与 clash 配置一致）。一旦使用自定义模板，模板就是最终配置——subfetch 只做填充点/锚点/默认组追加，不注入、不覆盖模板里的任何字段。
 
 ## 输出格式
 

@@ -63,7 +63,7 @@ fn defaultClashBase(arena: std.mem.Allocator, opts: Options) ![]const u8 {
     const w = list.writer(arena);
 
     try w.print("mixed-port: {d}\n", .{opts.mixed_port});
-    try w.print("allow-lan: false\n", .{});
+    try w.print("allow-lan: {s}\n", .{if (opts.allow_lan) "true" else "false"});
     try w.print("mode: rule\n", .{});
     try w.print("log-level: info\n", .{});
     try w.print("ipv6: false\n", .{});

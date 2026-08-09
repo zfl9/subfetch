@@ -38,6 +38,8 @@ const Options = struct {
     secret: ?[]const u8 = null,
     /// positive flag: add clash_api to sing-box output (default off)
     singbox_clash_api: bool = false,
+    /// positive flag: clash allow-lan in built-in template (default off)
+    allow_lan: bool = false,
     no_verify: bool = false,
     no_reload: bool = false,
     /// user-defined reload command (acme.sh --reloadcmd style); overrides API/systemctl auto-reload
@@ -95,6 +97,7 @@ pub fn main() !void {
     const controller = opts.controller orelse cfg.controller orelse "127.0.0.1:65501";
     opts.reload_cmd = opts.reload_cmd orelse cfg.reload_cmd;
     opts.singbox_clash_api = opts.singbox_clash_api or (cfg.singbox_clash_api orelse false);
+    opts.allow_lan = opts.allow_lan or (cfg.allow_lan orelse false);
 
     // output targets: CLI -o/--output > .zon outputs > default raw (replace, never merge)
     if (opts.outputs.items.len == 0) {
@@ -170,6 +173,7 @@ pub fn main() !void {
         .controller = controller,
         .secret = secret,
         .enable_clash_api = opts.singbox_clash_api,
+        .allow_lan = opts.allow_lan,
     };
 
     // render all targets
@@ -487,6 +491,8 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
             opts.verbose = 1;
         } else if (std.mem.eql(u8, a, "--singbox-clash-api")) {
             opts.singbox_clash_api = true;
+        } else if (std.mem.eql(u8, a, "--allow-lan")) {
+            opts.allow_lan = true;
         } else if (std.mem.eql(u8, a, "--no-verify")) {
             opts.no_verify = true;
         } else if (std.mem.eql(u8, a, "--no-reload")) {
@@ -768,6 +774,7 @@ fn printUsage() void {
         \\      --controller <a:p> clash/singbox external-controller (default 127.0.0.1:65501)
         \\      --secret <str>     API secret (auto-generated UUID if omitted)
         \\      --singbox-clash-api add clash_api to sing-box output (default off)
+        \\      --allow-lan        clash allow-lan in built-in template (default off)
         \\
         \\Deploy:
         \\      --no-verify        skip verification

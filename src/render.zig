@@ -43,6 +43,8 @@ pub const Options = struct {
     controller: []const u8 = "127.0.0.1:65501",
     /// clash / sing-box API secret
     secret: ?[]const u8 = null,
+    /// clash allow-lan (built-in template only)
+    allow_lan: bool = false,
     /// whether sing-box enables clash_api (node switching via WebUI)
     enable_clash_api: bool = true,
 };

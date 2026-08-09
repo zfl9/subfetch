@@ -38,6 +38,8 @@ pub const Config = struct {
     port: ?u16 = null,
     /// clash mixed-port (CLI --mixed-port wins)
     mixed_port: ?u16 = null,
+    /// clash allow-lan, built-in template only (CLI --allow-lan wins)
+    allow_lan: ?bool = null,
     /// clash/singbox external-controller (CLI --controller wins)
     controller: ?[]const u8 = null,
     /// custom reload command after install (CLI --reload-cmd wins)
@@ -204,6 +206,7 @@ test "parse render/deploy config fields" {
         \\    .controller = "0.0.0.0:9090",
         \\    .reload_cmd = "systemctl restart clash",
         \\    .singbox_clash_api = true,
+        \\    .allow_lan = true,
         \\    .outputs = .{
         \\        .{ .fmt = .clash, .path = "/etc/clash/config.yaml" },
         \\        .{ .fmt = .singbox, .tmpl = "/etc/singbox.tmpl.json", .path = "/etc/sing-box/config.json" },
@@ -221,6 +224,7 @@ test "parse render/deploy config fields" {
     try std.testing.expectEqualStrings("0.0.0.0:9090", cfg.controller.?);
     try std.testing.expectEqualStrings("systemctl restart clash", cfg.reload_cmd.?);
     try std.testing.expect(cfg.singbox_clash_api.?);
+    try std.testing.expect(cfg.allow_lan.?);
     try std.testing.expectEqual(@as(usize, 2), cfg.outputs.?.len);
     try std.testing.expectEqual(render_mod.Format.clash, cfg.outputs.?[0].fmt);
     try std.testing.expectEqualStrings("/etc/clash/config.yaml", cfg.outputs.?[0].path.?);
