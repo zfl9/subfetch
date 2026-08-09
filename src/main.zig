@@ -67,18 +67,30 @@ pub fn main() !void {
         std.process.exit(2);
     };
 
-    // read config
-    const cfg_text = std.fs.cwd().readFileAlloc(arena, opts.config, 1 << 20) catch |e| {
-        logErr(null, "failed to read config {s}: {s}\n", .{ opts.config, @errorName(e) });
-        std.process.exit(1);
-    };
-    const cfg_src = arena.dupeZ(u8, cfg_text) catch {
-        logErr(null, "out of memory\n", .{});
-        std.process.exit(1);
-    };
-    const cfg = config_mod.parse(arena, cfg_src) catch |e| {
-        logErr(null, "failed to parse config {s}: {s}\n", .{ opts.config, @errorName(e) });
-        std.process.exit(1);
+    // read config (optional): missing default config.zon -> pure CLI usage with
+    // defaults; an explicitly passed -c path that does not exist is a user error
+    const cfg = blk: {
+        const text = std.fs.cwd().readFileAlloc(arena, opts.config, 1 << 20) catch |e| {
+            switch (e) {
+                error.FileNotFound => {
+                    if (std.mem.eql(u8, opts.config, "config.zon")) break :blk config_mod.Config{};
+                    logErr(null, "failed to read config {s}: FileNotFound", .{opts.config});
+                    std.process.exit(1);
+                },
+                else => {
+                    logErr(null, "failed to read config {s}: {s}\n", .{ opts.config, @errorName(e) });
+                    std.process.exit(1);
+                },
+            }
+        };
+        const cfg_src = arena.dupeZ(u8, text) catch {
+            logErr(null, "out of memory\n", .{});
+            std.process.exit(1);
+        };
+        break :blk config_mod.parse(arena, cfg_src) catch |e| {
+            logErr(null, "failed to parse config {s}: {s}\n", .{ opts.config, @errorName(e) });
+            std.process.exit(1);
+        };
     };
 
     // merge CLI > .zon config: node name separator, API secret, info-node keywords
@@ -116,10 +128,6 @@ pub fn main() !void {
             try opts.outputs.append(arena, .{ .fmt = .raw });
         }
     }
-    for (opts.outputs.items) |o| {
-        _ = o.fmt;
-    }
-
     // collect all nodes: direct nodes first, then node files, then subscriptions
     // (within each category: CLI first, then .zon)
     var all_nodes: std.ArrayListUnmanaged(node_mod.Node) = .empty;
@@ -254,7 +262,7 @@ pub fn main() !void {
     }
 
     var summary = try std.fmt.allocPrint(arena, "subscriptions {d}/{d} ok, {d} failed", .{
-        ok_cnt, cfg.subscriptions.len, fail_cnt,
+        ok_cnt, subs.items.len, fail_cnt,
     });
     if (disabled_cnt > 0) {
         summary = try std.fmt.allocPrint(arena, "{s}, {d} disabled", .{ summary, disabled_cnt });
