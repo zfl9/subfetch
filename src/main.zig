@@ -34,7 +34,7 @@ const Options = struct {
     /// CLI subscriptions (--url [name=]url), same semantics as .zon subscriptions
     urls: std.ArrayListUnmanaged([]const u8) = .empty,
     /// info-node keyword overrides (--info-keyword, repeatable; "" clears);
-    /// provided = override, else .zon info_node_keywords, else built-in defaults
+    /// provided = override, else .zon info_keywords, else built-in defaults
     info_keywords: std.ArrayListUnmanaged([]const u8) = .empty,
     // render customization fields
     listen: []const u8 = "127.0.0.1",
@@ -88,7 +88,7 @@ pub fn main() !void {
 
     // merge CLI > .zon config: node name separator, API secret, info-node keywords
     // (CLI --sep wins over .zon sep; default "@"; secret: CLI > .zon > auto-generated UUID;
-    //  info keywords: --info-keyword provided > .zon info_node_keywords > built-in defaults)
+    //  info keywords: --info-keyword provided > .zon info_keywords > built-in defaults)
     const sep = opts.sep orelse cfg.sep orelse "@";
     opts.secret = opts.secret orelse cfg.secret;
     const info_keywords: []const []const u8 = if (opts.info_keywords.items.len > 0) blk: {
@@ -98,7 +98,7 @@ pub fn main() !void {
             if (kw.len > 0) try kws.append(arena, kw);
         }
         break :blk kws.items;
-    } else if (cfg.info_node_keywords) |k| k else &node_mod.default_info_keywords;
+    } else if (cfg.info_keywords) |k| k else &node_mod.default_info_keywords;
 
     // collect all nodes: direct nodes first, then node files, then subscriptions
     // (within each category: CLI first, then .zon)
@@ -699,7 +699,7 @@ fn printUsage() void {
         \\      --url [name=]<url> subscription url on the CLI (repeatable; same semantics
         \\                          as .zon subscriptions; omit "name=" for anonymous)
         \\      --info-keyword <kw> info-node keyword override (repeatable; "" clears all,
-        \\                          i.e. disables filtering; overrides .zon info_node_keywords)
+        \\                          i.e. disables filtering; overrides .zon info_keywords)
         \\      --dry-run          verify only, write nothing
         \\      --ua <str>         default User-Agent
         \\      --sep <str>        node name separator between sub and node names (default @)

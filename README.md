@@ -90,13 +90,13 @@ subfetch --config subscriptions.zon -o clash=- -o singbox=/etc/sing-box/config.j
 
 ### 配置化运行参数
 
-`.zon` 还可配置 `sep`（节点名分隔符）、`secret`（clash/sing-box API secret）、`info_node_keywords`（信息节点关键词），优先级 **CLI > .zon > 代码默认**：
+`.zon` 还可配置 `sep`（节点名分隔符）、`secret`（clash/sing-box API secret）、`info_keywords`（信息节点关键词），优先级 **CLI > .zon > 代码默认**：
 
 ```zig
 .{
     .sep = "|",            // 覆盖默认 "@"；--sep 可再覆盖
     .secret = "xxx",       // 覆盖自动生成 UUID；--secret 可再覆盖
-    .info_node_keywords = .{ "到期", "剩余流量" },  // 覆盖内置默认；--info-keyword 可再覆盖
+    .info_keywords = .{ "到期", "剩余流量" },  // 覆盖内置默认；--info-keyword 可再覆盖
     ...
 }
 ```
@@ -107,11 +107,11 @@ CLI 侧：`--info-keyword <kw>` 可重复（提供则覆盖 .zon/默认），`--
 
 ## 信息节点过滤
 
-机场订阅常含"通知伪节点"（如 `到期2026-12-21 剩余流量279.95G`）——默认按强关键词自动过滤（`到期`/`剩余`/`有效期`/`套餐`/`官网` + `expire`/`traffic`/`usage`/`plan`），日志计数 `N info`，`-v` 列出被滤节点。可用 `info_node_keywords` 覆盖（空数组 = 不过滤）：
+机场订阅常含"通知伪节点"（如 `到期2026-12-21 剩余流量279.95G`）——默认按强关键词自动过滤（`到期`/`剩余`/`有效期`/`套餐`/`官网` + `expire`/`traffic`/`usage`/`plan`），日志计数 `N info`，`-v` 列出被滤节点。可用 `info_keywords` 覆盖（空数组 = 不过滤）：
 
 ```zig
 .{
-    .info_node_keywords = .{ "到期", "剩余流量" },  // 自定义关键词（覆盖默认）
+    .info_keywords = .{ "到期", "剩余流量" },  // 自定义关键词（覆盖默认）
     .subscriptions = .{ ... },
 }
 ```

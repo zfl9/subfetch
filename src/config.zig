@@ -12,7 +12,7 @@ pub const Subscription = struct {
 pub const Config = struct {
     default_ua: ?[]const u8 = null,
     /// info-node (airport notice) keyword overrides; null = built-in defaults
-    info_node_keywords: ?[]const []const u8 = null,
+    info_keywords: ?[]const []const u8 = null,
     subscriptions: []const Subscription = &.{},
     /// inline node URIs (same semantics as --node)
     nodes: []const []const u8 = &.{},

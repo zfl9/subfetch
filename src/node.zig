@@ -233,7 +233,7 @@ fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
 
 /// default info-node keywords (airport notice pseudo-nodes). strong words only:
 /// real node names (e.g. "unlimited traffic - HK" style) are never caught.
-/// override per-subscription-list via the `info_node_keywords` zon field.
+/// override per-subscription-list via the `info_keywords` zon field.
 pub const default_info_keywords = [_][]const u8{
     "到期", "剩余", "有效期", "套餐", "官网", // zh: expiry/remain/validity/plan/website
     "expire", "traffic", "usage", "plan", // en (case-insensitive)
