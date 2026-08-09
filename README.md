@@ -1,16 +1,17 @@
 # subfetch
 
-拉取订阅、生成 clash / sing-box / 原生客户端配置，安装前用真实客户端校验，安装后自动重载。单二进制、零运行时依赖，适合服务器和路由器上用 cron 定时运行。
+拉取订阅 & 生成 clash / sing-box / 原生代理客户端的配置，校验配置无误后再重载代理进程。
+
+静态链接的单二进制、零运行时依赖；适合在家用服务器、家用路由器上定时执行，自动更新订阅。
 
 ## 特性
 
-- 解析 8 种协议：ss / ssr / vmess / vless / trojan / hysteria / hysteria2 / tuic
+- 解析 8 种代理协议：ss / ssr / vmess / vless / trojan / hysteria / hysteria2 / tuic
 - 自动识别订阅格式：URI 列表、base64、clash YAML、v2rayN JSON、sing-box JSON
 - 输出 9 种格式：clash / sing-box 聚合配置，ss / ssr / trojan / xray / hysteria / hysteria2 原生配置，raw 节点列表
 - 安装前校验（`mihomo -t` / `sing-box check` / `xray -test`），失败不覆盖旧配置
-- 安装后重载（clash API 优先，回退 systemctl，可自定义命令）
-- 自动过滤机场通知节点（到期 / 流量提示），关键词可配置
-- 配置用 .zon 类型安全格式，字段拼错直接报错
+- 安装后重载（clash API 优先，自动回退 systemctl，可自定义命令）
+- 自动过滤机场通知节点（到期 / 流量提示），过滤关键词可配置
 
 ## 快速开始
 
