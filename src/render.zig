@@ -51,8 +51,10 @@ pub const Options = struct {
     tproxy_port: ?u16 = null,
     /// client log level (built-in templates; null = info)
     log_level: ?[]const u8 = null,
-    /// whether sing-box enables clash_api (node switching via WebUI)
-    enable_clash_api: bool = true,
+    /// whether sing-box enables clash_api (node switching via WebUI).
+    /// default off: main passes the CLI/.zon flag explicitly; the struct
+    /// default is false so accidental Options{} construction cannot enable it
+    enable_clash_api: bool = false,
 };
 
 pub const File = struct {

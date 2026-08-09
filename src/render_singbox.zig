@@ -437,7 +437,7 @@ test "render singbox json structure" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const text = (try renderSingbox(a, &test_nodes, .{ .secret = "sec" }, null))[0].content;
+    const text = (try renderSingbox(a, &test_nodes, .{ .secret = "sec", .enable_clash_api = true }, null))[0].content;
 
     // re-parse JSON to validate
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, text, .{});

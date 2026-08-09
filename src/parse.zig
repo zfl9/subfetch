@@ -489,11 +489,18 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
         } };
     }
     if (std.mem.eql(u8, ob_type, "vmess")) {
+        // alter_id: integer or numeric string; missing/illegal -> 0 (modern vmess)
+        const alter_id: u16 = if (obj.get("alter_id")) |v| switch (v) {
+            .integer => |i| if (i >= 0 and i <= 65535) @intCast(i) else 0,
+            .string => |s| std.fmt.parseInt(u16, s, 10) catch 0,
+            else => 0,
+        } else 0;
         return .{ .vmess = .{
             .name = name,
             .server = server,
             .port = port,
             .uuid = getStr(obj, "uuid") orelse return error.MissingField,
+            .alter_id = alter_id,
             .network = network,
             .tls = tls_enabled,
             .servername = server_name,
@@ -583,6 +590,7 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
             .servername = server_name,
             .skip_cert_verify = insecure,
             .congestion_controller = getStr(obj, "congestion_control"),
+            .udp_relay_mode = getStr(obj, "udp_relay_mode"),
             .alpn = alpn,
         } };
     }
@@ -742,6 +750,37 @@ test "parse clash yaml ss plugin" {
     const p1 = r.nodes[1].ss.plugin.?;
     try std.testing.expectEqualStrings("st-pw", p1.shadow_tls.password);
     try std.testing.expectEqual(@as(u8, 3), p1.shadow_tls.version);
+}
+
+test "parse singbox vmess alter_id and tuic udp_relay_mode" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const text =
+        \\{
+        \\  "outbounds": [
+        \\    { "type": "vmess", "tag": "vm-1", "server": "1.2.3.4", "server_port": 443,
+        \\      "uuid": "11111111-2222-3333-4444-555555555555", "alter_id": 1 },
+        \\    { "type": "tuic", "tag": "tc-1", "server": "5.6.7.8", "server_port": 443,
+        \\      "uuid": "11111111-2222-3333-4444-555555555555", "password": "p",
+        \\      "udp_relay_mode": "quic" }
+        \\  ]
+        \\}
+    ;
+    const r = try parseSubscription(arena.allocator(), "sb", text, "@", &node.default_info_keywords);
+    try std.testing.expectEqual(@as(usize, 2), r.nodes.len);
+    try std.testing.expectEqual(@as(u16, 1), r.nodes[0].vmess.alter_id);
+    try std.testing.expectEqualStrings("quic", r.nodes[1].tuic.udp_relay_mode.?);
+    // missing alter_id -> 0
+    const text2 =
+        \\{
+        \\  "outbounds": [
+        \\    { "type": "vmess", "tag": "vm-2", "server": "1.2.3.4", "server_port": 443,
+        \\      "uuid": "11111111-2222-3333-4444-555555555555" }
+        \\  ]
+        \\}
+    ;
+    const r2 = try parseSubscription(arena.allocator(), "sb", text2, "@", &node.default_info_keywords);
+    try std.testing.expectEqual(@as(u16, 0), r2.nodes[0].vmess.alter_id);
 }
 
 test "parse singbox shadowsocks plugin" {
