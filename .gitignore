@@ -1,10 +1,7 @@
-# user config (copy from subscriptions.example.zon; contains real subscription tokens, never commit)
-subscriptions.zon
+# user config (copy from config.example.zon; contains real subscription tokens, never commit)
+config.zon
 
 # test artifacts
-test-output.yaml
-test-output.yaml.bak
-secret.txt
 *.bak
 
 # Zig
