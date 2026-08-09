@@ -18,6 +18,10 @@ pub const Config = struct {
     nodes: []const []const u8 = &.{},
     /// inline node list files (same semantics as --node-file)
     node_files: []const []const u8 = &.{},
+    /// node name separator between subscription name and node name (overrides default "@")
+    sep: ?[]const u8 = null,
+    /// clash / sing-box API secret (overrides auto-generated UUID; CLI --secret wins)
+    secret: ?[]const u8 = null,
 
     /// free memory allocated by fromSlice (strings + slices).
     /// not needed with an arena; only for precise deallocation.
@@ -33,6 +37,8 @@ pub const Config = struct {
         for (cfg.node_files) |f| allocator.free(f);
         allocator.free(cfg.node_files);
         if (cfg.default_ua) |u| allocator.free(u);
+        if (cfg.sep) |s| allocator.free(s);
+        if (cfg.secret) |s| allocator.free(s);
         cfg.* = undefined;
     }
 };
@@ -143,6 +149,24 @@ test "reject explicit empty name" {
         error.EmptySectionName,
         parse(std.testing.allocator, source),
     );
+}
+
+test "parse sep and secret config fields" {
+    const source =
+        \\.{
+        \\    .sep = "|",
+        \\    .secret = "my-secret",
+        \\    .subscriptions = .{ .{ .name = "airport", .url = "https://x/sub" } },
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const cfg = try parse(arena.allocator(), source);
+    try std.testing.expectEqualStrings("|", cfg.sep.?);
+    try std.testing.expectEqualStrings("my-secret", cfg.secret.?);
+    // omitted fields stay null
+    try std.testing.expect(cfg.nodes.len == 0);
+    try std.testing.expect(cfg.node_files.len == 0);
 }
 
 test "parse inline nodes and node_files" {

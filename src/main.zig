@@ -24,8 +24,8 @@ const Options = struct {
     outs: std.ArrayListUnmanaged(Out) = .empty,
     dry_run: bool = false,
     ua: ?[]const u8 = null,
-    /// node name separator between subscription name and node name (ASCII-friendly for filenames)
-    sep: []const u8 = "@",
+    /// node name separator; null = .zon sep or default "@"
+    sep: ?[]const u8 = null,
     timeout: ?u32 = null,
     /// 0=normal, 1=-v (bytes + node list)
     verbose: u8 = 0,
@@ -83,6 +83,11 @@ pub fn main() !void {
         std.process.exit(1);
     };
 
+    // merge CLI > .zon config: node name separator and API secret
+    // (CLI --sep wins over .zon sep; default "@"; secret: CLI > .zon > auto-generated UUID)
+    const sep = opts.sep orelse cfg.sep orelse "@";
+    opts.secret = opts.secret orelse cfg.secret;
+
     // collect all nodes: direct nodes first, then node files, then subscriptions
     // (within each category: CLI first, then .zon)
     var all_nodes: std.ArrayListUnmanaged(node_mod.Node) = .empty;
@@ -91,12 +96,12 @@ pub fn main() !void {
     var disabled_cnt: usize = 0;
 
     // 1. direct node URIs: --node, then .zon .nodes (no sniff, no info filtering, no prefix)
-    for (opts.nodes.items) |n| try addDirectNode(arena, &all_nodes, &fail_cnt, opts.sep, n);
-    for (cfg.nodes) |n| try addDirectNode(arena, &all_nodes, &fail_cnt, opts.sep, n);
+    for (opts.nodes.items) |n| try addDirectNode(arena, &all_nodes, &fail_cnt, sep, n);
+    for (cfg.nodes) |n| try addDirectNode(arena, &all_nodes, &fail_cnt, sep, n);
 
     // 2. node list files: --node-file, then .zon .node_files
-    for (opts.node_files.items) |f| try addNodeFile(arena, &all_nodes, &fail_cnt, opts.sep, f);
-    for (cfg.node_files) |f| try addNodeFile(arena, &all_nodes, &fail_cnt, opts.sep, f);
+    for (opts.node_files.items) |f| try addNodeFile(arena, &all_nodes, &fail_cnt, sep, f);
+    for (cfg.node_files) |f| try addNodeFile(arena, &all_nodes, &fail_cnt, sep, f);
 
     // 3. subscriptions: --url first, then .zon subscriptions (full pipeline:
     //    sniff + info filtering + "name@" prefix; anonymous = no prefix)
@@ -124,7 +129,7 @@ pub fn main() !void {
         try used_names.put(arena, n, {});
     }
     for (subs.items) |s| {
-        try processSubscription(arena, &opts, &cfg, &all_nodes, &ok_cnt, &fail_cnt, &disabled_cnt, s);
+        try processSubscription(arena, sep, &opts, &cfg, &all_nodes, &ok_cnt, &fail_cnt, &disabled_cnt, s);
     }
 
     if (all_nodes.items.len == 0) {
@@ -550,6 +555,7 @@ fn addNodeFile(
 /// process one subscription (--url or .zon): fetch + full parse pipeline + logging
 fn processSubscription(
     arena: std.mem.Allocator,
+    sep: []const u8,
     opts: *const Options,
     cfg: *const config_mod.Config,
     all_nodes: *std.ArrayListUnmanaged(node_mod.Node),
@@ -575,7 +581,7 @@ fn processSubscription(
         return;
     };
     const info_keywords = cfg.info_node_keywords orelse &node_mod.default_info_keywords;
-    const result = parse_mod.parseSubscription(arena, s.name orelse "", body, opts.sep, info_keywords) catch |e| {
+    const result = parse_mod.parseSubscription(arena, s.name orelse "", body, sep, info_keywords) catch |e| {
         logWarn(sub_label, "parse failed ({s})", .{@errorName(e)});
         fail_cnt.* += 1;
         return;
@@ -605,7 +611,7 @@ fn processSubscription(
     logInfo(sub_label, "{s}", .{msg});
     // verbose: short node list (strip the "sub-name<sep>" prefix), indented under the summary
     if (opts.verbose > 0) {
-        const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ s.name orelse "", opts.sep });
+        const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ s.name orelse "", sep });
         for (result.nodes) |n| {
             const short = if (std.mem.startsWith(u8, n.name(), prefix))
                 n.name()[prefix.len..]
