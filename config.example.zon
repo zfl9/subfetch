@@ -28,8 +28,15 @@
     //   reload_cmd : per-output reload command (overrides global .reload_cmd below)
     //
     // .outputs = .{
-    //     .{ .fmt = .clash, .path = "/etc/clash/config.yaml", .reload_cmd = "systemctl restart clash" },
-    //     .{ .fmt = .singbox, .path = "/etc/sing-box/config.json", .reload_cmd = "systemctl restart sing-box" },
+    //     .{
+    //         .fmt = .clash,
+    //         .path = "/etc/clash/config.yaml",
+    //         .reload_cmd = "systemctl restart clash",
+    //     },
+    //     .{
+    //         .fmt = .singbox,
+    //         .path = "/etc/sing-box/config.json",
+    //     },
     // },
 
     // ── global behavior (all have defaults; uncomment to customize) ─
