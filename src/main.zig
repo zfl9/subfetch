@@ -54,7 +54,7 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(arena);
     var opts = Options{};
     parseArgs(arena, args, &opts) catch |e| {
-        logErr(null, "failed to parse arguments: {s}\n", .{@errorName(e)});
+        logErr(null, "failed to parse arguments: {s}", .{@errorName(e)});
         printUsage();
         std.process.exit(2);
     };
@@ -492,22 +492,44 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
         } else if (std.mem.eql(u8, a, "--no-reload")) {
             opts.no_reload = true;
         } else if (takeValue(&i, args, a, "--reload-cmd", null)) |v| {
-            if (v.len == 0) return error.BadArg;
+            if (v.len == 0) {
+                logErr(null, "missing value for {s}", .{a});
+                return error.BadArg;
+            }
             opts.reload_cmd = v;
         } else if (takeValue(&i, args, a, "--config", "-c")) |v| {
-            if (v.len == 0) return error.BadArg;
+            if (v.len == 0) {
+                logErr(null, "missing value for {s}", .{a});
+                return error.BadArg;
+            }
             opts.config = v;
         } else if (takeValue(&i, args, a, "--output", "-o")) |v| {
-            if (v.len == 0) return error.BadArg;
-            try opts.outputs.append(arena, parseOutput(v) catch return error.BadArg);
+            if (v.len == 0) {
+                logErr(null, "missing value for {s}", .{a});
+                return error.BadArg;
+            }
+            const out = parseOutput(v) catch {
+                logErr(null, "invalid output target: {s} (fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw)", .{v});
+                return error.BadArg;
+            };
+            try opts.outputs.append(arena, out);
         } else if (takeValue(&i, args, a, "--node", null)) |v| {
-            if (v.len == 0) return error.BadArg;
+            if (v.len == 0) {
+                logErr(null, "missing value for {s}", .{a});
+                return error.BadArg;
+            }
             try opts.nodes.append(arena, v);
         } else if (takeValue(&i, args, a, "--node-file", null)) |v| {
-            if (v.len == 0) return error.BadArg;
+            if (v.len == 0) {
+                logErr(null, "missing value for {s}", .{a});
+                return error.BadArg;
+            }
             try opts.node_files.append(arena, v);
         } else if (takeValue(&i, args, a, "--url", null)) |v| {
-            if (v.len == 0) return error.BadArg;
+            if (v.len == 0) {
+                logErr(null, "missing value for {s}", .{a});
+                return error.BadArg;
+            }
             try opts.urls.append(arena, v);
         } else if (takeValue(&i, args, a, "--info-keyword", null)) |v| {
             // empty value allowed: "" clears all keywords (disables filtering)
@@ -515,19 +537,37 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
         } else if (takeValue(&i, args, a, "--ua", null)) |v| {
             opts.ua = v;
         } else if (takeValue(&i, args, a, "--sep", null)) |v| {
-            if (v.len == 0) return error.BadArg;
+            if (v.len == 0) {
+                logErr(null, "missing value for {s}", .{a});
+                return error.BadArg;
+            }
             opts.sep = v;
         } else if (takeValue(&i, args, a, "--timeout", null)) |v| {
-            opts.timeout = std.fmt.parseInt(u32, v, 10) catch return error.BadArg;
+            opts.timeout = std.fmt.parseInt(u32, v, 10) catch {
+                logErr(null, "invalid number for {s}: {s}", .{ a, v });
+                return error.BadArg;
+            };
         } else if (takeValue(&i, args, a, "--listen", null)) |v| {
-            if (v.len == 0) return error.BadArg;
+            if (v.len == 0) {
+                logErr(null, "missing value for {s}", .{a});
+                return error.BadArg;
+            }
             opts.listen = v;
         } else if (takeValue(&i, args, a, "--port", null)) |v| {
-            opts.port = std.fmt.parseInt(u16, v, 10) catch return error.BadArg;
+            opts.port = std.fmt.parseInt(u16, v, 10) catch {
+                logErr(null, "invalid number for {s}: {s}", .{ a, v });
+                return error.BadArg;
+            };
         } else if (takeValue(&i, args, a, "--mixed-port", null)) |v| {
-            opts.mixed_port = std.fmt.parseInt(u16, v, 10) catch return error.BadArg;
+            opts.mixed_port = std.fmt.parseInt(u16, v, 10) catch {
+                logErr(null, "invalid number for {s}: {s}", .{ a, v });
+                return error.BadArg;
+            };
         } else if (takeValue(&i, args, a, "--controller", null)) |v| {
-            if (v.len == 0) return error.BadArg;
+            if (v.len == 0) {
+                logErr(null, "missing value for {s}", .{a});
+                return error.BadArg;
+            }
             opts.controller = v;
         } else if (takeValue(&i, args, a, "--secret", null)) |v| {
             opts.secret = v;
