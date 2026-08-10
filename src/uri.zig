@@ -72,7 +72,7 @@ fn parseUriManual(url: []const u8) ?ManualUri {
     return .{ .scheme = scheme, .userinfo = userinfo, .host = host, .port = port, .query = query, .fragment = fragment, .body = body };
 }
 
-fn parsePort(s: []const u8) !u16 {
+pub fn parsePort(s: []const u8) !u16 {
     if (s.len == 0 or s.len > 5) return error.InvalidPort;
     return std.fmt.parseInt(u16, s, 10) catch error.InvalidPort;
 }
@@ -120,15 +120,16 @@ fn queryBool(params: []const QueryParam, key: []const u8) bool {
         std.mem.eql(u8, v, "yes") or std.mem.eql(u8, v, "on");
 }
 
-fn parseNetwork(s: []const u8) ParseError!node.Network {
-    if (std.mem.eql(u8, s, "tcp")) return .tcp;
-    if (std.mem.eql(u8, s, "ws")) return .ws;
-    if (std.mem.eql(u8, s, "grpc")) return .grpc;
-    if (std.mem.eql(u8, s, "http")) return .http;
+pub fn parseNetwork(s: ?[]const u8) ParseError!node.Network {
+    const v = s orelse return .tcp;
+    if (std.mem.eql(u8, v, "tcp")) return .tcp;
+    if (std.mem.eql(u8, v, "ws")) return .ws;
+    if (std.mem.eql(u8, v, "grpc")) return .grpc;
+    if (std.mem.eql(u8, v, "http")) return .http;
     return error.UnsupportedNetwork;
 }
 
-fn parseAlpn(allocator: std.mem.Allocator, v: ?[]const u8) ParseError!?[]const []const u8 {
+pub fn parseAlpn(allocator: std.mem.Allocator, v: ?[]const u8) ParseError!?[]const []const u8 {
     const s = v orelse return null;
     if (s.len == 0) return null;
     var list: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -159,17 +160,17 @@ fn normalizeRealityKey(allocator: std.mem.Allocator, key: []const u8) ParseError
     return out[0..end];
 }
 
-fn makeName(
+/// shared name builder: "sub/name" prefixing with "server:port" fallback.
+pub fn makeName(
     allocator: std.mem.Allocator,
-    p: *const ManualUri,
+    raw_name: []const u8,
     sub_name: []const u8,
     sep: []const u8,
     server: []const u8,
     port: u16,
 ) ParseError![]const u8 {
-    const fragment = try urlDecode(allocator, p.fragment);
-    const fallback = try std.fmt.allocPrint(allocator, "{s}:{d}", .{ server, port });
-    return node.prefixed(allocator, sub_name, fragment, sep, fallback);
+    const fallback = std.fmt.allocPrint(allocator, "{s}:{d}", .{ server, port }) catch return error.OutOfMemory;
+    return node.prefixed(allocator, sub_name, raw_name, sep, fallback) catch error.OutOfMemory;
 }
 
 fn applyWsGrpc(
@@ -256,8 +257,9 @@ fn parseSs(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, 
         const password = try arena.dupe(u8, decoded[colon + 1 ..]);
         if (p.host.len == 0) return error.MissingField;
         const port = p.port orelse return error.InvalidPort;
+        const name = try urlDecode(arena, p.fragment);
         var n: node.SS = .{
-            .name = try makeName(arena, p, sub_name, sep, p.host, port),
+            .name = try makeName(arena, name, sub_name, sep, p.host, port),
             .server = try urlDecode(arena, p.host),
             .port = port,
             .cipher = cipher,
@@ -280,8 +282,9 @@ fn parseSs(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, 
         const host = hp[0 .. std.mem.lastIndexOfScalar(u8, hp, ':') orelse hp.len];
         const port = if (std.mem.lastIndexOfScalar(u8, hp, ':')) |i| try parsePort(hp[i + 1 ..]) else return error.InvalidPort;
         if (host.len == 0) return error.MissingField;
+        const name = try urlDecode(arena, p.fragment);
         return .{ .ss = .{
-            .name = try makeName(arena, p, sub_name, sep, host, port),
+            .name = try makeName(arena, name, sub_name, sep, host, port),
             .server = host,
             .port = port,
             .cipher = cipher,
@@ -313,7 +316,7 @@ fn parseSsr(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8,
     const password = (try b64Decode(arena, b64pass)) orelse try arena.dupe(u8, b64pass);
 
     var n: node.SSR = .{
-        .name = try makeName(arena, p, sub_name, sep, host, port),
+        .name = try makeName(arena, try urlDecode(arena, p.fragment), sub_name, sep, host, port),
         .server = try urlDecode(arena, host),
         .port = port,
         .cipher = cipher,
@@ -405,9 +408,9 @@ fn parseXurl(arena: std.mem.Allocator, p: *const ManualUri, typ: enum { vmess, v
     const port = p.port orelse return error.InvalidPort;
     const server = try urlDecode(arena, p.host);
     const params = try parseQuery(arena, p.query);
-    const network = parseNetwork(queryGet(params, "type") orelse "tcp") catch return error.UnsupportedNetwork;
+    const network = parseNetwork(queryGet(params, "type")) catch return error.UnsupportedNetwork;
     const security = queryGet(params, "security") orelse "none";
-    const name = try makeName(arena, p, sub_name, sep, server, port);
+    const name = try makeName(arena, try urlDecode(arena, p.fragment), sub_name, sep, server, port);
 
     if (typ == .vmess) {
         var n: node.Vmess = .{
@@ -469,7 +472,7 @@ fn parseTrojan(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const 
     const params = try parseQuery(arena, p.query);
 
     var n: node.Trojan = .{
-        .name = try makeName(arena, p, sub_name, sep, server, port),
+        .name = try makeName(arena, try urlDecode(arena, p.fragment), sub_name, sep, server, port),
         .server = server,
         .port = port,
         .password = password,
@@ -496,7 +499,7 @@ fn parseHysteria(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []cons
     const params = try parseQuery(arena, p.query);
 
     var n: node.Hysteria = .{
-        .name = try makeName(arena, p, sub_name, sep, server, port),
+        .name = try makeName(arena, try urlDecode(arena, p.fragment), sub_name, sep, server, port),
         .server = server,
         .port = port,
     };
@@ -520,7 +523,7 @@ fn parseHy2(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8,
     const params = try parseQuery(arena, p.query);
 
     var n: node.Hysteria2 = .{
-        .name = try makeName(arena, p, sub_name, sep, server, port),
+        .name = try makeName(arena, try urlDecode(arena, p.fragment), sub_name, sep, server, port),
         .server = server,
         .port = port,
         .password = password,
@@ -548,7 +551,7 @@ fn parseTuic(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8
     const params = try parseQuery(arena, p.query);
 
     var n: node.Tuic = .{
-        .name = try makeName(arena, p, sub_name, sep, server, port),
+        .name = try makeName(arena, try urlDecode(arena, p.fragment), sub_name, sep, server, port),
         .server = server,
         .port = port,
         .uuid = uuid,

@@ -32,7 +32,8 @@ pub fn findBin(arena: std.mem.Allocator, name: []const u8) ?[]const u8 {
     return null;
 }
 
-fn fileExists(path: []const u8) bool {
+/// true when `path` exists (regular file or dir; unreadable counts as absent)
+pub fn fileExists(path: []const u8) bool {
     std.fs.cwd().access(path, .{}) catch return false;
     return true;
 }

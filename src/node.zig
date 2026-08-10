@@ -182,6 +182,32 @@ pub const Node = union(enum) {
             .tuic => "tuic",
         };
     }
+
+    pub fn server(self: Node) []const u8 {
+        return switch (self) {
+            .ss => |n| n.server,
+            .ssr => |n| n.server,
+            .vmess => |n| n.server,
+            .vless => |n| n.server,
+            .trojan => |n| n.server,
+            .hysteria => |n| n.server,
+            .hysteria2 => |n| n.server,
+            .tuic => |n| n.server,
+        };
+    }
+
+    pub fn port(self: Node) u16 {
+        return switch (self) {
+            .ss => |n| n.port,
+            .ssr => |n| n.port,
+            .vmess => |n| n.port,
+            .vless => |n| n.port,
+            .trojan => |n| n.port,
+            .hysteria => |n| n.port,
+            .hysteria2 => |n| n.port,
+            .tuic => |n| n.port,
+        };
+    }
 };
 
 // ---------------- name handling ----------------

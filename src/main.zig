@@ -212,9 +212,9 @@ pub fn main() !void {
 
     // render options (dry-run: read-only secret, state dir untouched)
     const secret = if (opts.dry_run)
-        try resolveSecretDryRun(arena, opts.secret)
+        try resolveSecret(arena, opts.secret, false)
     else
-        try resolveSecret(arena, opts.secret);
+        try resolveSecret(arena, opts.secret, true);
     const ropts: render_mod.Options = .{
         .listen = listen,
         .port = port,
@@ -439,7 +439,7 @@ fn installAll(
                     abort(arena, 1, "out of memory", .{});
                 };
                 // backup existing config (acme.sh style)
-                if (fileExists(fpath)) {
+                if (deploy_mod.fileExists(fpath)) {
                     const bak = std.fmt.allocPrint(arena, "{s}.bak", .{fpath}) catch {
                         abort(arena, 1, "out of memory", .{});
                     };
@@ -495,7 +495,7 @@ fn installAll(
             const tmp = std.fmt.allocPrint(arena, "{s}.new", .{path}) catch {
                 abort(arena, 1, "out of memory", .{});
             };
-            if (fileExists(path)) {
+            if (deploy_mod.fileExists(path)) {
                 const bak = std.fmt.allocPrint(arena, "{s}.bak", .{path}) catch {
                     abort(arena, 1, "out of memory", .{});
                 };
@@ -533,11 +533,6 @@ fn installAll(
     }
 }
 
-fn fileExists(path: []const u8) bool {
-    std.fs.cwd().access(path, .{}) catch return false;
-    return true;
-}
-
 /// multi-file formats output to a directory; single-file formats output to a file path
 fn isDirFormat(fmt: render_mod.Format) bool {
     return switch (fmt) {
@@ -570,20 +565,16 @@ fn genSecret(arena: std.mem.Allocator) ![]const u8 {
 
 /// API secret resolution: explicit --secret / .zon secret wins; otherwise reuse
 /// the persisted secret (stable across runs -> stable rendered bytes -> install
-/// diff stays quiet). first run generates + persists a UUID.
-fn resolveSecret(arena: std.mem.Allocator, explicit: ?[]const u8) ![]const u8 {
+/// diff stays quiet). first run generates + persists a UUID. with persist=false
+/// (dry-run) the state dir is only read, never written (side-effect free).
+fn resolveSecret(arena: std.mem.Allocator, explicit: ?[]const u8, persist: bool) ![]const u8 {
     if (explicit) |s| return s;
     const path = stateSecretPath(arena) catch return genSecret(arena); // no HOME: per-run random (degraded)
+    if (!persist) {
+        if (readPersistedSecret(arena, path)) |s| return s;
+        return genSecret(arena);
+    }
     return loadOrCreateSecret(arena, path);
-}
-
-/// dry-run variant: reuse the persisted secret when present, otherwise a fresh
-/// random one - never writes the state dir (dry-run stays side-effect free)
-fn resolveSecretDryRun(arena: std.mem.Allocator, explicit: ?[]const u8) ![]const u8 {
-    if (explicit) |s| return s;
-    const path = stateSecretPath(arena) catch return genSecret(arena);
-    if (readPersistedSecret(arena, path)) |s| return s;
-    return genSecret(arena);
 }
 
 /// read the persisted secret at `path` (null when absent/unreadable)
@@ -642,15 +633,17 @@ fn acquireRunLock(arena: std.mem.Allocator) void {
     // leaving the first installs without concurrency protection
     std.fs.cwd().makePath(dir) catch return;
     const path = std.fs.path.join(arena, &.{ dir, "lock" }) catch return;
-    const flags = std.fs.File.CreateFlags{
+    var flags = std.fs.File.CreateFlags{
         .read = true,
         .truncate = false,
         .mode = 0o600,
         .lock = .exclusive,
+        .lock_nonblocking = true,
     };
-    const f = std.fs.cwd().createFile(path, .{ .read = true, .truncate = false, .mode = 0o600, .lock = .exclusive, .lock_nonblocking = true }) catch |e| switch (e) {
+    const f = std.fs.cwd().createFile(path, flags) catch |e| switch (e) {
         error.WouldBlock => blk: {
             logWarn(null, "another subfetch instance is running, waiting...", .{});
+            flags.lock_nonblocking = false;
             break :blk std.fs.cwd().createFile(path, flags) catch return;
         },
         else => return,
@@ -1292,6 +1285,5 @@ test "compile-check" {
     _ = &verifyDryRunFiles;
     _ = &verifyAll;
     _ = &installAll;
-    _ = &fileExists;
     _ = &isDirFormat;
 }

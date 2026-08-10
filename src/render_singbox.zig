@@ -165,8 +165,8 @@ fn renderOutbound(arena: std.mem.Allocator, n: node.Node) !?JsonValue {
     }
     var o = ObjectMap.init(arena);
     try o.put("tag", .{ .string = n.name() });
-    try o.put("server", .{ .string = serverOf(n) });
-    try o.put("server_port", .{ .integer = portOf(n) });
+    try o.put("server", .{ .string = n.server() });
+    try o.put("server_port", .{ .integer = n.port() });
 
     switch (n) {
         .ss => |v| {
@@ -277,31 +277,6 @@ fn renderOutbound(arena: std.mem.Allocator, n: node.Node) !?JsonValue {
     return .{ .object = o };
 }
 
-fn serverOf(n: node.Node) []const u8 {
-    return switch (n) {
-        .ss => |v| v.server,
-        .ssr => |v| v.server,
-        .vmess => |v| v.server,
-        .vless => |v| v.server,
-        .trojan => |v| v.server,
-        .hysteria => |v| v.server,
-        .hysteria2 => |v| v.server,
-        .tuic => |v| v.server,
-    };
-}
-
-fn portOf(n: node.Node) u16 {
-    return switch (n) {
-        .ss => |v| v.port,
-        .ssr => |v| v.port,
-        .vmess => |v| v.port,
-        .vless => |v| v.port,
-        .trojan => |v| v.port,
-        .hysteria => |v| v.port,
-        .hysteria2 => |v| v.port,
-        .tuic => |v| v.port,
-    };
-}
 
 fn putTls(
     arena: std.mem.Allocator,
@@ -499,8 +474,8 @@ test "mbps format" {
 test "compile-check" {
     _ = &renderSingbox;
     _ = &renderOutbound;
-    _ = &serverOf;
-    _ = &portOf;
+    
+    
     _ = &putTls;
     _ = &putTransport;
     _ = &mbps;
