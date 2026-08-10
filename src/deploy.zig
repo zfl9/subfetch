@@ -74,7 +74,9 @@ fn runVerifierTimed(argv: []const []const u8, timeout_ms: u32) ?u8 {
         // timed out: kill the verifier (the worker wakes up from wait() and
         // frees the ctx via timeoutDone); the kill makes wait() return
         error.Timeout => {
-            _ = child.kill() catch {};
+            // raw SIGKILL only: Child.kill() would also waitpid() here, racing
+            // the worker's reap (worker wait() returns first -> ECHILD -> panic)
+            std.posix.kill(child.id, std.posix.SIG.KILL) catch {};
             return null;
         },
         // the worker never started: we own the ctx
