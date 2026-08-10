@@ -198,8 +198,11 @@ pub fn main() !void {
     // per target for the verbose report.
     const nodes = all_nodes.items;
 
-    // render options
-    const secret = try resolveSecret(arena, opts.secret);
+    // render options (dry-run: read-only secret, state dir untouched)
+    const secret = if (opts.dry_run)
+        try resolveSecretDryRun(arena, opts.secret)
+    else
+        try resolveSecret(arena, opts.secret);
     const ropts: render_mod.Options = .{
         .listen = listen,
         .port = port,
@@ -545,11 +548,25 @@ fn resolveSecret(arena: std.mem.Allocator, explicit: ?[]const u8) ![]const u8 {
     return loadOrCreateSecret(arena, path);
 }
 
-/// read the persisted secret at `path`; generate + persist a fresh UUID when absent.
-fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
+/// dry-run variant: reuse the persisted secret when present, otherwise a fresh
+/// random one - never writes the state dir (dry-run stays side-effect free)
+fn resolveSecretDryRun(arena: std.mem.Allocator, explicit: ?[]const u8) ![]const u8 {
+    if (explicit) |s| return s;
+    const path = stateSecretPath(arena) catch return genSecret(arena);
+    if (readPersistedSecret(arena, path)) |s| return s;
+    return genSecret(arena);
+}
+
+/// read the persisted secret at `path` (null when absent/unreadable)
+fn readPersistedSecret(arena: std.mem.Allocator, path: []const u8) ?[]const u8 {
     if (std.fs.cwd().readFileAlloc(arena, path, 4096)) |content| {
         return std.mem.trimRight(u8, content, "\r\n");
-    } else |_| {}
+    } else |_| return null;
+}
+
+/// read the persisted secret at `path`; generate + persist a fresh UUID when absent.
+fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
+    if (readPersistedSecret(arena, path)) |s| return s;
     const s = try genSecret(arena);
     writeStateSecret(arena, path, s) catch |e| {
         logWarn(null, "failed to persist api secret to {s}: {s}", .{ path, @errorName(e) });
@@ -1148,6 +1165,22 @@ test "run lock: exclusive flock blocks second fd" {
     // release -> second fd can acquire
     f1.unlock();
     try std.testing.expect(try f2.tryLock(.exclusive));
+}
+
+test "readPersistedSecret absent/present" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const path = try tmp.dir.realpathAlloc(a, ".");
+    const secret_file = try std.fs.path.join(a, &.{ path, "secret" });
+    // absent -> null
+    try std.testing.expect(readPersistedSecret(a, secret_file) == null);
+    // present -> content (trimmed)
+    try writeStateSecret(a, secret_file, "abc");
+    try std.testing.expectEqualStrings("abc", readPersistedSecret(a, secret_file).?);
 }
 
 test "parseOutput grammar" {
