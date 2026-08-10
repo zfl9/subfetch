@@ -93,6 +93,79 @@ pub fn timeoutDone(ctx: anytype, comptime cleanup: fn (@TypeOf(ctx.*)) void) voi
     }
 }
 
+/// bounded in-memory writer: stores up to `limit` bytes, then discards and
+/// flags `exceeded` (the source keeps draining, memory stays bounded).
+/// std.Io.Writer has no limited variant (only Allocating / Discarding) and
+/// std.http.Client has no max body size option, so this is the only way to
+/// bound response bodies (e.g. subscription fetches). the buffer is preallocated
+/// up front (limit bytes), so drain() never allocates (Writer.Error only has
+/// WriteFailed - OOM cannot be reported from there).
+pub const BoundedWriter = struct {
+    allocator: std.mem.Allocator,
+    exceeded: bool = false,
+    writer: std.Io.Writer = .{ .buffer = &.{}, .vtable = &vtable },
+
+    pub fn init(allocator: std.mem.Allocator, limit: usize) !BoundedWriter {
+        const buf = try allocator.alloc(u8, limit);
+        return .{ .allocator = allocator, .writer = .{ .buffer = buf, .vtable = &vtable } };
+    }
+
+    pub fn deinit(self: *BoundedWriter) void {
+        self.allocator.free(self.writer.buffer);
+        self.* = undefined;
+    }
+
+    /// stored bytes so far (empty once the limit was exceeded)
+    pub fn toSlice(self: *BoundedWriter) []const u8 {
+        return self.writer.buffered();
+    }
+};
+
+const vtable: std.Io.Writer.VTable = .{
+    .drain = drain,
+    .sendFile = sendFile,
+    .flush = std.Io.Writer.noopFlush,
+    .rebase = std.Io.Writer.failingRebase,
+};
+
+fn drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+    const self: *BoundedWriter = @alignCast(@fieldParentPtr("writer", w));
+    const slice = data[0 .. data.len - 1];
+    const pattern = data[slice.len];
+    var written: usize = pattern.len * splat;
+    for (slice) |bytes| written += bytes.len;
+        if (self.exceeded or w.end + written > w.buffer.len) {
+        // over the limit: drop everything and keep draining (memory bounded,
+        // the caller checks `exceeded` after the transfer)
+        self.exceeded = true;
+        w.end = 0;
+        return written;
+    }
+    var pos = w.end;
+    for (slice) |bytes| {
+        @memcpy(w.buffer[pos .. pos + bytes.len], bytes);
+        pos += bytes.len;
+    }
+    var i: usize = 0;
+    while (i < splat) : (i += 1) {
+        @memcpy(w.buffer[pos .. pos + pattern.len], pattern);
+        pos += pattern.len;
+    }
+    w.end = pos;
+    return written;
+}
+
+fn sendFile(
+    w: *std.Io.Writer,
+    file_reader: *std.fs.File.Reader,
+    limit: std.Io.Limit,
+) std.Io.Writer.FileError!usize {
+    _ = w;
+    _ = file_reader;
+    _ = limit;
+    return error.Unimplemented; // http responses never sendFile
+}
+
 // ---------------- tests ----------------
 
 test "b64Decode standard with padding" {
@@ -133,6 +206,27 @@ test "urlDecode passthrough and decode" {
     try std.testing.expectEqualStrings("plain", try urlDecode(a, "plain"));
     try std.testing.expectEqualStrings("/ws path", try urlDecode(a, "/ws%20path"));
     try std.testing.expectEqualStrings("a+b", try urlDecode(a, "a%2Bb"));
+}
+
+test "BoundedWriter stores up to limit" {
+    var bw = try BoundedWriter.init(std.testing.allocator, 8);
+    defer bw.deinit();
+    try bw.writer.writeAll("hello");
+    try std.testing.expect(!bw.exceeded);
+    try std.testing.expectEqualStrings("hello", bw.toSlice());
+    // exactly at the limit
+    try bw.writer.writeAll("ab");
+    try std.testing.expect(!bw.exceeded);
+    try std.testing.expectEqualStrings("helloab", bw.toSlice());
+}
+
+test "BoundedWriter discards past limit" {
+    var bw = try BoundedWriter.init(std.testing.allocator, 8);
+    defer bw.deinit();
+    try bw.writer.writeAll("hello world");
+    try std.testing.expect(bw.exceeded);
+    // everything is dropped (partial prefix is useless to the caller)
+    try std.testing.expectEqual(@as(usize, 0), bw.toSlice().len);
 }
 
 test "compile-check" {

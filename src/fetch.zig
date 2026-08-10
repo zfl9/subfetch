@@ -54,7 +54,9 @@ fn fetchHttp(
     var client: std.http.Client = .{ .allocator = allocator };
     defer client.deinit();
 
-    var body_writer = std.Io.Writer.Allocating.init(allocator);
+    // bounded writer: stops storing past max_sub_size (the connection keeps
+    // draining); oversized bodies are malicious or broken, reject them
+    var body_writer = try util.BoundedWriter.init(allocator, max_sub_size);
     defer body_writer.deinit();
 
     const result = client.fetch(.{
@@ -68,9 +70,8 @@ fn fetchHttp(
     };
 
     if (result.status != .ok) return error.HttpError;
-    var list = body_writer.toArrayList();
-    if (list.items.len > max_sub_size) return error.TooLarge;
-    return list.toOwnedSlice(allocator) catch error.OutOfMemory;
+    if (body_writer.exceeded) return error.TooLarge;
+    return allocator.dupe(u8, body_writer.toSlice()) catch error.OutOfMemory;
 }
 
 const ThreadCtx = struct {
@@ -158,6 +159,44 @@ test "fetch missing file" {
         error.InvalidUrl,
         fetch(std.testing.allocator, "/nonexistent/xyz/sub.txt", null),
     );
+}
+
+test "fetch rejects oversized body" {
+    // local server sends > max_sub_size; must return error.TooLarge while
+    // the writer kept memory bounded (drops past the limit)
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const listener = try std.net.Address.parseIp("127.0.0.1", 0);
+    var server = try listener.listen(.{ .reuse_address = true });
+    defer server.deinit();
+    const port = server.listen_address.getPort();
+
+    const server_thread = try std.Thread.spawn(.{}, struct {
+        fn run(srv: *std.net.Server) void {
+            const conn = srv.accept() catch return;
+            defer conn.stream.close();
+            // read the request first: responding without reading leaves the
+            // request unread in the receive buffer, and close() then sends
+            // RST instead of FIN (client would see ConnectionResetByPeer)
+            var reqbuf: [4096]u8 = undefined;
+            _ = conn.stream.read(&reqbuf) catch return;
+            const header = "HTTP/1.1 200 OK\r\nContent-Length: 1049600\r\nConnection: close\r\n\r\n";
+            conn.stream.writeAll(header) catch return;
+            const chunk = "x" ** 65536;
+            var left: usize = 1049600;
+            while (left > 0) {
+                const n = @min(left, chunk.len);
+                conn.stream.writeAll(chunk[0..n]) catch return;
+                left -= n;
+            }
+        }
+    }.run, .{&server});
+    defer server_thread.join();
+
+    const url = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}/big", .{port});
+    try std.testing.expectError(error.TooLarge, fetch(a, url, null));
 }
 
 test "fetchWithTimeout times out on slow server" {
