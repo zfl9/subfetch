@@ -32,6 +32,7 @@ expect_exit() { # expect_exit <code> <name> cmd...
 # 2: CLI usage errors
 expect_exit 2 "unknown flag" "$EXE" -x
 expect_exit 2 "empty --url" "$EXE" --url "" --dry-run
+expect_exit 2 "dry-run + reset-state" "$EXE" --dry-run --reset-state
 expect_exit 2 "-o without path" "$EXE" -c fixtures/config.zon --node "trojan://pass@cli1.example.com:443#n" -o clash
 
 # 3: config & data errors

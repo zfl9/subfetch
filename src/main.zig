@@ -75,6 +75,13 @@ pub fn main() !void {
     // serialize concurrent runs (cron overlaps); dry-run is read-only, no lock
     if (!opts.dry_run) acquireRunLock(arena);
 
+    // --dry-run promises zero side effects; reset-state deletes the persisted
+    // secret, so the combination is a contradiction (reject it as a usage error)
+    if (opts.reset_state and opts.dry_run) {
+        logErr(null, "--dry-run cannot be combined with --reset-state", .{});
+        std.process.exit(2);
+    }
+
     // --reset-state: drop the persisted secret and stop (nothing else to do)
     if (opts.reset_state) {
         resetStateSecret(arena);
@@ -319,8 +326,14 @@ fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render_mod.Format, files: []
             .hysteria2 => "yaml",
             else => "json",
         };
-        const tmp = try std.fmt.allocPrint(arena, "/tmp/subfetch-dryrun.{s}", .{ext});
+        // pid in the name: dry-run takes no run lock, concurrent dry-runs must
+        // not race on a shared temp file (interleaved atomicWrite -> wrong bytes)
+        const tmp = try std.fmt.allocPrint(arena, "/tmp/subfetch-dryrun.{d}.{s}", .{ getPid(), ext });
         deploy_mod.atomicWrite(arena, tmp, f.content) catch continue;
+        // verified: the temp file has served its purpose, leave no debris
+        // (dry-run promises zero side effects; /tmp is cleaned by the system,
+        // but the pid-suffixed names would otherwise pile up per run)
+        defer std.fs.cwd().deleteFile(tmp) catch {};
         const vr = deploy_mod.verifyContent(arena, fmt, f.content, tmp);
         if (vr == .failed) {
             logErr(null, "dry-run verify failed: {s}", .{f.path});
