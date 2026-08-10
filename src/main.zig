@@ -8,7 +8,8 @@ const util = @import("util.zig");
 const render_mod = @import("render.zig");
 const deploy_mod = @import("deploy.zig");
 
-const version = "0.2.0";
+const build_options = @import("build_options");
+const version = build_options.version;
 
 /// one -o/--output target: format[:template][=path] (shared with .zon outputs)
 const Output = config_mod.Output;
@@ -767,7 +768,7 @@ fn takeValue(
 
 fn printUsage() void {
     outPrint(
-        \\subfetch {s} - subscription fetcher & multi-format config generator
+        \\subfetch {f} - subscription fetcher & multi-format config generator
         \\
         \\Usage: subfetch [options]
         \\

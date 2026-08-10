@@ -21,6 +21,9 @@ const libyaml_sources = &.{
     "vendor/libyaml/src/dumper.c",
 };
 
+/// single source of truth for the version: build.zig.zon (zon is valid Zig source, importable directly)
+const app_version = std.SemanticVersion.parse(@import("build.zig.zon").version) catch unreachable;
+
 /// bundled libyaml (MIT): C sources are compiled directly into the module, @cImport consumes the headers.
 /// single include path: yaml.h (public header) and config.h (moved from the
 /// repo root) both live in include/; yaml_private.h resolves via same-dir quotes.
@@ -35,12 +38,16 @@ fn linkLibYaml(b: *std.Build, mod: *std.Build.Module) void {
 }
 
 fn createMod(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
+    const build_options = b.addOptions();
+    build_options.addOption(std.SemanticVersion, "version", app_version);
+
     const mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
         .strip = (optimize != .Debug),
     });
+    mod.addOptions("build_options", build_options);
     linkLibYaml(b, mod);
     return mod;
 }
