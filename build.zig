@@ -85,8 +85,11 @@ const release_matrix = [_]ReleaseMatrix{
     .{ .triple = "riscv64-linux-musl", .cpu = "baseline_rv64", .qemu = "qemu-riscv64-static", .qemu_cpu = "thead-c906" },
 };
 
+/// Linux hosts default to musl (zig-bundled libc; host glibc/gcc is often too new for zig's linker, e.g. gcc16 .sframe); non-Linux hosts keep native; -Dtarget always overrides.
+const default_target: std.Target.Query = if (builtin.os.tag == .linux) .{ .abi = .musl } else .{};
+
 pub fn build(b: *std.Build) !void {
-    const target = b.standardTargetOptions(.{});
+    const target = b.standardTargetOptions(.{ .default_target = default_target });
     const optimize = b.standardOptimizeOption(.{});
 
     // build exe
