@@ -89,14 +89,14 @@ pub fn renderSingbox(
 
     // serialize base (with empty outbounds), then fill the outbounds block
     var out: std.ArrayListUnmanaged(u8) = .empty;
-    try @import("render.zig").writeJsonValue(out.writer(arena), .{ .object = root });
+    const base_json = try std.json.Stringify.valueAlloc(arena, std.json.Value{ .object = root }, .{ .whitespace = .indent_2 });
+    try out.appendSlice(arena, base_json);
     try out.append(arena, '\n');
     var text: []const u8 = try out.toOwnedSlice(arena);
 
     // outbounds block (relative indent, complete JSON array): direct + block + selector + nodes
     var oblock: std.ArrayListUnmanaged(u8) = .empty;
     const ow = oblock.writer(arena);
-    const wjv = @import("render.zig").writeJsonValue;
 
     var elems: std.ArrayListUnmanaged(JsonValue) = .empty;
 
@@ -132,9 +132,8 @@ pub fn renderSingbox(
     // serialize: open bracket + elements (separated by commas, each re-indented by 2) + close bracket
     try ow.writeAll("[\n");
     for (elems.items, 0..) |e, i| {
-        var buf: std.ArrayListUnmanaged(u8) = .empty;
-        try wjv(buf.writer(arena), e);
-        var lines = std.mem.splitScalar(u8, buf.items, '\n');
+        const buf = try std.json.Stringify.valueAlloc(arena, e, .{ .whitespace = .indent_2 });
+        var lines = std.mem.splitScalar(u8, buf, '\n');
         while (lines.next()) |l| {
             if (l.len == 0) continue;
             try ow.writeAll("  ");

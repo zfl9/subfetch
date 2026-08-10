@@ -58,11 +58,9 @@ fn int(v: i64) JsonValue {
     return .{ .integer = v };
 }
 
-/// serialize a node to JSON (reuses render.writeJsonValue)
+/// serialize a node to JSON (std.json.Stringify)
 fn jsonToString(arena: std.mem.Allocator, v: JsonValue) ![]const u8 {
-    var list: std.ArrayListUnmanaged(u8) = .empty;
-    try @import("render.zig").writeJsonValue(list.writer(arena), v);
-    return list.toOwnedSlice(arena);
+    return std.json.Stringify.valueAlloc(arena, v, .{ .whitespace = .indent_2 });
 }
 
 /// trojan-go / trojan client config.json

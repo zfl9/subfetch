@@ -13,11 +13,12 @@ pub fn renderRaw(arena: std.mem.Allocator, nodes: []const node.Node, template: ?
         try arr.append(try nodeToJson(arena, n));
     }
     var out: std.ArrayListUnmanaged(u8) = .empty;
-    try @import("render.zig").writeJsonValue(out.writer(arena), .{ .array = arr });
+    const text = try std.json.Stringify.valueAlloc(arena, std.json.Value{ .array = arr }, .{ .whitespace = .indent_2 });
+    try out.appendSlice(arena, text);
     try out.append(arena, '\n');
-    const text = try out.toOwnedSlice(arena);
+    const text_out = try out.toOwnedSlice(arena);
     const file = try arena.alloc(render.File, 1);
-    file[0] = .{ .path = "nodes.json", .content = text };
+    file[0] = .{ .path = "nodes.json", .content = text_out };
     return file;
 }
 
