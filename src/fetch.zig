@@ -134,6 +134,22 @@ pub fn fetchWithTimeout(
     return allocator.dupe(u8, b) catch error.OutOfMemory;
 }
 
+/// fetch with one retry on transient network failures (http error status /
+/// network error / timeout): cron environments see flaky links, and a single
+/// retry converts most spurious failures. non-transient errors (missing file,
+/// oversized body, bad url) fail immediately - retrying cannot help them.
+pub fn fetchWithRetry(
+    allocator: std.mem.Allocator,
+    url: []const u8,
+    ua: ?[]const u8,
+    timeout_ms: ?u32,
+) FetchError![]const u8 {
+    return fetchWithTimeout(allocator, url, ua, timeout_ms) catch |e| switch (e) {
+        error.HttpError, error.NetworkError, error.Timeout => fetchWithTimeout(allocator, url, ua, timeout_ms),
+        else => e,
+    };
+}
+
 // ---------------- tests ----------------
 
 test "fetch file:// and local path" {
@@ -232,10 +248,53 @@ test "fetchWithTimeout times out on slow server" {
     try std.testing.expectEqualStrings("ok", b);
 }
 
+test "fetchWithRetry retries once on http error" {
+    // local server: first request returns 500, second returns 200
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const listener = try std.net.Address.parseIp("127.0.0.1", 0);
+    var server = try listener.listen(.{ .reuse_address = true });
+    defer server.deinit();
+    const port = server.listen_address.getPort();
+
+    const server_thread = try std.Thread.spawn(.{}, struct {
+        fn run(srv: *std.net.Server) void {
+            var reqs: usize = 0;
+            while (reqs < 2) : (reqs += 1) {
+                const conn = srv.accept() catch return;
+                defer conn.stream.close();
+                var reqbuf: [4096]u8 = undefined;
+                _ = conn.stream.read(&reqbuf) catch return;
+                if (reqs == 0) {
+                    conn.stream.writeAll("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n") catch return;
+                } else {
+                    conn.stream.writeAll("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok") catch return;
+                }
+            }
+        }
+    }.run, .{&server});
+    defer server_thread.join();
+
+    const url = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}/flaky", .{port});
+    const body = try fetchWithRetry(a, url, null, 5000);
+    try std.testing.expectEqualStrings("ok", body);
+}
+
+test "fetchWithRetry no retry on missing file" {
+    // non-transient: missing local file fails immediately (no retry attempt)
+    try std.testing.expectError(
+        error.InvalidUrl,
+        fetchWithRetry(std.testing.allocator, "/nonexistent/xyz/retry.txt", null, 1000),
+    );
+}
+
 test "compile-check" {
     _ = &fetch;
     _ = &readFile;
     _ = &fetchHttp;
     _ = &fetchWithTimeout;
+    _ = &fetchWithRetry;
     _ = &worker;
 }

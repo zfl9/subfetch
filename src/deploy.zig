@@ -38,6 +38,59 @@ pub fn fileExists(path: []const u8) bool {
     return true;
 }
 
+/// verifier subprocess timeout: a hung verifier (broken binary, deadlock) must
+/// not stall the whole cron run forever; the process is killed on timeout.
+const verify_timeout_ms = 30_000;
+
+const WaitCtx = struct {
+    base: util.TimeoutBase,
+    child: std.process.Child,
+    term: ?std.process.Child.Term = null,
+};
+
+fn waitWorker(ctx: *WaitCtx) void {
+    ctx.term = ctx.child.wait() catch null;
+    util.timeoutDone(ctx, noCleanup);
+}
+
+fn noCleanup(_: WaitCtx) void {}
+
+/// run `argv` to completion, exit code only (output discarded); null on spawn
+/// failure or timeout (the verifier is SIGKILLed so it cannot linger).
+fn runVerifier(arena: std.mem.Allocator, argv: []const []const u8) ?u8 {
+    _ = arena;
+    return runVerifierTimed(argv, verify_timeout_ms);
+}
+
+fn runVerifierTimed(argv: []const []const u8, timeout_ms: u32) ?u8 {
+    var child = std.process.Child.init(argv, std.heap.page_allocator);
+    child.stdin_behavior = .Ignore;
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Ignore;
+    child.spawn() catch return null;
+    const ctx = std.heap.page_allocator.create(WaitCtx) catch return null;
+    ctx.* = .{ .base = .{}, .child = child };
+    util.runWithTimeout(WaitCtx, waitWorker, ctx, timeout_ms) catch |e| switch (e) {
+        // timed out: kill the verifier (the worker wakes up from wait() and
+        // frees the ctx via timeoutDone); the kill makes wait() return
+        error.Timeout => {
+            _ = child.kill() catch {};
+            return null;
+        },
+        // the worker never started: we own the ctx
+        error.OutOfMemory, error.ThreadFailed => {
+            std.heap.page_allocator.destroy(ctx);
+            return null;
+        },
+    };
+    const t = ctx.term orelse null;
+    std.heap.page_allocator.destroy(ctx);
+    if (t) |term| {
+        if (term == .Exited) return term.Exited;
+    }
+    return null;
+}
+
 /// verify generated content. tmp_path is the written temp file (the verifier reads it).
 /// verifier not found -> skipped (does not block install); verification failure -> failed.
 pub fn verifyContent(
@@ -50,19 +103,13 @@ pub fn verifyContent(
         .clash => blk: {
             const bin = findBin(arena, "clash") orelse findBin(arena, "mihomo") orelse break :blk .skipped;
             const dir = std.fs.path.dirname(tmp_path) orelse ".";
-            const r = std.process.Child.run(.{
-                .allocator = arena,
-                .argv = &.{ bin, "-t", "-d", dir, "-f", tmp_path },
-            }) catch break :blk .failed;
-            break :blk if (r.term == .Exited and r.term.Exited == 0) .ok else .failed;
+            const code = runVerifier(arena, &.{ bin, "-t", "-d", dir, "-f", tmp_path });
+            break :blk if (code != null and code.? == 0) .ok else .failed;
         },
         .singbox => blk: {
             const bin = findBin(arena, "sing-box") orelse break :blk .skipped;
-            const r = std.process.Child.run(.{
-                .allocator = arena,
-                .argv = &.{ bin, "check", "-c", tmp_path },
-            }) catch break :blk .failed;
-            break :blk if (r.term == .Exited and r.term.Exited == 0) .ok else .failed;
+            const code = runVerifier(arena, &.{ bin, "check", "-c", tmp_path });
+            break :blk if (code != null and code.? == 0) .ok else .failed;
         },
         .trojan, .hysteria, .ss, .ssr => blk: {
             // no check mode: JSON syntax validation
@@ -73,11 +120,8 @@ pub fn verifyContent(
             // JSON syntax validation; run xray -test -c when the xray binary is available
             _ = std.json.parseFromSlice(std.json.Value, arena, content, .{}) catch break :blk .failed;
             const bin = findBin(arena, "xray") orelse break :blk .ok;
-            const r = std.process.Child.run(.{
-                .allocator = arena,
-                .argv = &.{ bin, "-test", "-c", tmp_path },
-            }) catch break :blk .failed;
-            break :blk if (r.term == .Exited and r.term.Exited == 0) .ok else .failed;
+            const code = runVerifier(arena, &.{ bin, "-test", "-c", tmp_path });
+            break :blk if (code != null and code.? == 0) .ok else .failed;
         },
         .hysteria2 => blk: {
             // native config is yaml: validate with libyaml parser
@@ -293,6 +337,23 @@ test "reloadCustom runs shell command" {
     try std.testing.expectEqual(ReloadResult.failed, reloadCustom(a, "definitely-not-a-command-xyz"));
 }
 
+test "runVerifier exit code and timeout kill" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // success / failure exit codes
+    try std.testing.expectEqual(@as(?u8, 0), runVerifier(a, &.{ "sh", "-c", "exit 0" }));
+    try std.testing.expectEqual(@as(?u8, 3), runVerifier(a, &.{ "sh", "-c", "exit 3" }));
+    // missing binary -> null
+    try std.testing.expectEqual(@as(?u8, null), runVerifier(a, &.{"definitely-not-a-command-xyz"}));
+    // hung verifier: killed on timeout, runVerifier returns null promptly
+    const t0 = std.time.milliTimestamp();
+    try std.testing.expectEqual(@as(?u8, null), runVerifierTimed(&.{ "sleep", "300" }, 1000));
+    const elapsed = std.time.milliTimestamp() - t0;
+    try std.testing.expect(elapsed >= 900);
+    try std.testing.expect(elapsed < 5000);
+}
+
 test "compile-check" {
     _ = &findBin;
     _ = &fileExists;
@@ -303,4 +364,7 @@ test "compile-check" {
     _ = &reloadSingbox;
     _ = &reloadCustom;
     _ = &reloadApi;
+    _ = &runVerifier;
+    _ = &runVerifierTimed;
+    _ = &waitWorker;
 }

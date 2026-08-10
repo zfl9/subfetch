@@ -110,7 +110,7 @@ pub fn main() !void {
     } else if (cfg.info_keywords) |k| k else &node_mod.default_info_keywords;
 
     // merge CLI > .zon > defaults for render/deploy/behavior fields
-    opts.timeout = opts.timeout orelse cfg.timeout orelse 15; // per-subscription default
+    opts.timeout = opts.timeout orelse cfg.timeout orelse 5; // per-subscription default
     const listen = opts.listen orelse cfg.listen orelse "127.0.0.1";
     const port = opts.port orelse cfg.port orelse 1080;
     const mixed_port = opts.mixed_port orelse cfg.mixed_port orelse 65500;
@@ -253,17 +253,27 @@ pub fn main() !void {
                 verifyAll(arena, r.out.fmt, r.files, p, opts.no_verify);
             }
         }
-        for (rendered.items) |r| {
-            if (r.out.path) |p| {
-                if (std.mem.eql(u8, p, "-")) {
-                    // stdout output
-                    for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
+        // any source failure -> keep the last good configs: installing a
+        // "slimmed" set would delete the failed subscription's nodes from the
+        // running configs (a temporarily down subscription is not a deletion).
+        // verify still ran above (healthy sources must stay sound); the Stage A
+        // temps are dropped, nothing is installed, exit 4 tells cron to retry.
+        if (fail_cnt > 0) {
+            cleanupStageATmps();
+            logWarn(null, "{d} source(s) failed, skip install (configs unchanged)", .{fail_cnt});
+        } else {
+            for (rendered.items) |r| {
+                if (r.out.path) |p| {
+                    if (std.mem.eql(u8, p, "-")) {
+                        // stdout output
+                        for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
+                    } else {
+                        installAll(arena, r.out.fmt, r.files, p, opts, ropts, opts.reload_cmd orelse r.out.reload_cmd orelse cfg.reload_cmd);
+                    }
                 } else {
-                    installAll(arena, r.out.fmt, r.files, p, opts, ropts, opts.reload_cmd orelse r.out.reload_cmd orelse cfg.reload_cmd);
+                    logErr(null, "output path required for {s} (use -o {s}=<path> or --dry-run)", .{ @tagName(r.out.fmt), @tagName(r.out.fmt) });
+                    std.process.exit(2);
                 }
-            } else {
-                logErr(null, "output path required for {s} (use -o {s}=<path> or --dry-run)", .{ @tagName(r.out.fmt), @tagName(r.out.fmt) });
-                std.process.exit(2);
             }
         }
     }
@@ -574,7 +584,7 @@ fn processSubscription(
     const ua = s.ua orelse cfg.ua orelse opts.ua;
     // CLI --timeout is in seconds, fetchWithTimeout expects milliseconds
     const timeout_ms: ?u32 = if (opts.timeout) |t| t * 1000 else null;
-    const body = fetch_mod.fetchWithTimeout(arena, s.url, ua, timeout_ms) catch |e| {
+    const body = fetch_mod.fetchWithRetry(arena, s.url, ua, timeout_ms) catch |e| {
         logWarn(sub_label, "fetch failed: {s}", .{@errorName(e)});
         fail_cnt.* += 1;
         return;

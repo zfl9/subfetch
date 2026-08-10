@@ -77,7 +77,7 @@ CLI 与 .zon 输入一一对应：
     .ua = "clash-verge/v2.2.3",
     .sep = "@",                        // 订阅名和节点名之间的分隔符
     .secret = "xxx",                   // API secret（默认自动生成并持久化到 ~/.local/state/subfetch/secret，跨运行稳定）
-    .timeout = 15,                     // 单订阅拉取超时（秒，默认 15）
+    .timeout = 5,                      // 单订阅拉取超时（秒，默认 5）
     .info_keywords = .{ "到期", "剩余流量" },  // 信息节点关键词
     .listen = "127.0.0.1",             // 客户端监听地址
     .port = 1080,                      // 客户端监听端口
@@ -163,7 +163,7 @@ proxies: []    # clash
     --sep <str>          节点名前缀分隔符（默认 @）
     --dry-run            只校验不写文件
     --ua <str>           默认 User-Agent
-    --timeout <sec>      单订阅拉取超时（秒，默认 15）
+    --timeout <sec>      单订阅拉取超时（秒，默认 5）
     --listen <addr>      客户端监听地址（默认 127.0.0.1）
     --port <n>           客户端监听端口（默认 1080，socks5）
     --mixed-port <n>     clash mixed-port（默认 65500）

@@ -268,7 +268,7 @@ const usage_sections = [_]Section{
     .{ .title = "Run behavior", .options = &.{
         .{ .opt = "--dry-run", .desc = &.{"verify only, write nothing"} },
         .{ .opt = "--ua <str>", .desc = &.{"default User-Agent"} },
-        .{ .opt = "--timeout <sec>", .desc = &.{"per-subscription fetch timeout in seconds (default 15)"} },
+        .{ .opt = "--timeout <sec>", .desc = &.{"per-subscription fetch timeout in seconds (default 5)"} },
     } },
     .{ .title = "Output config", .options = &.{
         .{ .opt = "--listen <addr>", .desc = &.{"native client listen address (default 127.0.0.1)"} },
