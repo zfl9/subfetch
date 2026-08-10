@@ -329,7 +329,10 @@ fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render_mod.Format, files: []
         // pid in the name: dry-run takes no run lock, concurrent dry-runs must
         // not race on a shared temp file (interleaved atomicWrite -> wrong bytes)
         const tmp = try std.fmt.allocPrint(arena, "/tmp/subfetch-dryrun.{d}.{s}", .{ getPid(), ext });
-        deploy_mod.atomicWrite(arena, tmp, f.content) catch continue;
+        deploy_mod.atomicWrite(arena, tmp, f.content) catch |e| {
+            logWarn(null, "failed to write {s}: {s} (verification skipped for this file)", .{ tmp, @errorName(e) });
+            continue;
+        };
         // verified: the temp file has served its purpose, leave no debris
         // (dry-run promises zero side effects; /tmp is cleaned by the system,
         // but the pid-suffixed names would otherwise pile up per run)
@@ -390,7 +393,11 @@ fn verifyAll(arena: std.mem.Allocator, fmt: render_mod.Format, files: []const re
         deploy_mod.atomicWrite(arena, tmp, f.content) catch |e| {
             abort(arena, 1, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
         };
-        stage_a_tmps.append(arena, tmp) catch {};
+        // OOM is unlikely (arena over page_allocator), but if the path cannot be
+        // recorded the file must still not survive an abort: delete it right away
+        stage_a_tmps.append(arena, tmp) catch {
+            std.fs.cwd().deleteFile(tmp) catch {};
+        };
         const vr = deploy_mod.verifyContent(arena, fmt, f.content, tmp);
         if (vr == .failed) {
             abort(arena, 3, "verify failed, aborting: {s} (nothing installed)", .{target});
@@ -693,8 +700,10 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
             opts.reset_state = true;
         } else if (std.mem.eql(u8, a, "--verbose")) {
             opts.verbose = 1;
-        } else if (std.mem.startsWith(u8, a, "-v") and a.len >= 2 and a[1] == 'v') {
-            // -v, -vv, -vvv: all mean verbose=1 (no deeper levels since -vv was replaced by -o fmt=-)
+        } else if (std.mem.eql(u8, a, "-v")) {
+            // -v/--verbose: single verbose level (node list, api secret). -vv/-vvv
+            // were removed: their old stdout semantics were replaced by -o fmt=-,
+            // and no deeper verbose level exists (strict parsing, no -verbose)
             opts.verbose = 1;
         } else if (std.mem.eql(u8, a, "--singbox-clash-api")) {
             opts.singbox_clash_api = true;
