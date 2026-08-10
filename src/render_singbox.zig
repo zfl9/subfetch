@@ -88,11 +88,8 @@ pub fn renderSingbox(
     }
 
     // serialize base (with empty outbounds), then fill the outbounds block
-    var out: std.ArrayListUnmanaged(u8) = .empty;
     const base_json = try std.json.Stringify.valueAlloc(arena, std.json.Value{ .object = root }, .{ .whitespace = .indent_2 });
-    try out.appendSlice(arena, base_json);
-    try out.append(arena, '\n');
-    var text: []const u8 = try out.toOwnedSlice(arena);
+    var text: []const u8 = try std.fmt.allocPrint(arena, "{s}\n", .{base_json});
 
     // outbounds block (relative indent, complete JSON array): direct + block + selector + nodes
     var oblock: std.ArrayListUnmanaged(u8) = .empty;
@@ -145,11 +142,8 @@ pub fn renderSingbox(
     }
     try ow.writeAll("\n]\n");
 
-    // user template or the just-serialized default base
-    if (template) |t| {
-        text = try arena.dupe(u8, t);
-    }
-    text = try tpl.fillList(arena, text, "\"outbounds\"", oblock.items);
+    // user template or the just-serialized default base (fillList copies)
+    text = try tpl.fillList(arena, template orelse text, "\"outbounds\"", oblock.items);
 
     const file = try arena.alloc(render.File, 1);
     file[0] = .{ .path = "config.json", .content = text };
