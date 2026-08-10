@@ -187,7 +187,7 @@ pub fn main() !void {
     const nodes = all_nodes.items;
 
     // render options
-    const secret = opts.secret orelse try genSecret(arena);
+    const secret = try resolveSecret(arena, opts.secret);
     const ropts: render_mod.Options = .{
         .listen = listen,
         .port = port,
@@ -365,11 +365,16 @@ fn installAll(
             logErr(null, "failed to create directory {s}: {s}", .{ dir, @errorName(e) });
             std.process.exit(1);
         };
+        // change detection: install only files whose content actually changed;
+        // every file unchanged -> skip install & reload entirely
+        var installed: usize = 0;
         for (files) |f| {
             const fpath = std.fs.path.join(arena, &.{ dir, f.path }) catch {
                 logErr(null, "path join failed", .{});
                 std.process.exit(1);
             };
+            if (!deploy_mod.contentDiffers(arena, fpath, f.content)) continue;
+            installed += 1;
             if (opts.no_verify) {
                 deploy_mod.atomicWrite(arena, fpath, f.content) catch |e| {
                     logErr(null, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
@@ -397,7 +402,18 @@ fn installAll(
                 };
             }
         }
-        logInfo(null, "wrote {d} files to {s}", .{ files.len, dir });
+        // drop the Stage A .new.json artifacts that were not renamed into place
+        // (renamed ones are already gone; deleteFile is a no-op for them)
+        for (files) |f| {
+            const fpath = std.fs.path.join(arena, &.{ dir, f.path }) catch continue;
+            const tmp = std.fmt.allocPrint(arena, "{s}.new.json", .{fpath}) catch continue;
+            std.fs.cwd().deleteFile(tmp) catch {};
+        }
+        if (installed == 0) {
+            logInfo(null, "config unchanged, skip install & reload: {s}", .{dir});
+            return;
+        }
+        logInfo(null, "wrote {d} files to {s} ({d} unchanged)", .{ installed, dir, files.len - installed });
         if (!opts.no_reload) {
             if (reload_cmd) |cmd| {
                 switch (deploy_mod.reloadCustom(arena, cmd)) {
@@ -411,6 +427,16 @@ fn installAll(
     } else {
         // single-file format
         const f = files[0];
+        if (!deploy_mod.contentDiffers(arena, path, f.content)) {
+            // drop the Stage A .new temp; nothing installed, nothing reloaded
+            const tmp = std.fmt.allocPrint(arena, "{s}.new", .{path}) catch {
+                logErr(null, "out of memory", .{});
+                std.process.exit(1);
+            };
+            std.fs.cwd().deleteFile(tmp) catch {};
+            logInfo(null, "config unchanged, skip install & reload: {s}", .{path});
+            return;
+        }
         if (opts.no_verify) {
             deploy_mod.atomicWrite(arena, path, f.content) catch |e| {
                 logErr(null, "failed to write {s}: {s}", .{ path, @errorName(e) });
@@ -496,6 +522,46 @@ fn genSecret(arena: std.mem.Allocator) ![]const u8 {
         oi += 1;
     }
     return arena.dupe(u8, &out);
+}
+
+/// API secret resolution: explicit --secret / .zon secret wins; otherwise reuse
+/// the persisted secret (stable across runs -> stable rendered bytes -> install
+/// diff stays quiet). first run generates + persists a UUID.
+fn resolveSecret(arena: std.mem.Allocator, explicit: ?[]const u8) ![]const u8 {
+    if (explicit) |s| return s;
+    const path = stateSecretPath(arena) catch return genSecret(arena); // no HOME: per-run random (degraded)
+    return loadOrCreateSecret(arena, path);
+}
+
+/// read the persisted secret at `path`; generate + persist a fresh UUID when absent.
+fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
+    if (std.fs.cwd().readFileAlloc(arena, path, 4096)) |content| {
+        return std.mem.trimRight(u8, content, "\r\n");
+    } else |_| {}
+    const s = try genSecret(arena);
+    writeStateSecret(arena, path, s) catch |e| {
+        logWarn(null, "failed to persist api secret to {s}: {s}", .{ path, @errorName(e) });
+    };
+    return s;
+}
+
+/// XDG state path: $XDG_STATE_HOME or ~/.local/state (default per XDG spec)
+fn stateSecretPath(arena: std.mem.Allocator) ![]const u8 {
+    if (std.posix.getenv("XDG_STATE_HOME")) |base| {
+        return std.fs.path.join(arena, &.{ base, "subfetch", "secret" });
+    }
+    const home = std.posix.getenv("HOME") orelse return error.NoHome;
+    return std.fs.path.join(arena, &.{ home, ".local", "state", "subfetch", "secret" });
+}
+
+fn writeStateSecret(arena: std.mem.Allocator, path: []const u8, secret: []const u8) !void {
+    _ = arena;
+    const dir = std.fs.path.dirname(path) orelse return error.BadPath;
+    try std.fs.cwd().makePath(dir);
+    const f = try std.fs.cwd().createFile(path, .{ .mode = 0o600 });
+    defer f.close();
+    try f.writeAll(secret);
+    try f.sync();
 }
 
 fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!void {
@@ -657,6 +723,11 @@ fn addNodeFile(
     for (lines) |l| try addDirectNode(arena, all_nodes, fail_cnt, sep, l);
 }
 
+/// subscription-internal sort key: display name (byte order, deterministic across runs)
+fn nodeLessThan(_: void, a: node_mod.Node, b: node_mod.Node) bool {
+    return std.mem.lessThan(u8, a.name(), b.name());
+}
+
 /// process one subscription (--url or .zon): fetch + full parse pipeline + logging
 fn processSubscription(
     arena: std.mem.Allocator,
@@ -685,6 +756,9 @@ fn processSubscription(
         fail_cnt.* += 1;
         return;
     };
+    // stable-sort within the subscription: upstream node order is not stable
+    // between fetches, deterministic bytes keep the install diff quiet
+    std.mem.sort(node_mod.Node, @constCast(result.nodes), {}, nodeLessThan);
     for (result.nodes) |n| {
         try all_nodes.append(arena, n);
     }
@@ -955,6 +1029,26 @@ fn outPrint(comptime fmt: []const u8, args: anytype) void {
     const text = std.fmt.allocPrint(std.heap.page_allocator, fmt, args) catch return;
     defer std.heap.page_allocator.free(text);
     std.fs.File.stdout().writeAll(text) catch {};
+}
+
+test "secret persistence: create + reuse" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const path = try tmp.dir.realpathAlloc(a, ".");
+    const secret_file = try std.fs.path.join(a, &.{ path, "state", "secret" });
+    // first call: generates + persists
+    const s1 = try loadOrCreateSecret(a, secret_file);
+    try std.testing.expectEqual(@as(usize, 36), s1.len);
+    // second call: reuses the persisted value
+    const s2 = try loadOrCreateSecret(a, secret_file);
+    try std.testing.expectEqualStrings(s1, s2);
+    // file contains exactly the secret
+    const on_disk = try std.fs.cwd().readFileAlloc(a, secret_file, 4096);
+    try std.testing.expectEqualStrings(s1, on_disk);
 }
 
 test "parseOutput grammar" {

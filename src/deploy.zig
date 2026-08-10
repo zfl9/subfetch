@@ -121,6 +121,14 @@ pub fn atomicWrite(arena: std.mem.Allocator, path: []const u8, content: []const 
     try std.fs.cwd().rename(tmp, path);
 }
 
+/// whether the on-disk file at `path` differs from `content` (byte comparison).
+/// a missing file or a read failure counts as different: conservative, an
+/// install is never skipped when the on-disk state is unknown.
+pub fn contentDiffers(allocator: std.mem.Allocator, path: []const u8, content: []const u8) bool {
+    const cur = std.fs.cwd().readFileAlloc(allocator, path, 1 << 24) catch return true;
+    return !std.mem.eql(u8, cur, content);
+}
+
 fn writeFile(path: []const u8, content: []const u8) !void {
     const f = try std.fs.cwd().createFile(path, .{});
     defer f.close();
@@ -260,6 +268,24 @@ test "installSingle atomic with backup" {
     );
     const still = try std.fs.cwd().readFileAlloc(arena.allocator(), cfg, 1 << 16);
     try std.testing.expectEqualStrings("content-v2", still);
+}
+
+test "contentDiffers missing/same/different" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const path = try tmp.dir.realpathAlloc(arena.allocator(), ".");
+    const cfg = try std.fs.path.join(arena.allocator(), &.{ path, "cfg.txt" });
+    // missing file counts as different (first install must not be skipped)
+    try std.testing.expect(contentDiffers(arena.allocator(), cfg, "hello"));
+    // identical bytes -> same
+    try writeFile(cfg, "hello");
+    try std.testing.expect(!contentDiffers(arena.allocator(), cfg, "hello"));
+    // different bytes -> different
+    try std.testing.expect(contentDiffers(arena.allocator(), cfg, "hello!"));
+    try std.testing.expect(contentDiffers(arena.allocator(), cfg, ""));
 }
 
 test "reloadCustom runs shell command" {

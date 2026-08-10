@@ -11,6 +11,8 @@
 - 支持的配置输出格式：clash / sing-box 聚合，ss / ssr / trojan / xray / hysteria / hysteria2 原生，raw 节点列表
 - 安装配置文件前校验：`mihomo -t` / `sing-box check` / `xray -test`，校验成功后才会覆盖旧配置
 - 安装配置文件后重载：clash controller API 优先，失败自动回退 systemctl，可自定义重载命令
+- 配置无变化时跳过安装与重载：生成的配置与现有配置字节一致（订阅未更新）时，不写文件、不触发 reload，避免无意义的 systemctl restart
+- 订阅内部节点按名称稳定排序：上游节点顺序变化不会改变配置内容，进一步避免误触发 reload；订阅之间的顺序与用户直接提供的节点（--node / --node-file）保持原样
 
 ## 快速开始
 
@@ -62,7 +64,7 @@ CLI 与 .zon 输入一一对应：
 .{
     .ua = "clash-verge/v2.2.3",
     .sep = "@",                        // 订阅名和节点名之间的分隔符
-    .secret = "xxx",                   // API secret（默认自动生成）
+    .secret = "xxx",                   // API secret（默认自动生成并持久化到 ~/.local/state/subfetch/secret，跨运行稳定）
     .timeout = 15,                     // 单订阅拉取超时（秒，默认 15）
     .info_keywords = .{ "到期", "剩余流量" },  // 信息节点关键词
     .listen = "127.0.0.1",             // 客户端监听地址
@@ -159,7 +161,7 @@ proxies: []    # clash
     --log-level <lvl>    客户端日志级别 debug|info|warning|error（默认 info）
     --controller <a:p>   clash external-controller / sing-box clash_api
                          （sing-box 需配合 --singbox-clash-api）
-    --secret <str>       API secret（默认自动生成 UUID）
+    --secret <str>       API secret（默认自动生成并持久化，跨运行稳定）
     --singbox-clash-api  sing-box 输出启用 clash_api
     --no-verify          跳过校验
     --no-reload          安装后不重载
