@@ -177,9 +177,6 @@ fn renameNode(n: Node, new_name: []const u8) Node {
     };
 }
 
-
-
-
 test "uniqueNames dedupe and reserved names" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -226,13 +223,25 @@ test "uniqueNames dedupe and reserved names" {
 
 test "supports filter" {
     const tro = node.Node{ .trojan = .{
-        .name = "t", .server = "s", .port = 443, .password = "p",
+        .name = "t",
+        .server = "s",
+        .port = 443,
+        .password = "p",
     } };
     const ssr = node.Node{ .ssr = .{
-        .name = "r", .server = "s", .port = 443, .cipher = "aes-256-cfb", .password = "p", .protocol = "origin", .obfs = "plain",
+        .name = "r",
+        .server = "s",
+        .port = 443,
+        .cipher = "aes-256-cfb",
+        .password = "p",
+        .protocol = "origin",
+        .obfs = "plain",
     } };
     const vl = node.Node{ .vless = .{
-        .name = "v", .server = "s", .port = 443, .uuid = "11111111-2222-3333-4444-555555555555",
+        .name = "v",
+        .server = "s",
+        .port = 443,
+        .uuid = "11111111-2222-3333-4444-555555555555",
     } };
 
     try std.testing.expect(supports(.clash, tro));

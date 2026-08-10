@@ -386,7 +386,6 @@ fn jsonGetObj(o: std.json.ObjectMap, key: []const u8) ?std.json.ObjectMap {
 }
 
 fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_name: []const u8, sep: []const u8) ParseError!node.Node {
-
     const server = jsonGetStr(obj, "server") orelse return error.MissingField;
     const port = try jsonGetPort(obj, "server_port");
     const raw_name = jsonGetStr(obj, "tag") orelse "";
@@ -574,7 +573,6 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
 }
 
 fn jsonNodeToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_name: []const u8, sep: []const u8) ParseError!node.Node {
-
     const server = jsonGetStr(obj, "add") orelse return error.MissingField;
     const port = try uri.parsePort(jsonGetStr(obj, "port") orelse return error.MissingField);
     const raw_name = jsonGetStr(obj, "ps") orelse "";

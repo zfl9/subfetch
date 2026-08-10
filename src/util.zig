@@ -134,7 +134,7 @@ fn drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Write
     const pattern = data[slice.len];
     var written: usize = pattern.len * splat;
     for (slice) |bytes| written += bytes.len;
-        if (self.exceeded or w.end + written > w.buffer.len) {
+    if (self.exceeded or w.end + written > w.buffer.len) {
         // over the limit: drop everything and keep draining (memory bounded,
         // the caller checks `exceeded` after the transfer)
         self.exceeded = true;

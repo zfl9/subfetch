@@ -9,7 +9,6 @@ const std = @import("std");
 /// the renderer replaces the empty list with the generated node block,
 /// matching the template's indent style. the rest of the template is kept
 /// byte-for-byte.
-
 /// detect the template's indent style: leading whitespace of the first
 /// indented line (e.g. "  ", "    ", "\t"). falls back to two spaces.
 pub fn detectIndent(text: []const u8) []const u8 {

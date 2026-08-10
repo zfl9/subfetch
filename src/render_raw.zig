@@ -182,7 +182,6 @@ fn putOpt(arena: std.mem.Allocator, o: *ObjectMap, key: []const u8, v: ?[]const 
     try o.put(key, .{ .string = val });
 }
 
-
 // ---------------- tests ----------------
 
 test "render raw" {

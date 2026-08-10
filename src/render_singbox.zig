@@ -270,7 +270,6 @@ fn renderOutbound(arena: std.mem.Allocator, n: node.Node) !?JsonValue {
     return .{ .object = o };
 }
 
-
 fn putTls(
     arena: std.mem.Allocator,
     o: *ObjectMap,
@@ -467,8 +466,7 @@ test "mbps format" {
 test "compile-check" {
     _ = &renderSingbox;
     _ = &renderOutbound;
-    
-    
+
     _ = &putTls;
     _ = &putTransport;
     _ = &mbps;

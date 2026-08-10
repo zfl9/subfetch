@@ -484,7 +484,6 @@ test "render trojan files" {
     const ws = v2.object.get("websocket").?.object;
     try std.testing.expectEqual(true, ws.get("enabled").?.bool);
     try std.testing.expectEqualStrings("/ws", ws.get("path").?.string);
-
 }
 
 test "render hysteria files" {
