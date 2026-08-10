@@ -188,28 +188,62 @@ pub const Node = union(enum) {
 
 const max_name_len = 60;
 
-/// sanitize a name: strip control chars, collapse whitespace, truncate overlong names.
+/// sanitize a name: strip control chars, collapse whitespace, drop decorative
+/// codepoints (emoji, misc symbols, variation selectors, ZWJ), truncate overlong
+/// names. invalid/truncated UTF-8 tails pass through byte-wise.
 pub fn sanitizeName(allocator: std.mem.Allocator, n: []const u8) ![]const u8 {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     errdefer buf.deinit(allocator);
     var prev_space = false;
-    for (n) |ch| {
-        if (ch < 0x20 or ch == 0x7f) {
-            if (!prev_space and buf.items.len > 0) {
-                try buf.append(allocator, ' ');
-                prev_space = true;
+    var i: usize = 0;
+    while (i < n.len) {
+        const b = n[i];
+        if (b < 0x80) {
+            // ASCII: control chars and whitespace collapse to a single space
+            if (b < 0x20 or b == 0x7f or b == ' ' or b == '\t') {
+                if (!prev_space and buf.items.len > 0) {
+                    try buf.append(allocator, ' ');
+                    prev_space = true;
+                }
+            } else {
+                try buf.append(allocator, b);
+                prev_space = false;
             }
+            i += 1;
             continue;
         }
-        if (ch == ' ' or ch == '\t') {
-            if (!prev_space and buf.items.len > 0) {
-                try buf.append(allocator, ' ');
-                prev_space = true;
+        // multi-byte: decode one codepoint; truncated/invalid tails pass
+        // through byte-wise (never read past the end)
+        const seq_len = std.unicode.utf8ByteSequenceLength(b) catch {
+            try buf.append(allocator, b);
+            prev_space = false;
+            i += 1;
+            continue;
+        };
+        if (i + seq_len > n.len) {
+            try buf.appendSlice(allocator, n[i..]);
+            break;
+        }
+        const cp = std.unicode.utf8Decode(n[i .. i + seq_len]) catch {
+            try buf.append(allocator, b);
+            prev_space = false;
+            i += 1;
+            continue;
+        };
+        if (isDecorative(cp)) {
+            // drop the decorative codepoint, retracting the space emitted for
+            // a preceding whitespace; skip whitespace glued after it too
+            if (prev_space and buf.items.len > 0 and buf.items[buf.items.len - 1] == ' ') {
+                buf.items.len -= 1;
             }
+            prev_space = false;
+            i += seq_len;
+            while (i < n.len and (n[i] == ' ' or n[i] == '\t' or n[i] == '\r' or n[i] == '\n')) i += 1;
             continue;
         }
+        try buf.appendSlice(allocator, n[i .. i + seq_len]);
         prev_space = false;
-        try buf.append(allocator, ch);
+        i += seq_len;
     }
     // strip trailing spaces
     while (buf.items.len > 0 and buf.items[buf.items.len - 1] == ' ') {
@@ -224,6 +258,16 @@ pub fn sanitizeName(allocator: std.mem.Allocator, n: []const u8) ![]const u8 {
         buf.items.len = cut;
     }
     return buf.toOwnedSlice(allocator);
+}
+
+/// decorative codepoints dropped from node names: emoji blocks, misc symbols +
+/// dingbats, variation selectors, zero-width joiner. CJK extension blocks
+/// (U+20000+) are NOT decorative and pass through.
+fn isDecorative(cp: u21) bool {
+    return (cp >= 0x1F000 and cp <= 0x1FAFF) or
+        (cp >= 0x2600 and cp <= 0x27BF) or
+        (cp >= 0xFE00 and cp <= 0xFE0F) or
+        cp == 0x200D;
 }
 
 /// case-insensitive substring search (byte-wise; non-ASCII passes through).
@@ -294,6 +338,25 @@ test "sanitizeName strips control chars and collapses spaces" {
     try std.testing.expectEqualStrings("a b c", n);
 }
 
+test "sanitizeName drops emoji and decorative symbols" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // 4-byte emoji dropped (with glued whitespace)
+    try std.testing.expectEqualStrings("香港1-电信优化", try sanitizeName(a, "🇭🇰 香港1-电信优化"));
+    try std.testing.expectEqualStrings("香港1", try sanitizeName(a, "香港🇭🇰1"));
+    try std.testing.expectEqualStrings("香港1", try sanitizeName(a, "香港 🇭🇰 1"));
+    // 3-byte misc symbol (U+2600) dropped
+    try std.testing.expectEqualStrings("香港", try sanitizeName(a, "☀香港"));
+    // heart + variation selector (U+FE0F) dropped
+    try std.testing.expectEqualStrings("香港", try sanitizeName(a, "❤️香港"));
+    // CJK extension B (U+20000) is NOT decorative: passes through
+    try std.testing.expectEqualStrings("𠀀香港", try sanitizeName(a, "𠀀香港"));
+    // truncated UTF-8 tail passes through byte-wise (no panic)
+    try std.testing.expectEqualStrings("abc\xe4", try sanitizeName(a, "abc\xe4"));
+    try std.testing.expectEqualStrings("ab\xf0\x9f", try sanitizeName(a, "ab\xf0\x9f"));
+}
+
 test "prefixed with fallback" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -337,6 +400,7 @@ test "compile-check" {
     _ = &prefixed;
     _ = &containsIgnoreCase;
     _ = &isInfoNodeName;
+    _ = &isDecorative;
     _ = &Node.name;
     _ = &Node.typeName;
 }
