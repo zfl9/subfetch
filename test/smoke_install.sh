@@ -5,6 +5,8 @@
 # services, or state.
 set -eu
 
+echo "=== smoke-install ==="
+
 EXE=$1
 DIR=$2
 CFG=fixtures/config.zon
