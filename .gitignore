@@ -11,3 +11,7 @@ zig-out/
 # test client binaries (downloaded from GitHub releases)
 bin/
 real.zon
+
+# collaborative planning docs (working files, not project artifacts)
+plan.md
+todo.md
