@@ -69,6 +69,9 @@ pub fn main() !void {
         std.process.exit(2);
     };
 
+    // serialize concurrent runs (cron overlaps); dry-run is read-only, no lock
+    if (!opts.dry_run) acquireRunLock(arena);
+
     // read config (optional): missing default config.zon -> pure CLI usage with
     // defaults; an explicitly passed -c path that does not exist is a user error
     const cfg = blk: {
@@ -285,6 +288,7 @@ pub fn main() !void {
         }
         if (need_secret) logVerbose(null, "api secret: {s}", .{secret});
     }
+    releaseRunLock();
 }
 
 fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render_mod.Format, files: []const render_mod.File) !void {
@@ -545,13 +549,18 @@ fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
     return s;
 }
 
-/// XDG state path: $XDG_STATE_HOME or ~/.local/state (default per XDG spec)
-fn stateSecretPath(arena: std.mem.Allocator) ![]const u8 {
+/// XDG state dir: $XDG_STATE_HOME or ~/.local/state (default per XDG spec)
+fn stateDir(arena: std.mem.Allocator) ![]const u8 {
     if (std.posix.getenv("XDG_STATE_HOME")) |base| {
-        return std.fs.path.join(arena, &.{ base, "subfetch", "secret" });
+        return std.fs.path.join(arena, &.{ base, "subfetch" });
     }
     const home = std.posix.getenv("HOME") orelse return error.NoHome;
-    return std.fs.path.join(arena, &.{ home, ".local", "state", "subfetch", "secret" });
+    return std.fs.path.join(arena, &.{ home, ".local", "state", "subfetch" });
+}
+
+/// XDG state path: $XDG_STATE_HOME or ~/.local/state (default per XDG spec)
+fn stateSecretPath(arena: std.mem.Allocator) ![]const u8 {
+    return std.fs.path.join(arena, &.{ try stateDir(arena), "secret" });
 }
 
 fn writeStateSecret(arena: std.mem.Allocator, path: []const u8, secret: []const u8) !void {
@@ -562,6 +571,43 @@ fn writeStateSecret(arena: std.mem.Allocator, path: []const u8, secret: []const 
     defer f.close();
     try f.writeAll(secret);
     try f.sync();
+}
+
+/// held until process exit; the kernel releases the flock no matter how the
+/// process exits (normal return, panic, signal) - no explicit cleanup needed
+var run_lock: ?std.fs.File = null;
+
+/// advisory run lock: serialize concurrent runs (cron overlaps). probe
+/// non-blocking first so we can log a waiting message, then block until the
+/// other instance finishes (every phase is bounded by timeouts, so the wait
+/// is finite). no state dir -> degraded, no lock.
+fn acquireRunLock(arena: std.mem.Allocator) void {
+    const path = std.fs.path.join(arena, &.{ stateDir(arena) catch return, "lock" }) catch return;
+    const flags = std.fs.File.CreateFlags{
+        .read = true,
+        .truncate = false,
+        .mode = 0o600,
+        .lock = .exclusive,
+    };
+    const f = std.fs.cwd().createFile(path, .{ .read = true, .truncate = false, .mode = 0o600, .lock = .exclusive, .lock_nonblocking = true }) catch |e| switch (e) {
+        error.WouldBlock => blk: {
+            logWarn(null, "another subfetch instance is running, waiting...", .{});
+            break :blk std.fs.cwd().createFile(path, flags) catch return;
+        },
+        else => return,
+    };
+    // the lock fd must not leak into child processes (verifiers, reload
+    // commands): a long-running background child would keep the lock forever
+    _ = std.posix.fcntl(f.handle, std.posix.F.SETFD, std.posix.FD_CLOEXEC) catch {};
+    run_lock = f;
+}
+
+fn releaseRunLock() void {
+    if (run_lock) |f| {
+        f.unlock();
+        f.close();
+        run_lock = null;
+    }
 }
 
 fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!void {
@@ -1049,6 +1095,28 @@ test "secret persistence: create + reuse" {
     // file contains exactly the secret
     const on_disk = try std.fs.cwd().readFileAlloc(a, secret_file, 4096);
     try std.testing.expectEqualStrings(s1, on_disk);
+}
+
+test "run lock: exclusive flock blocks second fd" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const path = try tmp.dir.realpathAlloc(a, ".");
+    const lock_path = try std.fs.path.join(a, &.{ path, "lock" });
+    // first fd acquires the exclusive lock
+    const f1 = try std.fs.cwd().createFile(lock_path, .{ .read = true, .truncate = false });
+    defer f1.close();
+    try std.testing.expect(try f1.tryLock(.exclusive));
+    // second fd is blocked
+    const f2 = try std.fs.cwd().createFile(lock_path, .{ .read = true, .truncate = false });
+    defer f2.close();
+    try std.testing.expect(!try f2.tryLock(.exclusive));
+    // release -> second fd can acquire
+    f1.unlock();
+    try std.testing.expect(try f2.tryLock(.exclusive));
 }
 
 test "parseOutput grammar" {
