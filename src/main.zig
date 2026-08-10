@@ -18,6 +18,8 @@ const Options = struct {
     config: []const u8 = "config.zon",
     outputs: std.ArrayListUnmanaged(Output) = .empty,
     dry_run: bool = false,
+    /// --reset-state: drop the persisted api secret (next run generates a fresh one)
+    reset_state: bool = false,
     ua: ?[]const u8 = null,
     /// node name separator; null = .zon sep or default "@"
     sep: ?[]const u8 = null,
@@ -71,6 +73,13 @@ pub fn main() !void {
 
     // serialize concurrent runs (cron overlaps); dry-run is read-only, no lock
     if (!opts.dry_run) acquireRunLock(arena);
+
+    // --reset-state: drop the persisted secret and stop (nothing else to do)
+    if (opts.reset_state) {
+        resetStateSecret(arena);
+        releaseRunLock();
+        return;
+    }
 
     // read config (optional): missing default config.zon -> pure CLI usage with
     // defaults; an explicitly passed -c path that does not exist is a user error
@@ -609,6 +618,24 @@ fn releaseRunLock() void {
     }
 }
 
+/// --reset-state: drop the persisted api secret so the next run generates a
+/// fresh one. only the secret file is removed; the flock lock file is kept
+/// (unlinking it would break the lock held on the old inode by a running
+/// instance, opening a concurrency window).
+fn resetStateSecret(arena: std.mem.Allocator) void {
+    const path = stateSecretPath(arena) catch {
+        abort(arena, "no state dir, nothing to reset", .{});
+    };
+    std.fs.cwd().deleteFile(path) catch |e| switch (e) {
+        error.FileNotFound => {
+            logInfo(null, "no persisted secret, nothing to reset ({s})", .{path});
+            return;
+        },
+        else => abort(arena, "failed to delete {s}: {s}", .{ path, @errorName(e) }),
+    };
+    logInfo(null, "reset api secret (next run generates a fresh one): {s}", .{path});
+}
+
 fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!void {
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -618,6 +645,8 @@ fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!
             std.process.exit(0);
         } else if (std.mem.eql(u8, a, "--dry-run")) {
             opts.dry_run = true;
+        } else if (std.mem.eql(u8, a, "--reset-state")) {
+            opts.reset_state = true;
         } else if (std.mem.eql(u8, a, "--verbose")) {
             opts.verbose = 1;
         } else if (std.mem.startsWith(u8, a, "-v") and a.len >= 2 and a[1] == 'v') {
@@ -938,6 +967,9 @@ fn printUsage() void {
         \\      --reload-cmd <cmd> custom reload command after install (sh -c, overrides auto reload; acme.sh style)
         \\
         \\Misc:
+        \\      --reset-state     delete the persisted api secret (state dir
+        \\                        $XDG_STATE_HOME or ~/.local/state/subfetch);
+        \\                        next run generates a fresh one (lock file kept)
         \\  -v, --verbose          verbose output (node list)
         \\  -h, --help             show this help
         \\

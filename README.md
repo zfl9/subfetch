@@ -167,6 +167,7 @@ proxies: []    # clash
     --no-verify          跳过校验
     --no-reload          安装后不重载
     --reload-cmd <cmd>   安装后执行自定义命令（优先于 .zon 配置）
+    --reset-state        删除持久化的 API secret（state 目录，下次运行自动生成新的；lock 文件保留）
 -v, --verbose            详细输出
 -h, --help               帮助
 ```
