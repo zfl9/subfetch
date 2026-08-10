@@ -288,6 +288,7 @@ pub fn main() !void {
         }
         if (need_secret) logVerbose(null, "api secret: {s}", .{secret});
     }
+    cleanupStageATmps();
     releaseRunLock();
 }
 
@@ -308,6 +309,23 @@ fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render_mod.Format, files: []
     logInfo(null, "dry-run verify passed ({d} files)", .{files.len});
 }
 
+/// Stage A temp files written so far; removed on abort so a failed run leaves
+/// no .new/.new.json debris (covers all targets and both stages)
+var stage_a_tmps: std.ArrayListUnmanaged([]const u8) = .empty;
+
+fn cleanupStageATmps() void {
+    for (stage_a_tmps.items) |t| std.fs.cwd().deleteFile(t) catch {};
+    stage_a_tmps.clearRetainingCapacity();
+}
+
+/// unified failure exit: clean up Stage A temps, log, and exit(1)
+fn abort(arena: std.mem.Allocator, comptime fmt: []const u8, args: anytype) noreturn {
+    _ = arena;
+    cleanupStageATmps();
+    logErr(null, fmt, args);
+    std.process.exit(1);
+}
+
 /// Stage A: verify all files of all targets before anything is installed.
 /// writes .new temp files next to targets and verifies them; on failure
 /// all temp files are removed and nothing is installed (atomic across targets).
@@ -316,38 +334,32 @@ fn verifyAll(arena: std.mem.Allocator, fmt: render_mod.Format, files: []const re
     if (no_verify) return;
     if (isDirFormat(fmt)) {
         std.fs.cwd().makePath(path) catch |e| {
-            logErr(null, "failed to create directory {s}: {s}", .{ path, @errorName(e) });
-            std.process.exit(1);
+            abort(arena, "failed to create directory {s}: {s}", .{ path, @errorName(e) });
         };
     }
     for (files) |f| {
         const target = if (isDirFormat(fmt))
             std.fs.path.join(arena, &.{ path, f.path }) catch {
-                logErr(null, "path join failed", .{});
-                std.process.exit(1);
+                abort(arena, "path join failed", .{});
             }
         else
             path;
         // note: xray -test infers format from extension, tmp must end with .json
         const tmp = if (isDirFormat(fmt))
             std.fmt.allocPrint(arena, "{s}.new.json", .{target}) catch {
-                logErr(null, "out of memory", .{});
-                std.process.exit(1);
+                abort(arena, "out of memory", .{});
             }
         else
             std.fmt.allocPrint(arena, "{s}.new", .{target}) catch {
-                logErr(null, "out of memory", .{});
-                std.process.exit(1);
+                abort(arena, "out of memory", .{});
             };
         deploy_mod.atomicWrite(arena, tmp, f.content) catch |e| {
-            logErr(null, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
-            std.process.exit(1);
+            abort(arena, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
         };
+        stage_a_tmps.append(arena, tmp) catch {};
         const vr = deploy_mod.verifyContent(arena, fmt, f.content, tmp);
         if (vr == .failed) {
-            std.fs.cwd().deleteFile(tmp) catch {};
-            logErr(null, "verify failed, aborting: {s} (nothing installed)", .{target});
-            std.process.exit(1);
+            abort(arena, "verify failed, aborting: {s} (nothing installed)", .{target});
         }
     }
 }
@@ -366,43 +378,36 @@ fn installAll(
     if (isDirFormat(fmt)) {
         const dir = path;
         std.fs.cwd().makePath(dir) catch |e| {
-            logErr(null, "failed to create directory {s}: {s}", .{ dir, @errorName(e) });
-            std.process.exit(1);
+            abort(arena, "failed to create directory {s}: {s}", .{ dir, @errorName(e) });
         };
         // change detection: install only files whose content actually changed;
         // every file unchanged -> skip install & reload entirely
         var installed: usize = 0;
         for (files) |f| {
             const fpath = std.fs.path.join(arena, &.{ dir, f.path }) catch {
-                logErr(null, "path join failed", .{});
-                std.process.exit(1);
+                abort(arena, "path join failed", .{});
             };
             if (!deploy_mod.contentDiffers(arena, fpath, f.content)) continue;
             installed += 1;
             if (opts.no_verify) {
                 deploy_mod.atomicWrite(arena, fpath, f.content) catch |e| {
-                    logErr(null, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
-                    std.process.exit(1);
+                    abort(arena, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
                 };
             } else {
                 const tmp = std.fmt.allocPrint(arena, "{s}.new.json", .{fpath}) catch {
-                    logErr(null, "out of memory", .{});
-                    std.process.exit(1);
+                    abort(arena, "out of memory", .{});
                 };
                 // backup existing config (acme.sh style)
                 if (fileExists(fpath)) {
                     const bak = std.fmt.allocPrint(arena, "{s}.bak", .{fpath}) catch {
-                        logErr(null, "out of memory", .{});
-                        std.process.exit(1);
+                        abort(arena, "out of memory", .{});
                     };
                     std.fs.cwd().copyFile(fpath, std.fs.cwd(), bak, .{}) catch |e| {
-                        logErr(null, "failed to backup {s}: {s}", .{ fpath, @errorName(e) });
-                        std.process.exit(1);
+                        abort(arena, "failed to backup {s}: {s}", .{ fpath, @errorName(e) });
                     };
                 }
                 std.fs.cwd().rename(tmp, fpath) catch |e| {
-                    logErr(null, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
-                    std.process.exit(1);
+                    abort(arena, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
                 };
             }
         }
@@ -434,8 +439,7 @@ fn installAll(
         if (!deploy_mod.contentDiffers(arena, path, f.content)) {
             // drop the Stage A .new temp; nothing installed, nothing reloaded
             const tmp = std.fmt.allocPrint(arena, "{s}.new", .{path}) catch {
-                logErr(null, "out of memory", .{});
-                std.process.exit(1);
+                abort(arena, "out of memory", .{});
             };
             std.fs.cwd().deleteFile(tmp) catch {};
             logInfo(null, "config unchanged, skip install & reload: {s}", .{path});
@@ -443,28 +447,23 @@ fn installAll(
         }
         if (opts.no_verify) {
             deploy_mod.atomicWrite(arena, path, f.content) catch |e| {
-                logErr(null, "failed to write {s}: {s}", .{ path, @errorName(e) });
-                std.process.exit(1);
+                abort(arena, "failed to write {s}: {s}", .{ path, @errorName(e) });
             };
             logInfo(null, "installed {s}", .{path});
         } else {
             const tmp = std.fmt.allocPrint(arena, "{s}.new", .{path}) catch {
-                logErr(null, "out of memory", .{});
-                std.process.exit(1);
+                abort(arena, "out of memory", .{});
             };
             if (fileExists(path)) {
                 const bak = std.fmt.allocPrint(arena, "{s}.bak", .{path}) catch {
-                    logErr(null, "out of memory", .{});
-                    std.process.exit(1);
+                    abort(arena, "out of memory", .{});
                 };
                 std.fs.cwd().copyFile(path, std.fs.cwd(), bak, .{}) catch |e| {
-                    logErr(null, "failed to backup {s}: {s}", .{ path, @errorName(e) });
-                    std.process.exit(1);
+                    abort(arena, "failed to backup {s}: {s}", .{ path, @errorName(e) });
                 };
             }
             std.fs.cwd().rename(tmp, path) catch |e| {
-                logErr(null, "failed to write {s}: {s}", .{ path, @errorName(e) });
-                std.process.exit(1);
+                abort(arena, "failed to write {s}: {s}", .{ path, @errorName(e) });
             };
             logInfo(null, "installed {s} (verify passed)", .{path});
         }
