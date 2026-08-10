@@ -14,9 +14,6 @@
         .{ .url = "fixtures/plain_uris.txt" },
         // BOM-prefixed subscription: exercises the BOM stripping path
         .{ .name = "bom", .url = "fixtures/bom_uris.txt" },
-        // intentionally broken subscription (content is HTML): exercises the parse-error path;
-        // every run shows one W line, which is expected
-        .{ .name = "broken-source", .url = "fixtures/html_error.html" },
     },
     // inline node URIs / node files (same semantics as --node / --node-file)
     .nodes = .{ "trojan://pass@cli1.example.com:443#inline-node" },

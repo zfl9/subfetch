@@ -93,11 +93,11 @@ pub fn main() !void {
                         break :blk config_mod.Config{};
                     }
                     logErr(null, "failed to read config {s}: FileNotFound", .{opts.config});
-                    std.process.exit(1);
+                    std.process.exit(3);
                 },
                 else => {
                     logErr(null, "failed to read config {s}: {s}\n", .{ opts.config, @errorName(e) });
-                    std.process.exit(1);
+                    std.process.exit(3);
                 },
             }
         };
@@ -107,7 +107,7 @@ pub fn main() !void {
         };
         const parsed = config_mod.parse(arena, cfg_src) catch |e| {
             logErr(null, "failed to parse config {s}: {s}\n", .{ opts.config, @errorName(e) });
-            std.process.exit(1);
+            std.process.exit(3);
         };
         logInfo(null, "config: {s}", .{opts.config});
         break :blk parsed;
@@ -182,7 +182,7 @@ pub fn main() !void {
         const n = s.name orelse continue;
         if (used_names.contains(n)) {
             logErr(null, "duplicate subscription name: {s}", .{n});
-            std.process.exit(1);
+            std.process.exit(3);
         }
         try used_names.put(arena, n, {});
     }
@@ -191,8 +191,12 @@ pub fn main() !void {
     }
 
     if (all_nodes.items.len == 0) {
+        if (fail_cnt > 0) {
+            logErr(null, "no usable nodes, aborting ({d} source(s) failed)", .{fail_cnt});
+            std.process.exit(4);
+        }
         logErr(null, "no usable nodes, aborting", .{});
-        std.process.exit(1);
+        std.process.exit(3);
     }
     // node-name dedupe + reserved-name protection now lives inside render()
     // (renderer layer); raw keeps original names. count unsupported protocols
@@ -239,12 +243,12 @@ pub fn main() !void {
         if (o.tmpl) |tp| {
             tpl_text = std.fs.cwd().readFileAlloc(arena, tp, 1 << 20) catch |e| {
                 logErr(null, "failed to read template {s}: {s}", .{ tp, @errorName(e) });
-                std.process.exit(1);
+                std.process.exit(3);
             };
         }
         const files = render_mod.render(arena, o.fmt, nodes, ropts, tpl_text) catch |e| {
             logErr(null, "render {s} failed: {s}", .{ @tagName(o.fmt), @errorName(e) });
-            std.process.exit(1);
+            std.process.exit(3);
         };
         try rendered.append(arena, .{ .out = o, .files = files });
     }
@@ -277,7 +281,7 @@ pub fn main() !void {
                 }
             } else {
                 logErr(null, "output path required for {s} (use -o {s}=<path> or --dry-run)", .{ @tagName(r.out.fmt), @tagName(r.out.fmt) });
-                std.process.exit(1);
+                std.process.exit(2);
             }
         }
     }
@@ -303,6 +307,10 @@ pub fn main() !void {
     }
     cleanupStageATmps();
     releaseRunLock();
+    // source failures must not look like success to cron: any failed
+    // subscription/node-file makes the whole run exit 4 (configs already
+    // generated and installed from the healthy sources are kept)
+    if (fail_cnt > 0) std.process.exit(4);
 }
 
 fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render_mod.Format, files: []const render_mod.File) !void {
@@ -316,7 +324,7 @@ fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render_mod.Format, files: []
         const vr = deploy_mod.verifyContent(arena, fmt, f.content, tmp);
         if (vr == .failed) {
             logErr(null, "dry-run verify failed: {s}", .{f.path});
-            std.process.exit(1);
+            std.process.exit(3);
         }
     }
     logInfo(null, "dry-run verify passed ({d} files)", .{files.len});
@@ -332,11 +340,11 @@ fn cleanupStageATmps() void {
 }
 
 /// unified failure exit: clean up Stage A temps, log, and exit(1)
-fn abort(arena: std.mem.Allocator, comptime fmt: []const u8, args: anytype) noreturn {
+fn abort(arena: std.mem.Allocator, exit_code: u8, comptime fmt: []const u8, args: anytype) noreturn {
     _ = arena;
     cleanupStageATmps();
     logErr(null, fmt, args);
-    std.process.exit(1);
+    std.process.exit(exit_code);
 }
 
 /// Stage A: verify all files of all targets before anything is installed.
@@ -347,32 +355,32 @@ fn verifyAll(arena: std.mem.Allocator, fmt: render_mod.Format, files: []const re
     if (no_verify) return;
     if (isDirFormat(fmt)) {
         std.fs.cwd().makePath(path) catch |e| {
-            abort(arena, "failed to create directory {s}: {s}", .{ path, @errorName(e) });
+            abort(arena, 1, "failed to create directory {s}: {s}", .{ path, @errorName(e) });
         };
     }
     for (files) |f| {
         const target = if (isDirFormat(fmt))
             std.fs.path.join(arena, &.{ path, f.path }) catch {
-                abort(arena, "path join failed", .{});
+                abort(arena, 1, "path join failed", .{});
             }
         else
             path;
         // note: xray -test infers format from extension, tmp must end with .json
         const tmp = if (isDirFormat(fmt))
             std.fmt.allocPrint(arena, "{s}.new.json", .{target}) catch {
-                abort(arena, "out of memory", .{});
+                abort(arena, 1, "out of memory", .{});
             }
         else
             std.fmt.allocPrint(arena, "{s}.new", .{target}) catch {
-                abort(arena, "out of memory", .{});
+                abort(arena, 1, "out of memory", .{});
             };
         deploy_mod.atomicWrite(arena, tmp, f.content) catch |e| {
-            abort(arena, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
+            abort(arena, 1, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
         };
         stage_a_tmps.append(arena, tmp) catch {};
         const vr = deploy_mod.verifyContent(arena, fmt, f.content, tmp);
         if (vr == .failed) {
-            abort(arena, "verify failed, aborting: {s} (nothing installed)", .{target});
+            abort(arena, 3, "verify failed, aborting: {s} (nothing installed)", .{target});
         }
     }
 }
@@ -391,36 +399,36 @@ fn installAll(
     if (isDirFormat(fmt)) {
         const dir = path;
         std.fs.cwd().makePath(dir) catch |e| {
-            abort(arena, "failed to create directory {s}: {s}", .{ dir, @errorName(e) });
+            abort(arena, 1, "failed to create directory {s}: {s}", .{ dir, @errorName(e) });
         };
         // change detection: install only files whose content actually changed;
         // every file unchanged -> skip install & reload entirely
         var installed: usize = 0;
         for (files) |f| {
             const fpath = std.fs.path.join(arena, &.{ dir, f.path }) catch {
-                abort(arena, "path join failed", .{});
+                abort(arena, 1, "path join failed", .{});
             };
             if (!deploy_mod.contentDiffers(arena, fpath, f.content)) continue;
             installed += 1;
             if (opts.no_verify) {
                 deploy_mod.atomicWrite(arena, fpath, f.content) catch |e| {
-                    abort(arena, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
+                    abort(arena, 1, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
                 };
             } else {
                 const tmp = std.fmt.allocPrint(arena, "{s}.new.json", .{fpath}) catch {
-                    abort(arena, "out of memory", .{});
+                    abort(arena, 1, "out of memory", .{});
                 };
                 // backup existing config (acme.sh style)
                 if (fileExists(fpath)) {
                     const bak = std.fmt.allocPrint(arena, "{s}.bak", .{fpath}) catch {
-                        abort(arena, "out of memory", .{});
+                        abort(arena, 1, "out of memory", .{});
                     };
                     std.fs.cwd().copyFile(fpath, std.fs.cwd(), bak, .{}) catch |e| {
-                        abort(arena, "failed to backup {s}: {s}", .{ fpath, @errorName(e) });
+                        abort(arena, 1, "failed to backup {s}: {s}", .{ fpath, @errorName(e) });
                     };
                 }
                 std.fs.cwd().rename(tmp, fpath) catch |e| {
-                    abort(arena, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
+                    abort(arena, 1, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
                 };
             }
         }
@@ -452,7 +460,7 @@ fn installAll(
         if (!deploy_mod.contentDiffers(arena, path, f.content)) {
             // drop the Stage A .new temp; nothing installed, nothing reloaded
             const tmp = std.fmt.allocPrint(arena, "{s}.new", .{path}) catch {
-                abort(arena, "out of memory", .{});
+                abort(arena, 1, "out of memory", .{});
             };
             std.fs.cwd().deleteFile(tmp) catch {};
             logInfo(null, "config unchanged, skip install & reload: {s}", .{path});
@@ -460,23 +468,23 @@ fn installAll(
         }
         if (opts.no_verify) {
             deploy_mod.atomicWrite(arena, path, f.content) catch |e| {
-                abort(arena, "failed to write {s}: {s}", .{ path, @errorName(e) });
+                abort(arena, 1, "failed to write {s}: {s}", .{ path, @errorName(e) });
             };
             logInfo(null, "installed {s}", .{path});
         } else {
             const tmp = std.fmt.allocPrint(arena, "{s}.new", .{path}) catch {
-                abort(arena, "out of memory", .{});
+                abort(arena, 1, "out of memory", .{});
             };
             if (fileExists(path)) {
                 const bak = std.fmt.allocPrint(arena, "{s}.bak", .{path}) catch {
-                    abort(arena, "out of memory", .{});
+                    abort(arena, 1, "out of memory", .{});
                 };
                 std.fs.cwd().copyFile(path, std.fs.cwd(), bak, .{}) catch |e| {
-                    abort(arena, "failed to backup {s}: {s}", .{ path, @errorName(e) });
+                    abort(arena, 1, "failed to backup {s}: {s}", .{ path, @errorName(e) });
                 };
             }
             std.fs.cwd().rename(tmp, path) catch |e| {
-                abort(arena, "failed to write {s}: {s}", .{ path, @errorName(e) });
+                abort(arena, 1, "failed to write {s}: {s}", .{ path, @errorName(e) });
             };
             logInfo(null, "installed {s} (verify passed)", .{path});
         }
@@ -608,7 +616,12 @@ var run_lock: ?std.fs.File = null;
 /// other instance finishes (every phase is bounded by timeouts, so the wait
 /// is finite). no state dir -> degraded, no lock.
 fn acquireRunLock(arena: std.mem.Allocator) void {
-    const path = std.fs.path.join(arena, &.{ stateDir(arena) catch return, "lock" }) catch return;
+    const dir = stateDir(arena) catch return;
+    // first run on a fresh machine: the state dir does not exist yet; without
+    // this the lock would be silently skipped (createFile fails -> return),
+    // leaving the first installs without concurrency protection
+    std.fs.cwd().makePath(dir) catch return;
+    const path = std.fs.path.join(arena, &.{ dir, "lock" }) catch return;
     const flags = std.fs.File.CreateFlags{
         .read = true,
         .truncate = false,
@@ -642,14 +655,14 @@ fn releaseRunLock() void {
 /// instance, opening a concurrency window).
 fn resetStateSecret(arena: std.mem.Allocator) void {
     const path = stateSecretPath(arena) catch {
-        abort(arena, "no state dir, nothing to reset", .{});
+        abort(arena, 1, "no state dir, nothing to reset", .{});
     };
     std.fs.cwd().deleteFile(path) catch |e| switch (e) {
         error.FileNotFound => {
             logInfo(null, "no persisted secret, nothing to reset ({s})", .{path});
             return;
         },
-        else => abort(arena, "failed to delete {s}: {s}", .{ path, @errorName(e) }),
+        else => abort(arena, 1, "failed to delete {s}: {s}", .{ path, @errorName(e) }),
     };
     logInfo(null, "reset api secret (next run generates a fresh one): {s}", .{path});
 }

@@ -136,6 +136,9 @@ pub fn build(b: *std.Build) !void {
     // configs, services, or state. native host only (CI's cross-arch release-test
     // depends on addSmokeTest directly, unaffected).
     const smoke_install_step = b.step("smoke-install", "run install-path smoke tests (isolated)");
+    const smoke_exitcodes_step = b.step("smoke-exitcodes", "run exit-code/reset-state smoke tests (isolated)");
+    const smoke_lock_step = b.step("smoke-lock", "run flock concurrency smoke test (isolated)");
+    var prev_install: ?*std.Build.Step.Run = null;
     {
         const run = b.addSystemCommand(&.{ "sh", "test/smoke_install.sh" });
         run.addArtifactArg(exe);
@@ -144,7 +147,26 @@ pub fn build(b: *std.Build) !void {
         // after all format runs: its output would otherwise race into the
         // middle of the format list
         if (prev_smoke) |p| run.step.dependOn(&p.step);
+        prev_install = run;
         smoke_install_step.dependOn(&run.step);
+        smoke_test_step.dependOn(&run.step);
+    }
+    {
+        const run = b.addSystemCommand(&.{ "sh", "test/smoke_exitcodes.sh" });
+        run.addArtifactArg(exe);
+        run.addArg(b.pathFromRoot(".zig-cache/smoke-exitcodes"));
+        run.stdio = .inherit;
+        if (prev_install) |p| run.step.dependOn(&p.step);
+        smoke_exitcodes_step.dependOn(&run.step);
+        smoke_test_step.dependOn(&run.step);
+    }
+    {
+        const run = b.addSystemCommand(&.{ "sh", "test/smoke_lock.sh" });
+        run.addArtifactArg(exe);
+        run.addArg(b.pathFromRoot(".zig-cache/smoke-lock"));
+        run.stdio = .inherit;
+        if (prev_install) |p| run.step.dependOn(&p.step);
+        smoke_lock_step.dependOn(&run.step);
         smoke_test_step.dependOn(&run.step);
     }
 
