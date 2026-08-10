@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const config_mod = @import("config.zig");
 const fetch_mod = @import("fetch.zig");
 const parse_mod = @import("parse.zig");
@@ -993,7 +994,7 @@ fn printUsage() void {
     , .{version});
 }
 
-/// Log line format: "<YYYY-MM-DD HH:MM:SS> <L> [source]: message".
+/// Log line format: "<YYYY-MM-DD HH:MM:SS> <pid> <L> [source]: message".
 /// Local time via libc localtime_r (musl is already linked for libyaml).
 /// Level letters: I=info, W=warn, E=error, V=verbose. Colors (TTY + !NO_COLOR only):
 /// time gray, I cyan, W yellow, E red, V gray; summary keywords in the message body
@@ -1081,6 +1082,14 @@ fn log(level: LogLevel, source: ?[]const u8, comptime fmt: []const u8, args: any
     file.writeAll(localTimestamp(&tbuf)) catch {};
     if (color) file.writeAll("\x1b[0m") catch {};
     file.writeAll(" ") catch {};
+    // pid, colored like the level so the prefix stays uniform; tells overlapping
+    // runs apart (flock waiting) and identifies instances in parallel smoke tests
+    var pbuf: [18]u8 = undefined;
+    const pidstr = std.fmt.bufPrint(&pbuf, "({d})", .{getPid()}) catch unreachable;
+    if (color) file.writeAll(levelColor(level)) catch {};
+    file.writeAll(pidstr) catch {};
+    if (color) file.writeAll("\x1b[0m") catch {};
+    file.writeAll(" ") catch {};
 
     if (color) file.writeAll(levelColor(level)) catch {};
     file.writeAll(&.{levelChar(level)}) catch {};
@@ -1100,6 +1109,13 @@ fn log(level: LogLevel, source: ?[]const u8, comptime fmt: []const u8, args: any
         file.writeAll(text) catch {};
     }
     file.writeAll("\n") catch {};
+}
+
+/// process id for the log line; libc getpid (musl already linked, POSIX-wide);
+/// windows is not a target platform but stays compilable
+fn getPid() u32 {
+    if (builtin.os.tag == .windows) return std.os.windows.GetCurrentProcessId();
+    return @intCast(std.c.getpid());
 }
 
 fn logInfo(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
