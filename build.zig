@@ -118,6 +118,20 @@ pub fn build(b: *std.Build) !void {
         smoke_test_step.dependOn(&addSmokeTest(b, exe, fmt, null).step);
     }
 
+    // install-path smoke test: first install -> unchanged skip -> partial rewrite.
+    // isolated dir + --no-reload + isolated XDG_STATE_HOME: never touches real
+    // configs, services, or state. native host only (CI's cross-arch release-test
+    // depends on addSmokeTest directly, unaffected).
+    const smoke_install_step = b.step("smoke-install", "run install-path smoke tests (isolated)");
+    {
+        const run = b.addSystemCommand(&.{ "sh", "test/smoke_install.sh" });
+        run.addArtifactArg(exe);
+        run.addArg(b.pathFromRoot(".zig-cache/smoke-install"));
+        run.stdio = .inherit;
+        smoke_install_step.dependOn(&run.step);
+        smoke_test_step.dependOn(&run.step);
+    }
+
     // release filter
     const release_filter_raw = b.option([]const u8, "release_filter", "only build/test release targets for this arch");
     const release_filter = if (release_filter_raw) |filter| b.fmt("{s}-", .{filter}) else null;
