@@ -223,65 +223,122 @@ pub fn takeValue(
 }
 
 pub fn printUsage() void {
-    log.outPrint(
-        \\subfetch {f} - subscription fetcher & multi-format config generator
-        \\
-        \\Usage: subfetch [options]
-        \\
-        \\Options:
-        \\  -c, --config <path>     configuration zon (default ./config.zon)
-        \\
-        \\Output targets:
-        \\  -o, --output <fmt>[:<tmpl>][=<path>]  output target (repeatable; default raw)
-        \\                          fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw
-        \\                          tmpl: template file (clash/singbox; optional)
-        \\                          path: output file (single-file) or directory (native); '-' = stdout
-        \\
-        \\Input sources:
-        \\      --url [name=]<url> subscription url on the CLI (repeatable; same semantics
-        \\                          as .zon subscriptions; omit "name=" for anonymous)
-        \\      --node <uri>       directly pasted node URI (repeatable)
-        \\      --node-file <path> node list file (one URI per line)
-        \\
-        \\Filtering & naming:
-        \\      --info-keyword <kw> info-node keyword override (repeatable; "" clears all,
-        \\                          i.e. disables filtering; overrides .zon info_keywords)
-        \\      --sep <str>        node name separator between sub and node names (default @)
-        \\
-        \\Run behavior:
-        \\      --dry-run          verify only, write nothing
-        \\      --ua <str>         default User-Agent
-        \\      --timeout <sec>    per-subscription fetch timeout in seconds (default 15)
-        \\
-        \\Output config:
-        \\      --listen <addr>    native client listen address (default 127.0.0.1)
-        \\      --port <n>         native client listen port (default 1080)
-        \\      --mixed-port <n>   clash mixed-port (default 65500)
-        \\      --controller <a:p> clash/singbox external-controller (default 127.0.0.1:65501)
-        \\      --secret <str>     API secret (auto-generated UUID if omitted)
-        \\      --singbox-clash-api add clash_api to sing-box output (default off)
-        \\      --allow-lan        clash allow-lan in built-in template (default off)
-        \\      --tproxy-ipv6     v6 tproxy dual-stack in built-in templates:
-        \\                          clash ipv6 flag + sing-box tproxy-in-v6
-        \\                          inbound (default off)
-        \\      --tproxy-port <n>  tproxy inbound port (clash + sing-box built-in
-        \\                          templates; socks inbound stays; default off)
-        \\      --log-level <lvl>  client log level: debug|info|warning|error
-        \\                          (built-in templates; default info)
-        \\
-        \\Deploy:
-        \\      --no-verify        skip verification
-        \\      --no-reload        skip reload after install
-        \\      --reload-cmd <cmd> custom reload command after install (sh -c, overrides auto reload; acme.sh style)
-        \\
-        \\Misc:
-        \\      --reset-state     delete the persisted api secret (state dir
-        \\                        $XDG_STATE_HOME or ~/.local/state/subfetch);
-        \\                        next run generates a fresh one (lock file kept)
-        \\  -v, --verbose          verbose output (node list)
-        \\  -h, --help             show this help
-        \\
-    , .{version});
+    log.outPrint("subfetch {f} - subscription fetcher & multi-format config generator\n\nUsage: subfetch [options]\n", .{version});
+    for (usage_sections) |sec| {
+        log.outPrint("\n{s}:\n", .{sec.title});
+        for (sec.options) |o| printUsageOpt(o);
+    }
+}
+
+/// help entry: option text (no leading indent) + description lines.
+/// pure data: all alignment/indent decisions live in printUsageOpt.
+const Opt = struct { opt: []const u8, desc: []const []const u8 };
+const Section = struct { title: []const u8, options: []const Opt };
+
+/// help sections. descriptions start at column 26; options wider than 24
+/// columns (indent included) go on their own line with the description
+/// indented below - the renderer computes this, no hand-padded text.
+const usage_sections = [_]Section{
+    .{ .title = "Options", .options = &.{
+        .{ .opt = "-c, --config <path>", .desc = &.{"configuration zon (default ./config.zon)"} },
+    } },
+    .{ .title = "Output targets", .options = &.{
+        .{ .opt = "-o, --output <fmt>[:<tmpl>][=<path>]", .desc = &.{
+            "output target (repeatable; default raw)",
+            "fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw",
+            "tmpl: template file (clash/singbox; optional)",
+            "path: output file (single-file) or directory (native); '-' = stdout",
+        } },
+    } },
+    .{ .title = "Input sources", .options = &.{
+        .{ .opt = "--url <url>", .desc = &.{
+            "subscription url (repeatable; [name=] prefix names the",
+            "subscription, same semantics as .zon; omit for anonymous)",
+        } },
+        .{ .opt = "--node <uri>", .desc = &.{"directly pasted node URI (repeatable)"} },
+        .{ .opt = "--node-file <path>", .desc = &.{"node list file (one URI per line)"} },
+    } },
+    .{ .title = "Filtering & naming", .options = &.{
+        .{ .opt = "--info-keyword <kw>", .desc = &.{
+            "info-node keyword override (repeatable; \"\" clears all,",
+            "i.e. disables filtering; overrides .zon info_keywords)",
+        } },
+        .{ .opt = "--sep <str>", .desc = &.{"node name separator between sub and node names (default @)"} },
+    } },
+    .{ .title = "Run behavior", .options = &.{
+        .{ .opt = "--dry-run", .desc = &.{"verify only, write nothing"} },
+        .{ .opt = "--ua <str>", .desc = &.{"default User-Agent"} },
+        .{ .opt = "--timeout <sec>", .desc = &.{"per-subscription fetch timeout in seconds (default 15)"} },
+    } },
+    .{ .title = "Output config", .options = &.{
+        .{ .opt = "--listen <addr>", .desc = &.{"native client listen address (default 127.0.0.1)"} },
+        .{ .opt = "--port <n>", .desc = &.{"native client listen port (default 1080)"} },
+        .{ .opt = "--mixed-port <n>", .desc = &.{"clash mixed-port (default 65500)"} },
+        .{ .opt = "--controller <a:p>", .desc = &.{"clash/singbox external-controller (default 127.0.0.1:65501)"} },
+        .{ .opt = "--secret <str>", .desc = &.{"API secret (auto-generated UUID if omitted)"} },
+        .{ .opt = "--singbox-clash-api", .desc = &.{"add clash_api to sing-box output (default off)"} },
+        .{ .opt = "--allow-lan", .desc = &.{"clash allow-lan in built-in template (default off)"} },
+        .{ .opt = "--tproxy-ipv6", .desc = &.{
+            "v6 tproxy dual-stack in built-in templates:",
+            "clash ipv6 flag + sing-box tproxy-in-v6",
+            "inbound (default off)",
+        } },
+        .{ .opt = "--tproxy-port <n>", .desc = &.{
+            "tproxy inbound port (clash + sing-box built-in",
+            "templates; socks inbound stays; default off)",
+        } },
+        .{ .opt = "--log-level <lvl>", .desc = &.{
+            "client log level: debug|info|warning|error",
+            "(built-in templates; default info)",
+        } },
+    } },
+    .{ .title = "Deploy", .options = &.{
+        .{ .opt = "--no-verify", .desc = &.{"skip verification"} },
+        .{ .opt = "--no-reload", .desc = &.{"skip reload after install"} },
+        .{ .opt = "--reload-cmd <cmd>", .desc = &.{
+            "custom reload command after install (sh -c, overrides",
+            "auto reload; acme.sh style)",
+        } },
+    } },
+    .{ .title = "Misc", .options = &.{
+        .{ .opt = "--reset-state", .desc = &.{
+            "delete the persisted api secret (state dir",
+            "$XDG_STATE_HOME or ~/.local/state/subfetch);",
+            "next run generates a fresh one (lock file kept)",
+        } },
+        .{ .opt = "-v, --verbose", .desc = &.{"verbose output (node list)"} },
+        .{ .opt = "-h, --help", .desc = &.{"show this help"} },
+    } },
+};
+
+/// render one help entry. short options ("-x, ...") get a 2-space indent,
+/// long-only options 6 spaces; description lines start at column 26. options
+/// wider than 24 columns (indent included) go on their own line.
+fn printUsageOpt(o: Opt) void {
+    const a = std.heap.page_allocator;
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(a);
+    const w = buf.writer(a);
+    const short = o.opt.len > 1 and o.opt[0] == '-' and o.opt[1] != '-';
+    const opt_col = o.opt.len + (if (short) @as(usize, 2) else 6);
+    if (opt_col > 24) {
+        w.print("{s}{s}\n", .{ if (short) "  " else "      ", o.opt }) catch return;
+    } else {
+        w.print("{s}{s}", .{ if (short) "  " else "      ", o.opt }) catch return;
+        var pad: usize = 26 - opt_col;
+        while (pad > 0) : (pad -= 1) w.writeByte(' ') catch return;
+    }
+    for (o.desc, 0..) |l, i| {
+        if (i > 0) {
+            w.writeByte('\n') catch return;
+            w.print("                          ", .{}) catch return;
+        } else if (opt_col > 24) {
+            w.print("                          ", .{}) catch return;
+        }
+        w.print("{s}", .{l}) catch return;
+    }
+    w.writeByte('\n') catch return;
+    log.outPrint("{s}", .{buf.items});
 }
 
 test "parseOutput grammar" {
