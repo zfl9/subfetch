@@ -211,18 +211,7 @@ fn renderOutbound(arena: std.mem.Allocator, n: node.Node) !?JsonValue {
                 try o.put("auth", .{ .string = buf });
             }
             if (v.obfs) |obfs| try o.put("obfs", .{ .string = obfs });
-            var tls = ObjectMap.init(arena);
-            try tls.put("enabled", .{ .bool = true });
-            if (v.sni) |sni| try tls.put("server_name", .{ .string = sni });
-            if (v.skip_cert_verify) try tls.put("insecure", .{ .bool = true });
-            if (v.alpn) |list| {
-                if (list.len > 0) {
-                    var arr = std.json.Array.init(arena);
-                    for (list) |a| try arr.append(.{ .string = a });
-                    try tls.put("alpn", .{ .array = arr });
-                }
-            }
-            try o.put("tls", .{ .object = tls });
+            try putTls(arena, &o, true, v.sni, null, v.skip_cert_verify, null, v.alpn);
         },
         .hysteria2 => |v| {
             try o.put("type", .{ .string = "hysteria2" });
@@ -233,18 +222,7 @@ fn renderOutbound(arena: std.mem.Allocator, n: node.Node) !?JsonValue {
                 if (v.obfs_password) |p| try ob.put("password", .{ .string = p });
                 try o.put("obfs", .{ .object = ob });
             }
-            var tls = ObjectMap.init(arena);
-            try tls.put("enabled", .{ .bool = true });
-            if (v.servername) |sni| try tls.put("server_name", .{ .string = sni });
-            if (v.skip_cert_verify) try tls.put("insecure", .{ .bool = true });
-            if (v.alpn) |list| {
-                if (list.len > 0) {
-                    var arr = std.json.Array.init(arena);
-                    for (list) |a| try arr.append(.{ .string = a });
-                    try tls.put("alpn", .{ .array = arr });
-                }
-            }
-            try o.put("tls", .{ .object = tls });
+            try putTls(arena, &o, true, v.servername, null, v.skip_cert_verify, null, v.alpn);
         },
         .tuic => |v| {
             try o.put("type", .{ .string = "tuic" });
@@ -252,18 +230,7 @@ fn renderOutbound(arena: std.mem.Allocator, n: node.Node) !?JsonValue {
             try o.put("password", .{ .string = v.password });
             if (v.congestion_controller) |c| try o.put("congestion_control", .{ .string = c });
             if (v.udp_relay_mode) |m| try o.put("udp_relay_mode", .{ .string = m });
-            var tls = ObjectMap.init(arena);
-            try tls.put("enabled", .{ .bool = true });
-            if (v.servername) |sni| try tls.put("server_name", .{ .string = sni });
-            if (v.skip_cert_verify) try tls.put("insecure", .{ .bool = true });
-            if (v.alpn) |list| {
-                if (list.len > 0) {
-                    var arr = std.json.Array.init(arena);
-                    for (list) |a| try arr.append(.{ .string = a });
-                    try tls.put("alpn", .{ .array = arr });
-                }
-            }
-            try o.put("tls", .{ .object = tls });
+            try putTls(arena, &o, true, v.servername, null, v.skip_cert_verify, null, v.alpn);
         },
         .ssr => unreachable,
     }

@@ -52,8 +52,7 @@ pub fn parseSubscription(
                     skipped += 1;
                     continue;
                 };
-                if (try filterInfoNode(arena, n, sub_name, sep, keywords, &info, &info_names)) continue;
-                nodes.append(arena, n) catch return error.OutOfMemory;
+                try addParsedNode(arena, &nodes, n, sub_name, sep, keywords, &info, &info_names);
             }
         },
         .json => |value| switch (value) {
@@ -65,16 +64,14 @@ pub fn parseSubscription(
                                 skipped += 1;
                                 continue;
                             };
-                            if (try filterInfoNode(arena, n, sub_name, sep, keywords, &info, &info_names)) continue;
-                            nodes.append(arena, n) catch return error.OutOfMemory;
+                            try addParsedNode(arena, &nodes, n, sub_name, sep, keywords, &info, &info_names);
                         },
                         .object => |obj| {
                             const n = jsonNodeToNode(arena, obj, sub_name, sep) catch {
                                 skipped += 1;
                                 continue;
                             };
-                            if (try filterInfoNode(arena, n, sub_name, sep, keywords, &info, &info_names)) continue;
-                            nodes.append(arena, n) catch return error.OutOfMemory;
+                            try addParsedNode(arena, &nodes, n, sub_name, sep, keywords, &info, &info_names);
                         },
                         else => skipped += 1,
                     }
@@ -99,8 +96,7 @@ pub fn parseSubscription(
                         skipped += 1;
                         continue;
                     };
-                    if (try filterInfoNode(arena, n, sub_name, sep, keywords, &info, &info_names)) continue;
-                    nodes.append(arena, n) catch return error.OutOfMemory;
+                    try addParsedNode(arena, &nodes, n, sub_name, sep, keywords, &info, &info_names);
                 }
             },
             else => return error.UnknownFormat,
@@ -118,8 +114,7 @@ pub fn parseSubscription(
                     skipped += 1;
                     continue;
                 };
-                if (try filterInfoNode(arena, n, sub_name, sep, keywords, &info, &info_names)) continue;
-                nodes.append(arena, n) catch return error.OutOfMemory;
+                try addParsedNode(arena, &nodes, n, sub_name, sep, keywords, &info, &info_names);
             }
         },
     }
@@ -129,6 +124,22 @@ pub fn parseSubscription(
         .info = info,
         .info_names = try info_names.toOwnedSlice(arena),
     };
+}
+
+/// info-filter one successfully parsed node + append it: info (notice) nodes are
+/// counted but not appended (shared by all subscription formats).
+fn addParsedNode(
+    arena: std.mem.Allocator,
+    nodes: *std.ArrayListUnmanaged(node.Node),
+    n: node.Node,
+    sub_name: []const u8,
+    sep: []const u8,
+    keywords: []const []const u8,
+    info: *usize,
+    info_names: *std.ArrayListUnmanaged([]const u8),
+) ParseError!void {
+    if (try filterInfoNode(arena, n, sub_name, sep, keywords, info, info_names)) return;
+    try nodes.append(arena, n);
 }
 
 /// filter airport notice nodes (info pseudo-nodes like "expiry 2026-12-21, remain traffic 279.95G").
@@ -302,11 +313,13 @@ fn ssPluginFromYaml(arena: std.mem.Allocator, m: []const yaml.MappingEntry) Pars
     const om = if (opts) |o| yaml.mappingOf(o) orelse return error.MissingField else null;
 
     if (std.mem.eql(u8, plugin, "obfs-local")) {
-        return .{ .obfs_local = .{
-            .mode = if (om) |mm| get(mm, "mode") orelse "http" else "http",
-            // obfs-local default host, matching the ss:// URI parser (www.bing.com)
-            .host = if (om) |mm| get(mm, "host") orelse "www.bing.com" else "www.bing.com",
-        } };
+        return .{
+            .obfs_local = .{
+                .mode = if (om) |mm| get(mm, "mode") orelse "http" else "http",
+                // obfs-local default host, matching the ss:// URI parser (www.bing.com)
+                .host = if (om) |mm| get(mm, "host") orelse "www.bing.com" else "www.bing.com",
+            },
+        };
     }
     if (std.mem.eql(u8, plugin, "v2ray-plugin")) {
         var result: node.SsPlugin = .{ .v2ray_plugin = .{} };
@@ -349,9 +362,6 @@ fn yamlAlpn(arena: std.mem.Allocator, v: ?yaml.YamlValue) ParseError!?[]const []
     return @as(?[]const []const u8, try out.toOwnedSlice(arena));
 }
 
-/// v2rayN JSON node (with "add"/"ps" fields) -> Node
-/// sing-box outbound object (subscription format: {"outbounds": [...]}) -> Node.
-/// field layout differs from v2rayN: type/tag/server/server_port, tls{}, transport{}.
 /// json object field helpers (shared by sing-box and v2rayN node parsing)
 fn jsonGetStr(o: std.json.ObjectMap, key: []const u8) ?[]const u8 {
     const v = o.get(key) orelse return null;
@@ -386,6 +396,8 @@ fn jsonGetObj(o: std.json.ObjectMap, key: []const u8) ?std.json.ObjectMap {
     };
 }
 
+/// sing-box outbound object (subscription format: {"outbounds": [...]}) -> Node.
+/// field layout differs from v2rayN: type/tag/server/server_port, tls{}, transport{}.
 fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_name: []const u8, sep: []const u8) ParseError!node.Node {
     const server = jsonGetStr(obj, "server") orelse return error.MissingField;
     const port = try jsonGetPort(obj, "server_port");
@@ -573,6 +585,7 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
     return error.UnsupportedType;
 }
 
+/// v2rayN JSON node (with "add"/"ps" fields) -> Node
 fn jsonNodeToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_name: []const u8, sep: []const u8) ParseError!node.Node {
     const server = jsonGetStr(obj, "add") orelse return error.MissingField;
     const port = try uri.parsePort(jsonGetStr(obj, "port") orelse return error.MissingField);
@@ -885,6 +898,7 @@ test "parse anonymous subscription (no prefix, info filtered)" {
 
 test "compile-check" {
     _ = &parseSubscription;
+    _ = &addParsedNode;
     _ = &filterInfoNode;
     _ = &clashYamlToNode;
     _ = &singboxOutboundToNode;

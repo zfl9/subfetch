@@ -80,82 +80,42 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             opts.no_verify = true;
         } else if (std.mem.eql(u8, a, "--no-reload")) {
             opts.no_reload = true;
-        } else if (takeValue(&i, args, a, "--reload-cmd", null)) |v| {
-            if (v.len == 0) {
-                log.logErr(null, "missing value for {s}", .{a});
-                return error.BadArg;
-            }
+        } else if (try takeRequired(&i, args, a, "--reload-cmd", null)) |v| {
             opts.reload_cmd = v;
-        } else if (takeValue(&i, args, a, "--config", "-c")) |v| {
-            if (v.len == 0) {
-                log.logErr(null, "missing value for {s}", .{a});
-                return error.BadArg;
-            }
+        } else if (try takeRequired(&i, args, a, "--config", "-c")) |v| {
             opts.config = v;
-        } else if (takeValue(&i, args, a, "--output", "-o")) |v| {
-            if (v.len == 0) {
-                log.logErr(null, "missing value for {s}", .{a});
-                return error.BadArg;
-            }
+        } else if (try takeRequired(&i, args, a, "--output", "-o")) |v| {
             const out = parseOutput(v) catch {
                 log.logErr(null, "invalid output target: {s} (fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw)", .{v});
                 return error.BadArg;
             };
             try opts.outputs.append(arena, out);
-        } else if (takeValue(&i, args, a, "--node", null)) |v| {
-            if (v.len == 0) {
-                log.logErr(null, "missing value for {s}", .{a});
-                return error.BadArg;
-            }
+        } else if (try takeRequired(&i, args, a, "--node", null)) |v| {
             try opts.nodes.append(arena, v);
-        } else if (takeValue(&i, args, a, "--node-file", null)) |v| {
-            if (v.len == 0) {
-                log.logErr(null, "missing value for {s}", .{a});
-                return error.BadArg;
-            }
+        } else if (try takeRequired(&i, args, a, "--node-file", null)) |v| {
             try opts.node_files.append(arena, v);
-        } else if (takeValue(&i, args, a, "--url", null)) |v| {
-            if (v.len == 0) {
-                log.logErr(null, "missing value for {s}", .{a});
-                return error.BadArg;
-            }
+        } else if (try takeRequired(&i, args, a, "--url", null)) |v| {
             try opts.urls.append(arena, v);
         } else if (takeValue(&i, args, a, "--info-keyword", null)) |v| {
             // empty value allowed: "" clears all keywords (disables filtering)
             try opts.info_keywords.append(arena, v);
-        } else if (takeValue(&i, args, a, "--ua", null)) |v| {
-            if (v.len == 0) {
-                log.logErr(null, "missing value for {s}", .{a});
-                return error.BadArg;
-            }
+        } else if (try takeRequired(&i, args, a, "--ua", null)) |v| {
             opts.ua = v;
-        } else if (takeValue(&i, args, a, "--sep", null)) |v| {
-            if (v.len == 0) {
-                log.logErr(null, "missing value for {s}", .{a});
-                return error.BadArg;
-            }
+        } else if (try takeRequired(&i, args, a, "--sep", null)) |v| {
             opts.sep = v;
         } else if (takeValue(&i, args, a, "--timeout", null)) |v| {
             opts.timeout = std.fmt.parseInt(u32, v, 10) catch {
                 log.logErr(null, "invalid number for {s}: {s}", .{ a, v });
                 return error.BadArg;
             };
-        } else if (takeValue(&i, args, a, "--listen", null)) |v| {
-            if (v.len == 0) {
-                log.logErr(null, "missing value for {s}", .{a});
-                return error.BadArg;
-            }
+        } else if (try takeRequired(&i, args, a, "--listen", null)) |v| {
             opts.listen = v;
         } else if (takeValue(&i, args, a, "--port", null)) |v| {
             opts.port = std.fmt.parseInt(u16, v, 10) catch {
                 log.logErr(null, "invalid number for {s}: {s}", .{ a, v });
                 return error.BadArg;
             };
-        } else if (takeValue(&i, args, a, "--log-level", null)) |v| {
-            if (v.len == 0) {
-                log.logErr(null, "missing value for {s}", .{a});
-                return error.BadArg;
-            }
+        } else if (try takeRequired(&i, args, a, "--log-level", null)) |v| {
             opts.log_level = v;
         } else if (takeValue(&i, args, a, "--tproxy-port", null)) |v| {
             opts.tproxy_port = std.fmt.parseInt(u16, v, 10) catch {
@@ -167,17 +127,9 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
                 log.logErr(null, "invalid number for {s}: {s}", .{ a, v });
                 return error.BadArg;
             };
-        } else if (takeValue(&i, args, a, "--controller", null)) |v| {
-            if (v.len == 0) {
-                log.logErr(null, "missing value for {s}", .{a});
-                return error.BadArg;
-            }
+        } else if (try takeRequired(&i, args, a, "--controller", null)) |v| {
             opts.controller = v;
-        } else if (takeValue(&i, args, a, "--secret", null)) |v| {
-            if (v.len == 0) {
-                log.logErr(null, "missing value for {s}", .{a});
-                return error.BadArg;
-            }
+        } else if (try takeRequired(&i, args, a, "--secret", null)) |v| {
             opts.secret = v;
         } else {
             log.logErr(null, "unknown argument: {s}", .{a});
@@ -209,6 +161,24 @@ pub fn parseOutput(v: []const u8) !Output {
     }
     const fmt = render_mod.Format.parse(rest) orelse return error.BadArg;
     return .{ .fmt = fmt, .tmpl = template, .path = path };
+}
+
+/// value-taking argument: match --long value / --long=value / -s value and
+/// reject an empty value ("--ua ''" and a missing argument are both errors).
+/// null when the argument is not ours.
+fn takeRequired(
+    i: *usize,
+    args: [][:0]u8,
+    a: []const u8,
+    long: []const u8,
+    short: ?[]const u8,
+) CliError!?[]const u8 {
+    const v = takeValue(i, args, a, long, short) orelse return null;
+    if (v.len == 0) {
+        log.logErr(null, "missing value for {s}", .{a});
+        return error.BadArg;
+    }
+    return v;
 }
 
 /// match --long value / --long=value / -s value, return the value; null if no match.
