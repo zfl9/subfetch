@@ -265,7 +265,7 @@ pub fn main() !void {
         for (rendered.items) |r| {
             if (r.out.path) |p| {
                 if (std.mem.eql(u8, p, "-")) {
-                    for (r.files) |f| outPrint("{s}", .{f.content});
+                    for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
                 }
             }
             try verifyDryRunFiles(arena, r.out.fmt, r.files);
@@ -293,18 +293,16 @@ pub fn main() !void {
         }
     }
 
-    var summary = try std.fmt.allocPrint(arena, "subscriptions {d}/{d} ok, {d} failed", .{
-        ok_cnt, subs.items.len, fail_cnt,
-    });
-    summary = try std.fmt.allocPrint(arena, "{s}, {d} nodes", .{ summary, nodes.len });
-    if (opts.outputs.items.len == 1) {
-        summary = try std.fmt.allocPrint(arena, "{s}, format {s}", .{ summary, @tagName(opts.outputs.items[0].fmt) });
-    } else {
+    const fmt_part = if (opts.outputs.items.len == 1)
+        try std.fmt.allocPrint(arena, "format {s}", .{@tagName(opts.outputs.items[0].fmt)})
+    else blk: {
         var fmts: std.ArrayListUnmanaged([]const u8) = .empty;
         for (opts.outputs.items) |o| try fmts.append(arena, @tagName(o.fmt));
-        summary = try std.fmt.allocPrint(arena, "{s}, formats {s}", .{ summary, try std.mem.join(arena, ",", fmts.items) });
-    }
-    logInfo(null, "{s}", .{summary});
+        break :blk try std.fmt.allocPrint(arena, "formats {s}", .{try std.mem.join(arena, ",", fmts.items)});
+    };
+    logInfo(null, "subscriptions {d}/{d} ok, {d} failed, {d} nodes, {s}", .{
+        ok_cnt, subs.items.len, fail_cnt, nodes.len, fmt_part,
+    });
     if (opts.secret == null and opts.verbose > 0 and !opts.dry_run) {
         var need_secret = false;
         for (opts.outputs.items) |o| {
@@ -1104,32 +1102,21 @@ fn log(level: LogLevel, source: ?[]const u8, comptime fmt: []const u8, args: any
     const text = std.fmt.allocPrint(std.heap.page_allocator, fmt, args) catch return;
     defer std.heap.page_allocator.free(text);
     const color = file.isTty() and std.posix.getenv("NO_COLOR") == null;
+    const lc = levelColor(level);
 
-    if (color) file.writeAll(levelColor(level)) catch {};
+    // prefix: <time> (pid) L [source] - time/pid/level share the level color
+    // so the prefix stays uniform; pid tells overlapping runs apart (flock)
     var tbuf: [32]u8 = undefined;
-    file.writeAll(localTimestamp(&tbuf)) catch {};
-    if (color) file.writeAll("\x1b[0m") catch {};
+    writeColored(file, color, lc, localTimestamp(&tbuf));
     file.writeAll(" ") catch {};
-    // pid, colored like the level so the prefix stays uniform; tells overlapping
-    // runs apart (flock waiting) and identifies instances in parallel smoke tests
     var pbuf: [18]u8 = undefined;
-    const pidstr = std.fmt.bufPrint(&pbuf, "({d})", .{getPid()}) catch unreachable;
-    if (color) file.writeAll(levelColor(level)) catch {};
-    file.writeAll(pidstr) catch {};
-    if (color) file.writeAll("\x1b[0m") catch {};
+    writeColored(file, color, lc, std.fmt.bufPrint(&pbuf, "({d})", .{getPid()}) catch unreachable);
     file.writeAll(" ") catch {};
-
-    if (color) file.writeAll(levelColor(level)) catch {};
-    file.writeAll(&.{levelChar(level)}) catch {};
-    if (color) file.writeAll("\x1b[0m") catch {};
+    writeColored(file, color, lc, &.{levelChar(level)});
     file.writeAll(" ") catch {};
-
     if (source) |s| {
-        if (color) file.writeAll("\x1b[1m") catch {};
-        const head = std.fmt.allocPrint(std.heap.page_allocator, "[{s}] ", .{s}) catch return;
-        defer std.heap.page_allocator.free(head);
-        file.writeAll(head) catch {};
-        if (color) file.writeAll("\x1b[0m") catch {};
+        var hbuf: [256]u8 = undefined;
+        writeColored(file, color, "\x1b[1m", std.fmt.bufPrint(&hbuf, "[{s}] ", .{s}) catch s);
     }
     if (color) {
         colorizeKeywords(file, text);
@@ -1137,6 +1124,13 @@ fn log(level: LogLevel, source: ?[]const u8, comptime fmt: []const u8, args: any
         file.writeAll(text) catch {};
     }
     file.writeAll("\n") catch {};
+}
+
+/// write `text` wrapped in color code `code` (no-op coloring when !color)
+fn writeColored(file: std.fs.File, color: bool, code: []const u8, text: []const u8) void {
+    if (color) file.writeAll(code) catch {};
+    file.writeAll(text) catch {};
+    if (color) file.writeAll("\x1b[0m") catch {};
 }
 
 /// process id for the log line; libc getpid (musl already linked, POSIX-wide);
