@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const render_mod = @import("render.zig");
 
 pub const Subscription = struct {
@@ -109,11 +110,15 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) ParseError!Conf
     var diag: std.zon.parse.Diagnostics = .{};
     defer diag.deinit(allocator);
     var cfg = std.zon.parse.fromSlice(Config, allocator, source, &diag, .{}) catch |e| {
-        // detailed diagnostics (position, message, notes) go to stderr, then the error name
-        var buf: [8192]u8 = undefined;
-        var w = std.fs.File.stderr().writer(&buf);
-        diag.format(&w.interface) catch {};
-        w.interface.flush() catch {};
+        // detailed diagnostics (position, message, notes) go to stderr, then the error name;
+        // skipped under zig build test: unit tests deliberately feed broken input and must
+        // not touch stdio
+        if (!builtin.is_test) {
+            var buf: [8192]u8 = undefined;
+            var w = std.fs.File.stderr().writer(&buf);
+            diag.format(&w.interface) catch {};
+            w.interface.flush() catch {};
+        }
         return e;
     };
     errdefer cfg.deinit(allocator);
