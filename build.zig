@@ -52,8 +52,15 @@ fn createMod(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     return mod;
 }
 
-fn addSmokeTest(b: *std.Build, exe: *std.Build.Step.Compile, arg_output: []const u8, matrix: ?ReleaseMatrix) *std.Build.Step.Run {
+fn addSmokeTest(b: *std.Build, exe: *std.Build.Step.Compile, arg_output: []const u8, matrix: ?ReleaseMatrix, prev: ?*std.Build.Step.Run) *std.Build.Step.Run {
     const name = if (matrix) |m| b.fmt("smoke-test {s}", .{m.triple}) else "smoke-test";
+
+    // visible separator before each run: subscription output is identical across
+    // formats, only the trailing summary line differs. chained after prev so
+    // parallel builds keep the runs ordered
+    const sep = b.addSystemCommand(&.{ "echo", b.fmt("=== smoke-test {s} ===", .{arg_output}) });
+    sep.stdio = .inherit;
+    if (prev) |p| sep.step.dependOn(&p.step);
 
     const smoke_test = std.Build.Step.Run.create(b, name);
     smoke_test.stdio = .inherit;
@@ -63,6 +70,7 @@ fn addSmokeTest(b: *std.Build, exe: *std.Build.Step.Compile, arg_output: []const
     smoke_test.addArtifactArg(exe);
     smoke_test.addArgs(&.{ "-c", "fixtures/config.zon", "-o", arg_output, "--dry-run" });
 
+    smoke_test.step.dependOn(&sep.step);
     return smoke_test;
 }
 
@@ -112,10 +120,15 @@ pub fn build(b: *std.Build) !void {
     const run_tests = b.addRunArtifact(tests);
     b.step("test", "run unit tests").dependOn(&run_tests.step);
 
-    // smoke test: all 9 output formats (native multi-file formats run too)
+    // smoke test: all 9 output formats (native multi-file formats run too).
+    // chained serially: the runs share identical output and the separator
+    // lines must stay ordered
     const smoke_test_step = b.step("smoke-test", "run smoke tests");
+    var prev_smoke: ?*std.Build.Step.Run = null;
     for ([_][]const u8{ "clash", "singbox", "trojan", "hysteria", "hysteria2", "xray", "ss", "ssr", "raw" }) |fmt| {
-        smoke_test_step.dependOn(&addSmokeTest(b, exe, fmt, null).step);
+        const r = addSmokeTest(b, exe, fmt, null, prev_smoke);
+        prev_smoke = r;
+        smoke_test_step.dependOn(&r.step);
     }
 
     // install-path smoke test: first install -> unchanged skip -> partial rewrite.
@@ -128,6 +141,9 @@ pub fn build(b: *std.Build) !void {
         run.addArtifactArg(exe);
         run.addArg(b.pathFromRoot(".zig-cache/smoke-install"));
         run.stdio = .inherit;
+        // after all format runs: its output would otherwise race into the
+        // middle of the format list
+        if (prev_smoke) |p| run.step.dependOn(&p.step);
         smoke_install_step.dependOn(&run.step);
         smoke_test_step.dependOn(&run.step);
     }
@@ -173,7 +189,7 @@ pub fn build(b: *std.Build) !void {
         release_test_step.dependOn(&r_run_tests.step);
 
         // smoke test
-        release_test_step.dependOn(&addSmokeTest(b, r_exe, "clash", r_matrix).step);
-        release_test_step.dependOn(&addSmokeTest(b, r_exe, "singbox", r_matrix).step);
+        release_test_step.dependOn(&addSmokeTest(b, r_exe, "clash", r_matrix, null).step);
+        release_test_step.dependOn(&addSmokeTest(b, r_exe, "singbox", r_matrix, null).step);
     }
 }
