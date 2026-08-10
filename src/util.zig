@@ -21,7 +21,10 @@ pub fn b64Decode(allocator: std.mem.Allocator, input: []const u8) !?[]u8 {
     const dec = std.base64.standard.Decoder;
     const size = dec.calcSizeForSlice(cleaned.items) catch return null;
     const out = try allocator.alloc(u8, size);
-    dec.decode(out, cleaned.items) catch return null;
+    dec.decode(out, cleaned.items) catch {
+        allocator.free(out);
+        return null;
+    };
     return out;
 }
 
@@ -43,6 +46,51 @@ pub fn splitUriLines(arena: std.mem.Allocator, text: []const u8) ![][]const u8 {
         try out.append(arena, line);
     }
     return out.toOwnedSlice(arena);
+}
+
+/// shared fields for runWithTimeout contexts (must be embedded as `base`).
+/// the ctx must be allocated with std.heap.page_allocator: on timeout the
+/// ownership passes to the worker, which frees it (see timeoutDone).
+pub const TimeoutBase = struct {
+    done: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    /// set by the main thread when it gives up on the deadline; the worker then
+    /// destroys the ctx itself (ownership transfer, no use-after-free, no leak)
+    abandoned: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+};
+
+/// generic background-thread timeout helper: std.http.Client has no built-in
+/// timeout, so long operations (subscription fetch, reload api put) run in a
+/// worker thread while the caller polls a deadline. on success the caller owns
+/// the ctx (worker has finished); on error.Timeout the ctx belongs to the
+/// worker and must not be touched; on error.ThreadFailed the worker never
+/// started and the caller owns the ctx.
+pub fn runWithTimeout(
+    comptime T: type,
+    comptime worker: fn (*T) void,
+    ctx: *T,
+    timeout_ms: u32,
+) error{ OutOfMemory, ThreadFailed, Timeout }!void {
+    const t = std.Thread.spawn(.{}, worker, .{ctx}) catch return error.ThreadFailed;
+    const deadline = std.time.milliTimestamp() + timeout_ms;
+    while (!ctx.base.done.load(.acquire)) {
+        if (std.time.milliTimestamp() >= deadline) {
+            ctx.base.abandoned.store(true, .release);
+            t.detach();
+            return error.Timeout;
+        }
+        std.Thread.sleep(10 * std.time.ns_per_ms);
+    }
+    t.join();
+}
+
+/// worker-side finish: mark done, then when the main thread abandoned us, free
+/// whatever the worker stored (via `cleanup`) and destroy the ctx.
+pub fn timeoutDone(ctx: anytype, comptime cleanup: fn (@TypeOf(ctx.*)) void) void {
+    ctx.base.done.store(true, .release);
+    if (ctx.base.abandoned.load(.acquire)) {
+        cleanup(ctx.*);
+        std.heap.page_allocator.destroy(ctx);
+    }
 }
 
 // ---------------- tests ----------------

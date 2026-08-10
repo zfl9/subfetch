@@ -38,9 +38,9 @@ fn sniffDepth(arena: std.mem.Allocator, text: []const u8, depth: usize) SniffErr
 
     const head_len = @min(t.len, 2048);
     const head = t[0..head_len];
-    if (std.mem.indexOf(u8, head, "<html") != null or
-        std.mem.indexOf(u8, head, "<!doctype") != null or
-        std.mem.indexOf(u8, head, "<head") != null)
+    if (std.ascii.indexOfIgnoreCase(head, "<html") != null or
+        std.ascii.indexOfIgnoreCase(head, "<!doctype") != null or
+        std.ascii.indexOfIgnoreCase(head, "<head") != null)
     {
         return error.HtmlContent;
     }

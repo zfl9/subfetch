@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const util = @import("util.zig");
 const render = @import("render.zig");
 const Format = render.Format;
 
@@ -87,33 +88,6 @@ pub fn verifyContent(
     };
 }
 
-/// atomic single-file install: write .new -> verify -> backup .bak -> rename.
-/// on verification failure the old config is untouched; returns error.VerifyFailed.
-pub fn installSingle(
-    arena: std.mem.Allocator,
-    fmt: Format,
-    path: []const u8,
-    content: []const u8,
-) !VerifyResult {
-    const tmp = try std.fmt.allocPrint(arena, "{s}.new", .{path});
-    try writeFile(tmp, content);
-
-    const vr = verifyContent(arena, fmt, content, tmp);
-    if (vr == .failed) {
-        std.fs.cwd().deleteFile(tmp) catch {};
-        return error.VerifyFailed;
-    }
-    if (fileExists(path)) {
-        const bak = try std.fmt.allocPrint(arena, "{s}.bak", .{path});
-        std.fs.cwd().copyFile(path, std.fs.cwd(), bak, .{}) catch |e| {
-            std.fs.cwd().deleteFile(tmp) catch {};
-            return e;
-        };
-    }
-    try std.fs.cwd().rename(tmp, path);
-    return vr;
-}
-
 /// atomic file write (write .new then rename)
 pub fn atomicWrite(arena: std.mem.Allocator, path: []const u8, content: []const u8) !void {
     const tmp = try std.fmt.allocPrint(arena, "{s}.new", .{path});
@@ -163,20 +137,40 @@ pub fn reloadCustom(arena: std.mem.Allocator, cmd: []const u8) ReloadResult {
     return if (r.term == .Exited and r.term.Exited == 0) .custom else .failed;
 }
 
-fn reloadApi(
-    arena: std.mem.Allocator,
+/// http PUT /configs?force=true with a timeout: std.http.Client has no built-in
+/// timeout, and a hung/unreachable controller (misconfigured address, firewall
+/// DROP) would otherwise stall the whole cron run for minutes. on timeout or
+/// http failure the caller falls back to systemctl restart.
+const reload_api_timeout_ms = 5000;
+
+const ReloadCtx = struct {
+    base: util.TimeoutBase,
     controller: []const u8,
     secret: ?[]const u8,
     path: []const u8,
-    service: []const u8,
-) ReloadResult {
-    const url = std.fmt.allocPrint(arena, "http://{s}/configs?force=true", .{controller}) catch return .failed;
-    const body = std.fmt.allocPrint(arena, "{{\"path\": \"{s}\"}}", .{path}) catch return .failed;
+    result: ReloadResult = .failed,
+};
 
-    var client: std.http.Client = .{ .allocator = arena };
+fn freeReloadCtx(_: ReloadCtx) void {}
+
+fn reloadApiWorker(ctx: *ReloadCtx) void {
+    defer util.timeoutDone(ctx, freeReloadCtx);
+    const alloc = std.heap.page_allocator;
+
+    const url = std.fmt.allocPrint(alloc, "http://{s}/configs?force=true", .{ctx.controller}) catch return;
+    defer alloc.free(url);
+    const body = std.fmt.allocPrint(alloc, "{{\"path\": \"{s}\"}}", .{ctx.path}) catch return;
+    defer alloc.free(body);
+
+    var client: std.http.Client = .{ .allocator = alloc };
     defer client.deinit();
-    const headers: std.http.Client.Request.Headers = if (secret) |s|
-        .{ .authorization = .{ .override = std.fmt.allocPrint(arena, "Bearer {s}", .{s}) catch return .failed } }
+    var auth: ?[]const u8 = null;
+    defer if (auth) |a| alloc.free(a);
+    if (ctx.secret) |s| {
+        auth = std.fmt.allocPrint(alloc, "Bearer {s}", .{s}) catch return;
+    }
+    const headers: std.http.Client.Request.Headers = if (auth) |a|
+        .{ .authorization = .{ .override = a } }
     else
         .{};
 
@@ -185,12 +179,40 @@ fn reloadApi(
         .method = .PUT,
         .headers = headers,
         .payload = body,
-    }) catch return .failed;
-    if (result.status == .no_content or result.status == .ok) return .api;
+    }) catch return;
+    ctx.result = if (result.status == .no_content or result.status == .ok) .api else .failed;
+}
 
-    // fallback: systemctl restart. check availability first: OpenWrt and other non-systemd
-    // distros lack systemctl; skip (skipped) instead of failing, telling the user to restart
-    // manually or use --reload-cmd.
+fn reloadApi(
+    arena: std.mem.Allocator,
+    controller: []const u8,
+    secret: ?[]const u8,
+    path: []const u8,
+    service: []const u8,
+) ReloadResult {
+    // controller/secret/path point into the caller's arena, which outlives the
+    // worker (whole process); the ctx itself is page-allocated
+    const ctx = std.heap.page_allocator.create(ReloadCtx) catch return .failed;
+    ctx.* = .{ .base = .{}, .controller = controller, .secret = secret, .path = path };
+    util.runWithTimeout(ReloadCtx, reloadApiWorker, ctx, reload_api_timeout_ms) catch |e| switch (e) {
+        // timeout: the worker owns the ctx from now on (see util.timeoutDone)
+        error.Timeout => return reloadFallback(arena, service),
+        // the worker never started: we own the ctx
+        error.OutOfMemory, error.ThreadFailed => {
+            std.heap.page_allocator.destroy(ctx);
+            return .failed;
+        },
+    };
+    const r = ctx.result;
+    std.heap.page_allocator.destroy(ctx);
+    if (r == .api) return .api;
+    return reloadFallback(arena, service);
+}
+
+/// systemctl restart fallback. check availability first: OpenWrt and other
+/// non-systemd distros lack systemctl; skip (skipped) instead of failing,
+/// telling the user to restart manually or use --reload-cmd.
+fn reloadFallback(arena: std.mem.Allocator, service: []const u8) ReloadResult {
     const sysctl = findBin(arena, "systemctl") orelse return .skipped;
     const r = std.process.Child.run(.{
         .allocator = arena,
@@ -243,33 +265,6 @@ test "verifyContent hysteria2 yaml" {
     );
 }
 
-test "installSingle atomic with backup" {
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const path = try tmp.dir.realpathAlloc(arena.allocator(), ".");
-    const cfg = try std.fs.path.join(arena.allocator(), &.{ path, "config.yaml" });
-    // first install (no old file)
-    const vr1 = try installSingle(arena.allocator(), .raw, cfg, "content-v1");
-    try std.testing.expectEqual(VerifyResult.ok, vr1);
-    // second install (creates .bak)
-    const vr2 = try installSingle(arena.allocator(), .raw, cfg, "content-v2");
-    try std.testing.expectEqual(VerifyResult.ok, vr2);
-    const cur = try std.fs.cwd().readFileAlloc(arena.allocator(), cfg, 1 << 16);
-    try std.testing.expectEqualStrings("content-v2", cur);
-    const bak = try std.fs.cwd().readFileAlloc(arena.allocator(), try std.fmt.allocPrint(arena.allocator(), "{s}.bak", .{cfg}), 1 << 16);
-    try std.testing.expectEqualStrings("content-v1", bak);
-    // verification failure leaves old config untouched
-    try std.testing.expectError(
-        error.VerifyFailed,
-        installSingle(arena.allocator(), .trojan, cfg, "{bad json"),
-    );
-    const still = try std.fs.cwd().readFileAlloc(arena.allocator(), cfg, 1 << 16);
-    try std.testing.expectEqualStrings("content-v2", still);
-}
-
 test "contentDiffers missing/same/different" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -301,7 +296,6 @@ test "compile-check" {
     _ = &findBin;
     _ = &fileExists;
     _ = &verifyContent;
-    _ = &installSingle;
     _ = &atomicWrite;
     _ = &writeFile;
     _ = &reloadClash;

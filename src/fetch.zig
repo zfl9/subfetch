@@ -1,4 +1,5 @@
 const std = @import("std");
+const util = @import("util.zig");
 
 pub const FetchError = error{
     OutOfMemory,
@@ -73,35 +74,34 @@ fn fetchHttp(
 }
 
 const ThreadCtx = struct {
+    base: util.TimeoutBase,
     url: []const u8,
     ua: ?[]const u8,
     result: ?[]const u8 = null,
     err: ?FetchError = null,
-    done: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-    /// set by the main thread when it gives up on the deadline; the worker then
-    /// destroys the ctx itself (ownership transfer, no use-after-free, no leak)
-    abandoned: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 };
 
+/// abandoned-path cleanup: free the stored body before the ctx is destroyed
+/// (tiny race window between the main thread timing out and the worker
+/// finishing; without this the body would leak on page_allocator)
+fn freeResult(ct: ThreadCtx) void {
+    if (ct.result) |b| std.heap.page_allocator.free(b);
+}
+
 fn worker(ctx: *ThreadCtx) void {
-    defer {
-        ctx.done.store(true, .release);
-        // when the main thread abandoned us, we own the ctx and must free it
-        if (ctx.abandoned.load(.acquire)) std.heap.page_allocator.destroy(ctx);
-    }
     // use page_allocator inside the thread (thread-safe); the main thread dups the
     // result into the caller's allocator
     const body = fetch(std.heap.page_allocator, ctx.url, ctx.ua) catch |e| {
         ctx.err = e;
+        util.timeoutDone(ctx, freeResult);
         return;
     };
     ctx.result = body;
+    util.timeoutDone(ctx, freeResult);
 }
 
-/// fetch with timeout. std.http.Client has no built-in timeout; implemented with a
-/// background thread + deadline polling. the ctx is page-allocated and its
-/// ownership is explicit: main thread frees it after join, or the worker frees it
-/// itself when abandoned (timeout path) - no use-after-free, no leak.
+/// fetch with timeout. std.http.Client has no built-in timeout; implemented with
+/// a background thread + deadline polling (see util.runWithTimeout).
 pub fn fetchWithTimeout(
     allocator: std.mem.Allocator,
     url: []const u8,
@@ -111,26 +111,19 @@ pub fn fetchWithTimeout(
     if (timeout_ms == null) return fetch(allocator, url, ua);
 
     const ctx = std.heap.page_allocator.create(ThreadCtx) catch return error.OutOfMemory;
-    ctx.* = .{ .url = url, .ua = ua };
+    ctx.* = .{ .base = .{}, .url = url, .ua = ua };
     // keep the default 16MB thread stack: zig std TLS performs post-quantum
     // Kyber ML-KEM key generation during the handshake, whose stack frames
     // exceed 8MB (verified: 512KB/1MB/8MB all segfault on https + timeout).
-    const t = std.Thread.spawn(.{}, worker, .{ctx}) catch {
-        std.heap.page_allocator.destroy(ctx);
-        return error.NetworkError;
+    util.runWithTimeout(ThreadCtx, worker, ctx, timeout_ms.?) catch |e| switch (e) {
+        // timeout: the worker owns the ctx from now on (see util.timeoutDone)
+        error.Timeout => return error.Timeout,
+        // the worker never started: we own the ctx
+        error.OutOfMemory, error.ThreadFailed => {
+            std.heap.page_allocator.destroy(ctx);
+            return error.NetworkError;
+        },
     };
-
-    const deadline = std.time.milliTimestamp() + timeout_ms.?;
-    while (!ctx.done.load(.acquire)) {
-        if (std.time.milliTimestamp() >= deadline) {
-            // give up: the worker owns the ctx from now on
-            ctx.abandoned.store(true, .release);
-            t.detach();
-            return error.Timeout;
-        }
-        std.Thread.sleep(10 * std.time.ns_per_ms);
-    }
-    t.join();
     const err = ctx.err;
     const body = ctx.result;
     std.heap.page_allocator.destroy(ctx);
