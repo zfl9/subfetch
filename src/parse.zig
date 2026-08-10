@@ -304,7 +304,8 @@ fn ssPluginFromYaml(arena: std.mem.Allocator, m: []const yaml.MappingEntry) Pars
     if (std.mem.eql(u8, plugin, "obfs-local")) {
         return .{ .obfs_local = .{
             .mode = if (om) |mm| get(mm, "mode") orelse "http" else "http",
-            .host = if (om) |mm| get(mm, "host") orelse "" else "",
+            // obfs-local default host, matching the ss:// URI parser (www.bing.com)
+            .host = if (om) |mm| get(mm, "host") orelse "www.bing.com" else "www.bing.com",
         } };
     }
     if (std.mem.eql(u8, plugin, "v2ray-plugin")) {
@@ -560,7 +561,7 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
             .server = server,
             .port = port,
             .uuid = jsonGetStr(obj, "uuid") orelse return error.MissingField,
-            .password = jsonGetStr(obj, "password") orelse "",
+            .password = jsonGetStr(obj, "password") orelse return error.MissingField,
             .servername = server_name,
             .skip_cert_verify = insecure,
             .congestion_controller = jsonGetStr(obj, "congestion_control"),

@@ -78,17 +78,17 @@ pub fn main() !void {
                     std.process.exit(3);
                 },
                 else => {
-                    logErr(null, "failed to read config {s}: {s}\n", .{ opts.config, @errorName(e) });
+                    logErr(null, "failed to read config {s}: {s}", .{ opts.config, @errorName(e) });
                     std.process.exit(3);
                 },
             }
         };
         const cfg_src = arena.dupeZ(u8, text) catch {
-            logErr(null, "out of memory\n", .{});
+            logErr(null, "out of memory", .{});
             std.process.exit(1);
         };
         const parsed = config_mod.parse(arena, cfg_src) catch |e| {
-            logErr(null, "failed to parse config {s}: {s}\n", .{ opts.config, @errorName(e) });
+            logErr(null, "failed to parse config {s}: {s}", .{ opts.config, @errorName(e) });
             std.process.exit(3);
         };
         logInfo(null, "config: {s}", .{opts.config});

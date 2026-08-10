@@ -124,6 +124,10 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             // empty value allowed: "" clears all keywords (disables filtering)
             try opts.info_keywords.append(arena, v);
         } else if (takeValue(&i, args, a, "--ua", null)) |v| {
+            if (v.len == 0) {
+                log.logErr(null, "missing value for {s}", .{a});
+                return error.BadArg;
+            }
             opts.ua = v;
         } else if (takeValue(&i, args, a, "--sep", null)) |v| {
             if (v.len == 0) {
@@ -170,6 +174,10 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             }
             opts.controller = v;
         } else if (takeValue(&i, args, a, "--secret", null)) |v| {
+            if (v.len == 0) {
+                log.logErr(null, "missing value for {s}", .{a});
+                return error.BadArg;
+            }
             opts.secret = v;
         } else {
             log.logErr(null, "unknown argument: {s}", .{a});

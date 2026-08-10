@@ -6,13 +6,6 @@ const Options = render.Options;
 const JsonValue = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
 
-/// filename sanitization, layered:
-/// - decorative chars (emoji U+10000+, misc symbols U+2600-27BF, variation
-///   selectors U+FE00-FE0F, ZWJ U+200D) are dropped together with adjacent
-///   whitespace (visual noise, no separator meaning)
-/// - dangerous/separator chars (/\:*?"<>| and whitespace) become '_' (keeps
-///   readability, prevents path injection)
-/// - CJK / alnum / '-' '_' '.' pass through
 /// filename sanitization: keep the name readable while making it safe for the
 /// filesystem - separator/dangerous chars (/\:*?"<>| and whitespace) become
 /// '_', everything else (CJK, emoji, any byte) passes through untouched.
