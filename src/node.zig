@@ -20,18 +20,21 @@ pub const RealityOpts = struct {
     spider_x: ?[]const u8 = null,
 };
 
+/// v2ray-plugin params (tls/mode/host/path), named type for renderer reuse
+pub const V2rayPlugin = struct {
+    mode: []const u8 = "websocket",
+    tls: bool = false,
+    host: ?[]const u8 = null,
+    path: ?[]const u8 = null,
+};
+
 /// ss plugin params (obfs-local / v2ray-plugin / shadow-tls)
 pub const SsPlugin = union(enum) {
     obfs_local: struct {
         mode: []const u8,
         host: []const u8,
     },
-    v2ray_plugin: struct {
-        mode: []const u8 = "websocket",
-        tls: bool = false,
-        host: ?[]const u8 = null,
-        path: ?[]const u8 = null,
-    },
+    v2ray_plugin: V2rayPlugin,
     shadow_tls: struct {
         host: []const u8,
         password: []const u8,

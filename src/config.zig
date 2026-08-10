@@ -97,9 +97,9 @@ pub const Config = struct {
 pub const ParseError = error{
     OutOfMemory,
     ParseZon,
-    InvalidSectionName,
-    EmptySectionName,
-    DuplicateSection,
+    InvalidSubscriptionName,
+    EmptySubscriptionName,
+    DuplicateSubscriptionName,
     MissingUrl,
 };
 
@@ -126,8 +126,8 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) ParseError!Conf
     for (cfg.subscriptions) |s| {
         // null name = anonymous; explicit "" is rejected (omit the field instead)
         if (s.name) |n| {
-            if (n.len == 0) return error.EmptySectionName;
-            if (!isValidName(n)) return error.InvalidSectionName;
+            if (n.len == 0) return error.EmptySubscriptionName;
+            if (!isValidName(n)) return error.InvalidSubscriptionName;
         }
         if (s.url.len == 0) return error.MissingUrl;
     }
@@ -136,7 +136,7 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) ParseError!Conf
         const sn = s.name orelse continue;
         for (cfg.subscriptions[i + 1 ..]) |t| {
             if (t.name) |tn| {
-                if (std.mem.eql(u8, sn, tn)) return error.DuplicateSection;
+                if (std.mem.eql(u8, sn, tn)) return error.DuplicateSubscriptionName;
             }
         }
     }
@@ -208,7 +208,7 @@ test "anonymous subscription (omitted name)" {
 test "reject explicit empty name" {
     const source = ".{ .subscriptions = .{ .{ .name = \"\", .url = \"x\" } } }";
     try std.testing.expectError(
-        error.EmptySectionName,
+        error.EmptySubscriptionName,
         parse(std.testing.allocator, source),
     );
 }
@@ -299,7 +299,7 @@ test "parse inline nodes and node_files" {
 test "reject duplicate name" {
     const source = ".{ .subscriptions = .{ .{ .name = \"a\", .url = \"x\" }, .{ .name = \"a\", .url = \"y\" } } }";
     try std.testing.expectError(
-        error.DuplicateSection,
+        error.DuplicateSubscriptionName,
         parse(std.testing.allocator, source),
     );
 }
@@ -307,7 +307,7 @@ test "reject duplicate name" {
 test "reject invalid name" {
     const source = ".{ .subscriptions = .{ .{ .name = \"a:b\", .url = \"x\" } } }";
     try std.testing.expectError(
-        error.InvalidSectionName,
+        error.InvalidSubscriptionName,
         parse(std.testing.allocator, source),
     );
     // anonymous via omitted name is valid

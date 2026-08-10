@@ -274,7 +274,7 @@ fn ssJson(arena: std.mem.Allocator, v: node.SS, opts: Options) !JsonValue {
 }
 
 /// TOR_PT-style plugin_opts for v2ray-plugin
-fn v2rayPluginOpts(arena: std.mem.Allocator, pl: anytype) ![]const u8 {
+fn v2rayPluginOpts(arena: std.mem.Allocator, pl: node.V2rayPlugin) ![]const u8 {
     var parts: std.ArrayListUnmanaged([]const u8) = .empty;
     try parts.append(arena, try std.fmt.allocPrint(arena, "mode={s}", .{pl.mode}));
     if (pl.tls) try parts.append(arena, "tls");

@@ -130,6 +130,8 @@ const vtable: std.Io.Writer.VTable = .{
 
 fn drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
     const self: *BoundedWriter = @alignCast(@fieldParentPtr("writer", w));
+    // std.Io.Writer convention: the last element of `data` is the splat
+    // pattern, written `splat` times after the preceding elements
     const slice = data[0 .. data.len - 1];
     const pattern = data[slice.len];
     var written: usize = pattern.len * splat;

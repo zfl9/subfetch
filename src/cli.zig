@@ -63,9 +63,7 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             opts.dry_run = true;
         } else if (std.mem.eql(u8, a, "--reset-state")) {
             opts.reset_state = true;
-        } else if (std.mem.eql(u8, a, "--verbose")) {
-            opts.verbose = 1;
-        } else if (std.mem.eql(u8, a, "-v")) {
+        } else if (std.mem.eql(u8, a, "-v") or std.mem.eql(u8, a, "--verbose")) {
             // -v/--verbose: single verbose level (node list, api secret). -vv/-vvv
             // were removed: their old stdout semantics were replaced by -o fmt=-,
             // and no deeper verbose level exists (strict parsing, no -verbose)
