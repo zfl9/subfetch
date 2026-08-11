@@ -286,3 +286,22 @@ test "compile-check" {
     _ = &supports;
     _ = &Format.parse;
 }
+
+test "LogLevel clashName spelling" {
+    // clash/xray want the long spellings; sing-box uses @tagName directly
+    try std.testing.expectEqualStrings("warning", LogLevel.warn.clashName());
+    try std.testing.expectEqualStrings("error", LogLevel.err.clashName());
+    try std.testing.expectEqualStrings("debug", LogLevel.debug.clashName());
+    try std.testing.expectEqualStrings("info", LogLevel.info.clashName());
+}
+
+test "LogLevel stringToEnum roundtrip" {
+    // members are the CLI/.zon value domain (no legacy aliases)
+    try std.testing.expectEqual(LogLevel.debug, std.meta.stringToEnum(LogLevel, "debug"));
+    try std.testing.expectEqual(LogLevel.info, std.meta.stringToEnum(LogLevel, "info"));
+    try std.testing.expectEqual(LogLevel.warn, std.meta.stringToEnum(LogLevel, "warn"));
+    try std.testing.expectEqual(LogLevel.err, std.meta.stringToEnum(LogLevel, "err"));
+    try std.testing.expect(std.meta.stringToEnum(LogLevel, "warning") == null);
+    try std.testing.expect(std.meta.stringToEnum(LogLevel, "error") == null);
+    try std.testing.expect(std.meta.stringToEnum(LogLevel, "bogus") == null);
+}

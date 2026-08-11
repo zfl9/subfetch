@@ -72,6 +72,9 @@ fn colorizeKeywords(file: std.fs.File, text: []const u8) void {
 }
 
 pub fn log(level: LogLevel, source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
+    // silent under zig build test: unit tests assert on return values, not
+    // on stderr noise (same pattern as config.zig diagnostics)
+    if (builtin.is_test) return;
     // all diagnostics go to stderr (unix convention); stdout is reserved for data
     // (e.g. `-o clash=-` pipe output must be clean for scripts)
     const file = std.fs.File.stderr();

@@ -357,3 +357,47 @@ test "parseOutput grammar" {
     try std.testing.expectEqualStrings("tmpl", o6.tmpl.?);
     try std.testing.expectEqualStrings("path=extra", o6.path.?);
 }
+
+test "parseUrlArg name prefix" {
+    // [name=] prefix: valid name -> split
+    const p1 = try parseUrlArg("sg=ss://aes@host:8388#SG");
+    try std.testing.expectEqualStrings("sg", p1.name.?);
+    try std.testing.expectEqualStrings("ss://aes@host:8388#SG", p1.url);
+    // no prefix -> anonymous
+    const p2 = try parseUrlArg("trojan://pass@h:443#n");
+    try std.testing.expect(p2.name == null);
+    try std.testing.expectEqualStrings("trojan://pass@h:443#n", p2.url);
+    // invalid name (contains chars not allowed) -> whole string treated as url
+    const p3 = try parseUrlArg("bad name=ss://x");
+    try std.testing.expect(p3.name == null);
+    try std.testing.expectEqualStrings("bad name=ss://x", p3.url);
+}
+
+test "takeRequired rejects missing and empty values" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // "--ua" at end of argv -> missing value
+    var args1 = [_][:0]u8{ try a.dupeZ(u8, "subfetch"), try a.dupeZ(u8, "--ua") };
+    var idx1: usize = 1;
+    try std.testing.expectError(error.BadArg, takeRequired(&idx1, &args1, args1[1], "--ua", null));
+
+    // "--ua ''" -> empty value rejected
+    var args2 = [_][:0]u8{ try a.dupeZ(u8, "subfetch"), try a.dupeZ(u8, "--ua"), try a.dupeZ(u8, "") };
+    var idx2: usize = 1;
+    try std.testing.expectError(error.BadArg, takeRequired(&idx2, &args2, args2[1], "--ua", null));
+
+    // "--ua foo" -> value taken, index advanced
+    var args3 = [_][:0]u8{ try a.dupeZ(u8, "subfetch"), try a.dupeZ(u8, "--ua"), try a.dupeZ(u8, "foo") };
+    var idx3: usize = 1;
+    const v3 = (try takeRequired(&idx3, &args3, args3[1], "--ua", null)).?;
+    try std.testing.expectEqualStrings("foo", v3);
+    try std.testing.expectEqual(@as(usize, 2), idx3);
+
+    // "--ua=foo" equals form
+    var args4 = [_][:0]u8{ try a.dupeZ(u8, "subfetch"), try a.dupeZ(u8, "--ua=foo") };
+    var idx4: usize = 1;
+    const v4 = (try takeRequired(&idx4, &args4, args4[1], "--ua", null)).?;
+    try std.testing.expectEqualStrings("foo", v4);
+}
