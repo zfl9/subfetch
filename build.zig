@@ -178,13 +178,10 @@ pub fn build(b: *std.Build) !void {
         run.addArtifactArg(exe);
         run.addArg(b.pathFromRoot(suite.dir));
         run.stdio = .inherit;
-        // after all format runs: its output would otherwise race into the
-        // middle of the format list
-        if (prev_install) |p| {
-            run.step.dependOn(&p.step);
-        } else {
-            run.step.dependOn(&last_smoke.step);
-        }
+        // suites run serially (shared exe, ordered output); they do NOT
+        // depend on the smoke step: smoke and integration are independent
+        // entry points (the exe artifact is built via producer)
+        if (prev_install) |p| run.step.dependOn(&p.step);
         prev_install = run;
         integration_step.dependOn(&run.step);
     }
