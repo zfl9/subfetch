@@ -12,7 +12,7 @@ const std = @import("std");
 
 /// detect the template's indent style: leading whitespace of the first
 /// indented line (e.g. "  ", "    ", "\t"). falls back to two spaces.
-pub fn detectIndent(text: []const u8) []const u8 {
+fn detectIndent(text: []const u8) []const u8 {
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |line| {
         if (line.len == 0) continue;

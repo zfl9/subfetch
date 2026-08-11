@@ -1,7 +1,7 @@
 const std = @import("std");
 const log = @import("log.zig");
 
-pub fn genSecret(arena: std.mem.Allocator) ![]const u8 {
+fn genSecret(arena: std.mem.Allocator) ![]const u8 {
     var b: [16]u8 = undefined;
     std.crypto.random.bytes(&b);
     b[6] = (b[6] & 0x0f) | 0x40;
@@ -37,14 +37,14 @@ pub fn resolveSecret(arena: std.mem.Allocator, explicit: ?[]const u8, persist: b
 }
 
 /// read the persisted secret at `path` (null when absent/unreadable)
-pub fn readPersistedSecret(arena: std.mem.Allocator, path: []const u8) ?[]const u8 {
+fn readPersistedSecret(arena: std.mem.Allocator, path: []const u8) ?[]const u8 {
     if (std.fs.cwd().readFileAlloc(arena, path, 4096)) |content| {
         return std.mem.trimRight(u8, content, "\r\n");
     } else |_| return null;
 }
 
 /// read the persisted secret at `path`; generate + persist a fresh UUID when absent.
-pub fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
+fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
     if (readPersistedSecret(arena, path)) |s| return s;
     const s = try genSecret(arena);
     writeStateSecret(arena, path, s) catch |e| {
@@ -54,7 +54,7 @@ pub fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) ![]const u
 }
 
 /// XDG state dir: $XDG_STATE_HOME or ~/.local/state (default per XDG spec)
-pub fn stateDir(arena: std.mem.Allocator) ![]const u8 {
+fn stateDir(arena: std.mem.Allocator) ![]const u8 {
     if (std.posix.getenv("XDG_STATE_HOME")) |base| {
         return std.fs.path.join(arena, &.{ base, "subfetch" });
     }
@@ -63,11 +63,11 @@ pub fn stateDir(arena: std.mem.Allocator) ![]const u8 {
 }
 
 /// XDG state path: $XDG_STATE_HOME or ~/.local/state (default per XDG spec)
-pub fn stateSecretPath(arena: std.mem.Allocator) ![]const u8 {
+fn stateSecretPath(arena: std.mem.Allocator) ![]const u8 {
     return std.fs.path.join(arena, &.{ try stateDir(arena), "secret" });
 }
 
-pub fn writeStateSecret(arena: std.mem.Allocator, path: []const u8, secret: []const u8) !void {
+fn writeStateSecret(arena: std.mem.Allocator, path: []const u8, secret: []const u8) !void {
     _ = arena;
     const dir = std.fs.path.dirname(path) orelse return error.BadPath;
     try std.fs.cwd().makePath(dir);

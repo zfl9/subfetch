@@ -9,7 +9,7 @@ const util = @import("util.zig");
 const render = @import("render.zig");
 const deploy = @import("deploy.zig");
 const cli = @import("cli.zig");
-const state = @import("state.zig");
+const runstate = @import("runstate.zig");
 const log = @import("log.zig");
 
 const build_options = @import("build_options");
@@ -32,7 +32,7 @@ pub fn main() !void {
     };
 
     // serialize concurrent runs (cron overlaps); dry-run is read-only, no lock
-    if (!opts.dry_run) state.acquireRunLock(arena);
+    if (!opts.dry_run) runstate.acquireRunLock(arena);
 
     // --dry-run promises zero side effects; reset-state deletes the persisted
     // secret, so the combination is a contradiction (reject it as a usage error)
@@ -43,8 +43,8 @@ pub fn main() !void {
 
     // --reset-state: drop the persisted secret and stop (nothing else to do)
     if (opts.reset_state) {
-        state.resetStateSecret(arena);
-        state.releaseRunLock();
+        runstate.resetStateSecret(arena);
+        runstate.releaseRunLock();
         return;
     }
 
@@ -171,9 +171,9 @@ pub fn main() !void {
 
     // render options (dry-run: read-only secret, state dir untouched)
     const secret = if (opts.dry_run)
-        try state.resolveSecret(arena, opts.secret, false)
+        try runstate.resolveSecret(arena, opts.secret, false)
     else
-        try state.resolveSecret(arena, opts.secret, true);
+        try runstate.resolveSecret(arena, opts.secret, true);
     const ropts: render.Options = .{
         .listen = listen,
         .port = port,
@@ -280,7 +280,7 @@ pub fn main() !void {
         if (need_secret) log.verbose(null, "api secret: {s}", .{secret});
     }
     cleanupStageATmps();
-    state.releaseRunLock();
+    runstate.releaseRunLock();
     // source failures must not look like success to cron: any failed
     // subscription/node-file makes the whole run exit 4 (configs already
     // generated and installed from the healthy sources are kept)
