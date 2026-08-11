@@ -5,7 +5,7 @@ const render = @import("render.zig");
 const yaml = @import("yaml.zig");
 const Format = render.Format;
 
-pub const VerifyResult = enum { ok, skipped, failed };
+pub const VerifyResult = enum { ok, failed };
 
 pub const ReloadResult = enum { api, systemctl, custom, skipped, failed };
 
@@ -98,8 +98,6 @@ fn runCommandTimed(argv: []const []const u8, timeout_ms: u32) ?u8 {
     return null;
 }
 
-/// verify generated content. tmp_path is the written temp file (the verifier reads it).
-/// verifier not found -> skipped (does not block install); verification failure -> failed.
 /// cheap syntax-level self-check: guards the generator/template output, not the
 /// client. always runs, even with --no-verify / per-output verify=false (it is
 /// millisecond work; skipping it would save nothing). clash/hysteria2 are yaml,
