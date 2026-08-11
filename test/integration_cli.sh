@@ -68,6 +68,34 @@ OUT=$("$EXE" -c fixtures/config.zon --url fixtures/html_error.html --dry-run 2>&
 echo "$OUT" | grep -q "11/12 ok, 1 failed" || { echo "FAIL: partial failure summary missing"; echo "$OUT"; exit 1; }
 echo "ok: partial failure -> 4 (11/12 summary)"
 
+# 1: runtime failure - Stage A temp write fails on an unwritable output
+# path (nothing installed, .new debris cleaned by abort)
+expect_exit 1 "unwritable output path" "$EXE" -c fixtures/config.zon -o "raw=$TMP/nodir/out.json" --no-reload
+
+# 3: --no-verify still enforces the mandatory syntax layer (bad yaml from a
+# user template must be rejected, not silently installed)
+printf 'proxies: []\nbad: [unclosed\n' > "$TMP/badtpl.yaml"
+expect_exit 3 "no-verify syntax check" "$EXE" -c fixtures/config.zon -o "clash:$TMP/badtpl.yaml=$TMP/out.yaml" --no-verify --no-reload
+
+# 3: template read failure (missing template file)
+expect_exit 3 "template read failure" "$EXE" -c fixtures/config.zon -o "clash:$TMP/no.tmpl=$TMP/out.yaml" --no-reload
+
+# 4: real-mode source failure: healthy sources verify, nothing is installed,
+# exit 4 tells cron to retry (configs stay unchanged)
+OUT=$("$EXE" -c fixtures/config.zon --url fixtures/html_error.html -o "raw=$TMP/out.json" --no-reload 2>&1) || {
+    got=$?
+    [ "$got" -eq 4 ] || { echo "FAIL: real-mode partial failure: want 4, got $got"; echo "$OUT"; exit 1; }
+}
+echo "$OUT" | grep -q "skip install (configs unchanged)" || { echo "FAIL: real-mode skip-install message missing"; echo "$OUT"; exit 1; }
+[ ! -f "$TMP/out.json" ] || { echo "FAIL: real-mode partial failure must not install"; exit 1; }
+echo "ok: real-mode source failure -> 4 (nothing installed)"
+
+# reload_cmd success path: first install triggers the custom reload command
+# (the per-output .reload=false suppression is covered in integration-install)
+"$EXE" -c fixtures/config.zon -o "raw=$TMP/rc.json" --reload-cmd "touch $TMP/rc-ran" --no-verify >/dev/null 2>&1 || { echo "FAIL: reload_cmd install exit"; exit 1; }
+[ -f "$TMP/rc-ran" ] || { echo "FAIL: reload_cmd did not execute"; exit 1; }
+echo "ok: reload_cmd executed after install"
+
 # --reset-state: secret removed, lock file kept, idempotent
 expect_exit 0 "reset without state" "$EXE" --reset-state
 expect_exit 0 "install run (writes secret)" "$EXE" -c fixtures/config.zon -o raw="$TMP/out.json" --no-reload --no-verify

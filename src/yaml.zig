@@ -31,7 +31,7 @@ pub const ParseError = error{
 };
 
 /// max nesting depth of the value tree (libyaml parses flat; our recursive
-/// buildValue is the only recursion, guard it against malicious deep YAML)
+/// buildValueDepth is the only recursion, guard it against malicious deep YAML)
 const max_depth = 64;
 
 /// parse YAML text into a value tree. strings are duped into the allocator (arena recommended).
@@ -47,14 +47,6 @@ pub fn parse(allocator: std.mem.Allocator, source: []const u8) ParseError!YamlVa
 
     const root = c.yaml_document_get_root_node(&doc) orelse return error.ParseFailed;
     return buildValueDepth(allocator, &doc, root, 0);
-}
-
-fn buildValue(
-    allocator: std.mem.Allocator,
-    doc: *c.yaml_document_t,
-    node: [*c]c.yaml_node_t,
-) ParseError!YamlValue {
-    return buildValueDepth(allocator, doc, node, 0);
 }
 
 fn buildValueDepth(
@@ -238,7 +230,6 @@ test "reject deeply nested yaml" {
 
 test "compile-check" {
     _ = &parse;
-    _ = &buildValue;
     _ = &buildValueDepth;
     _ = &mappingOf;
     _ = &sequenceOf;
