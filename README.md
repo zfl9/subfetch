@@ -1,6 +1,6 @@
 # subfetch
 
-拉取订阅并生成 clash / sing-box / 原生代理客户端的配置，校验无误后再重载代理进程。
+拉取订阅并生成 clash / sing-box / 原生代理客户端的配置，校验无误后安装并重载代理进程。
 
 单文件、零依赖，适合放在服务器或路由器上定时执行，自动更新订阅。
 
@@ -8,18 +8,17 @@
 
 - 支持的协议：ss / ssr / vmess / vless / trojan / hysteria / hysteria2 / tuic
 - 订阅格式：URI 列表、base64、clash YAML、v2rayN JSON、sing-box JSON
-- 输出：clash / sing-box 聚合配置，各协议原生配置，raw 节点列表（JSON）
-- 写配置前先校验（`mihomo -t` / `sing-box check` / `xray -test`），校验不过就不覆盖旧配置；校验卡住会自动超时终止，不会卡住定时任务
-- 安装后自动重载代理（API 优先，失败回退 systemctl，也可自定义命令）；订阅没更新时配置不变，自动跳过安装与重载
-- 节点按名称排序：订阅不更新则输出不变，上游调整节点顺序不会导致无谓重启
-- cron 重叠运行会自动排队；任一订阅失败时保留上次成功配置并以退出码 4 结束，下次运行自动重试（网络错误自动重试 1 次）
+- 输出：clash / sing-box 聚合配置，原生客户端配置，raw 节点列表（JSON）
+- 写配置前先校验，校验不过就不覆盖旧配置
+- 安装后自动重载代理（可自定义重载命令）；订阅没更新时自动跳过安装与重载
+- 任一订阅失败时保留上次成功配置并自动重试，配置不会因为一次失败就丢失
 
 ## 快速开始
 
 先从 [Releases](https://github.com/zfl9/subfetch/releases) 下载对应架构的二进制（想自己构建见文末）。
 
 ```sh
-# 1. 复制配置模板并编辑
+# 1. 复制示例配置并编辑
 cp config.example.zon config.zon
 vim config.zon
 
@@ -31,7 +30,7 @@ subfetch -c config.zon -o clash=/etc/clash/config.yaml \
     --reload-cmd "systemctl restart clash"
 ```
 
-也可以不用配置文件，直接用命令行：`subfetch --url 订阅链接` 或 `subfetch --node 节点URI`。
+也可以不用配置文件，直接用命令行：`subfetch --url 订阅URL` 或 `subfetch --node 节点URI`。
 
 ## 配置
 
@@ -68,7 +67,7 @@ CLI 与 .zon 一一对应：
 .{
     .ua = "clash-verge/v2.2.3",
     .sep = "@",                            // 订阅名和节点名之间的分隔符
-    .secret = "xxx",                       // API secret（默认自动生成并持久化，跨运行稳定）
+    .secret = "xxx",                       // API secret（默认自动生成并持久化）
     .info_keywords = .{ "到期", "剩余流量" }, // 通知节点关键词
     .listen = "127.0.0.1",                 // 客户端监听地址
     .port = 1080,                          // 客户端监听端口
@@ -137,8 +136,8 @@ proxies: []    # clash
 ```
 
 - 模板里没写 `proxy-groups` / `rules` 会自动补默认，写了就完全保留
-- 自定义组里的节点列表用 `__NODES__` 标记插入位置
-- 模板即最终配置：subfetch 只做填充，不注入也不覆盖任何字段
+- 组里的节点列表用 `__NODES__` 标记插入位置
+- 模板即最终配置：subfetch 只填充节点列表，不改动任何其他字段
 
 ## 内置模板
 
@@ -167,7 +166,7 @@ Client config（仅内置模板生效）:
     --port <n>           socks5 监听端口（默认 1080）
     --mixed-port <n>     clash mixed-port（默认 65500）
     --controller <a:p>   API 地址（clash/sing-box；默认 127.0.0.1:65501）
-    --secret <str>       API secret（默认自动生成并持久化，跨运行稳定）
+    --secret <str>       API secret（默认自动生成并持久化）
     --singbox-clash-api  sing-box 输出启用 clash_api
     --allow-lan          clash allow-lan
     --tproxy-port <n>    tproxy 端口（clash + sing-box）
@@ -184,7 +183,7 @@ Misc:
     --ua <str>           发送给订阅服务器的 User-Agent
     --info-keyword <kw>  通知节点关键词（可多次；"" = 不过滤）
     --sep <str>          订阅名/节点名分隔符（默认 @）
-    --reset-state        删除持久化的 API secret（下次运行重新生成）
+    --reset-state        删除已持久化的 API secret（下次运行重新生成）
   -v, --verbose          详细输出（节点列表）
   -h, --help             帮助
   -V, --version          输出版本号
@@ -212,7 +211,7 @@ Misc:
 | 0 | 成功（含 dry-run 通过） |
 | 1 | 运行出错（文件读写、安装、备份等） |
 | 2 | 命令行用法错误（未知参数、--url 为空、-o 缺少输出路径） |
-| 3 | 配置或数据错误（配置文件缺失或格式错误、重复名称、模板错误、无可用节点、校验失败） |
+| 3 | 配置或数据错误（配置文件缺失或格式错误、订阅名重复、模板错误、无可用节点、校验失败） |
 | 4 | 订阅源失败：任一订阅或节点文件拉取/解析失败（保留上次成功配置，下次运行自动重试） |
 
 ## 构建
