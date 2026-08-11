@@ -160,33 +160,47 @@ proxies: []    # clash
 ## CLI 参数
 
 ```
+Config:
 -c, --config <path>      配置 zon（默认 ./config.zon）
--o, --output <fmt>[:<tmpl>][=<path>]  输出目标（可多次；默认 raw）
-    --url [name=]<url>   命令行订阅（可多次；省略 name= 即匿名）
+
+Input:
+    --url <[name=]url>   订阅 URL（可多次；省略 [name=] 即匿名）
     --node <uri>         直接粘贴节点 URI（可多次）
     --node-file <path>   节点列表文件（每行一个 URI）
-    --info-keyword <kw>  信息节点关键词（可多次；"" 清空 = 不过滤）
-    --sep <str>          节点名前缀分隔符（默认 @）
-    --dry-run            只校验不写文件
-    --ua <str>           默认 User-Agent
-    --listen <addr>      客户端监听地址（默认 127.0.0.1）
-    --port <n>           客户端监听端口（默认 1080，socks5）
+
+Output:
+-o, --output <fmt>[:<tmpl>][=<path>]
+                          输出目标（可多次；默认 raw）
+                          fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw
+                          tmpl: 自定义模板文件（clash/singbox）
+                          path: 输出文件或目录；'-' = stdout
+
+Client config（仅内置模板生效）:
+    --listen <addr>      socks5 监听地址（默认 127.0.0.1）
+    --port <n>           socks5 监听端口（默认 1080）
     --mixed-port <n>     clash mixed-port（默认 65500）
-    --allow-lan          clash allow-lan（默认关）
-    --tproxy-port <n>    tproxy 端口（默认不启用）
-    --tproxy-ipv6        v6 tproxy 双栈（默认关）
-    --log-level <level>  客户端日志级别 debug|info|warn|err（默认 info）
-    --controller <a:p>   clash external-controller / sing-box clash_api
-                         （sing-box 需配合 --singbox-clash-api）
+    --controller <a:p>   API 地址（clash/sing-box；默认 127.0.0.1:65501）
     --secret <str>       API secret（默认自动生成并持久化，跨运行稳定）
     --singbox-clash-api  sing-box 输出启用 clash_api
-    --no-verify          跳过校验
+    --allow-lan          clash allow-lan
+    --tproxy-port <n>    tproxy 端口（clash + sing-box）
+    --tproxy-ipv6        v6 tproxy 双栈（clash + sing-box）
+    --log-level <level>  客户端日志级别 debug|info|warn|err（默认 info）
+
+Deploy:
+    --no-verify          跳过客户端校验命令
     --no-reload          安装后不重载
-    --reload-cmd <cmd>   安装后执行自定义命令（优先于 .zon 配置）
-    --reset-state        删除持久化的 API secret（state 目录，下次运行自动生成新的；lock 文件保留）
--v, --verbose            详细输出
+    --reload-cmd <cmd>   安装后执行自定义命令（sh -c '<cmd>'）
+
+Misc:
+    --dry-run            只校验不写文件
+    --ua <str>           发送给订阅服务器的 User-Agent
+    --info-keyword <kw>  信息节点关键词（可多次；"" = 不过滤）
+    --sep <str>          订阅名/节点名分隔符（默认 @）
+    --reset-state        删除持久化的 API secret（下次运行重新生成）
+-v, --verbose            详细输出（节点列表）
 -h, --help               帮助
-    -V, --version         输出版本号
+-V, --version            输出版本号
 ```
 
 ## 协议支持
