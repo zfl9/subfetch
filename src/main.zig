@@ -70,10 +70,7 @@ pub fn main() !void {
                 },
             }
         };
-        const cfg_src = arena.dupeZ(u8, text) catch {
-            log.err(null, "out of memory", .{});
-            std.process.exit(1);
-        };
+        const cfg_src = arena.dupeZ(u8, text) catch oom();
         const parsed = config.parse(arena, cfg_src) catch |e| {
             log.err(null, "failed to parse config {s}: {s}", .{ opts.config, @errorName(e) });
             std.process.exit(3);
@@ -333,11 +330,43 @@ fn cleanupStageATmps() void {
 }
 
 /// unified failure exit: clean up Stage A temps, log, and exit(1)
-fn abort(arena: std.mem.Allocator, exit_code: u8, comptime fmt: []const u8, args: anytype) noreturn {
-    _ = arena;
+fn abort(exit_code: u8, comptime fmt: []const u8, args: anytype) noreturn {
     cleanupStageATmps();
     log.err(null, fmt, args);
     std.process.exit(exit_code);
+}
+
+/// allocation-failure shorthand: the arena is page-backed, so OOM is a
+/// degenerate state; failing fast beats threading an error union through
+fn oom() noreturn {
+    abort(1, "out of memory", .{});
+}
+
+/// ".new"/".new.json" sibling path for a target (json suffix for dir
+/// formats: xray -test infers the format from the file extension)
+fn tmpName(arena: std.mem.Allocator, target: []const u8, is_dir: bool) []const u8 {
+    return if (is_dir)
+        std.fmt.allocPrint(arena, "{s}.new.json", .{target}) catch oom()
+    else
+        std.fmt.allocPrint(arena, "{s}.new", .{target}) catch oom();
+}
+
+fn joinPath(arena: std.mem.Allocator, parts: []const []const u8) []const u8 {
+    return std.fs.path.join(arena, parts) catch oom();
+}
+
+/// install a verified temp file into place: back up the existing config
+/// (acme.sh style) then rename
+fn installVerified(arena: std.mem.Allocator, target: []const u8, tmp: []const u8) void {
+    if (deploy.fileExists(target)) {
+        const bak = std.fmt.allocPrint(arena, "{s}.bak", .{target}) catch oom();
+        std.fs.cwd().copyFile(target, std.fs.cwd(), bak, .{}) catch |e| {
+            abort(1, "failed to backup {s}: {s}", .{ target, @errorName(e) });
+        };
+    }
+    std.fs.cwd().rename(tmp, target) catch |e| {
+        abort(1, "failed to write {s}: {s}", .{ target, @errorName(e) });
+    };
 }
 
 /// Stage A: verify all files of all targets before anything is installed.
@@ -350,34 +379,22 @@ fn verifyAll(arena: std.mem.Allocator, fmt: render.Format, files: []const render
         // output (millisecond work), while only the client command is skipped
         for (files) |f| {
             if (deploy.syntaxCheck(arena, fmt, f.content) == .failed) {
-                abort(arena, 3, "syntax check failed, aborting: {s} (nothing installed)", .{path});
+                abort(3, "syntax check failed, aborting: {s} (nothing installed)", .{path});
             }
         }
         return;
     }
     if (isDirFormat(fmt)) {
         std.fs.cwd().makePath(path) catch |e| {
-            abort(arena, 1, "failed to create directory {s}: {s}", .{ path, @errorName(e) });
+            abort(1, "failed to create directory {s}: {s}", .{ path, @errorName(e) });
         };
     }
     for (files) |f| {
-        const target = if (isDirFormat(fmt))
-            std.fs.path.join(arena, &.{ path, f.path }) catch {
-                abort(arena, 1, "path join failed", .{});
-            }
-        else
-            path;
+        const target = if (isDirFormat(fmt)) joinPath(arena, &.{ path, f.path }) else path;
         // note: xray -test infers format from extension, tmp must end with .json
-        const tmp = if (isDirFormat(fmt))
-            std.fmt.allocPrint(arena, "{s}.new.json", .{target}) catch {
-                abort(arena, 1, "out of memory", .{});
-            }
-        else
-            std.fmt.allocPrint(arena, "{s}.new", .{target}) catch {
-                abort(arena, 1, "out of memory", .{});
-            };
+        const tmp = tmpName(arena, target, isDirFormat(fmt));
         deploy.atomicWrite(arena, tmp, f.content) catch |e| {
-            abort(arena, 1, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
+            abort(1, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
         };
         // OOM is unlikely (arena over page_allocator), but if the path cannot be
         // recorded the file must still not survive an abort: delete it right away
@@ -386,7 +403,7 @@ fn verifyAll(arena: std.mem.Allocator, fmt: render.Format, files: []const render
         };
         const vr = deploy.verifyContent(arena, fmt, f.content, tmp);
         if (vr == .failed) {
-            abort(arena, 3, "verify failed, aborting: {s} (nothing installed)", .{target});
+            abort(3, "verify failed, aborting: {s} (nothing installed)", .{target});
         }
     }
 }
@@ -406,37 +423,23 @@ fn installAll(
     if (isDirFormat(fmt)) {
         const dir = path;
         std.fs.cwd().makePath(dir) catch |e| {
-            abort(arena, 1, "failed to create directory {s}: {s}", .{ dir, @errorName(e) });
+            abort(1, "failed to create directory {s}: {s}", .{ dir, @errorName(e) });
         };
         // change detection: install only files whose content actually changed;
         // every file unchanged -> skip install & reload entirely
         var installed: usize = 0;
         for (files) |f| {
-            const fpath = std.fs.path.join(arena, &.{ dir, f.path }) catch {
-                abort(arena, 1, "path join failed", .{});
-            };
+            const fpath = joinPath(arena, &.{ dir, f.path });
             if (!deploy.contentDiffers(arena, fpath, f.content)) continue;
             installed += 1;
             if (!verify) {
                 deploy.atomicWrite(arena, fpath, f.content) catch |e| {
-                    abort(arena, 1, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
+                    abort(1, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
                 };
             } else {
-                const tmp = std.fmt.allocPrint(arena, "{s}.new.json", .{fpath}) catch {
-                    abort(arena, 1, "out of memory", .{});
-                };
-                // backup existing config (acme.sh style)
-                if (deploy.fileExists(fpath)) {
-                    const bak = std.fmt.allocPrint(arena, "{s}.bak", .{fpath}) catch {
-                        abort(arena, 1, "out of memory", .{});
-                    };
-                    std.fs.cwd().copyFile(fpath, std.fs.cwd(), bak, .{}) catch |e| {
-                        abort(arena, 1, "failed to backup {s}: {s}", .{ fpath, @errorName(e) });
-                    };
-                }
-                std.fs.cwd().rename(tmp, fpath) catch |e| {
-                    abort(arena, 1, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
-                };
+                // stage A wrote tmpName(...) already; rename it into place with
+                // a backup of the existing config (acme.sh style)
+                installVerified(arena, fpath, tmpName(arena, fpath, true));
             }
         }
         // drop the Stage A .new.json artifacts that were not renamed into place
@@ -466,33 +469,17 @@ fn installAll(
         const f = files[0];
         if (!deploy.contentDiffers(arena, path, f.content)) {
             // drop the Stage A .new temp; nothing installed, nothing reloaded
-            const tmp = std.fmt.allocPrint(arena, "{s}.new", .{path}) catch {
-                abort(arena, 1, "out of memory", .{});
-            };
-            std.fs.cwd().deleteFile(tmp) catch {};
+            std.fs.cwd().deleteFile(tmpName(arena, path, false)) catch {};
             log.info(null, "config unchanged, skip install & reload: {s}", .{path});
             return;
         }
         if (!verify) {
             deploy.atomicWrite(arena, path, f.content) catch |e| {
-                abort(arena, 1, "failed to write {s}: {s}", .{ path, @errorName(e) });
+                abort(1, "failed to write {s}: {s}", .{ path, @errorName(e) });
             };
             log.info(null, "installed {s}", .{path});
         } else {
-            const tmp = std.fmt.allocPrint(arena, "{s}.new", .{path}) catch {
-                abort(arena, 1, "out of memory", .{});
-            };
-            if (deploy.fileExists(path)) {
-                const bak = std.fmt.allocPrint(arena, "{s}.bak", .{path}) catch {
-                    abort(arena, 1, "out of memory", .{});
-                };
-                std.fs.cwd().copyFile(path, std.fs.cwd(), bak, .{}) catch |e| {
-                    abort(arena, 1, "failed to backup {s}: {s}", .{ path, @errorName(e) });
-                };
-            }
-            std.fs.cwd().rename(tmp, path) catch |e| {
-                abort(arena, 1, "failed to write {s}: {s}", .{ path, @errorName(e) });
-            };
+            installVerified(arena, path, tmpName(arena, path, false));
             log.info(null, "installed {s} (verify passed)", .{path});
         }
         if (reload) {
