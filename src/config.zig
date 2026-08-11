@@ -51,7 +51,7 @@ pub const Config = struct {
     /// socks inbound stays (debug/curl testing) (CLI --tproxy-port wins)
     tproxy_port: ?u16 = null,
     /// client log level (clash log-level / sing-box log.level), built-in templates
-    /// only: debug|info|warning|error, default info (CLI --log-level wins)
+    /// only: debug|info|warn|err, default info (CLI --log-level wins)
     log_level: ?render.LogLevel = null,
     /// clash/singbox external-controller (CLI --controller wins)
     controller: ?[]const u8 = null,

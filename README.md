@@ -86,7 +86,7 @@ CLI 与 .zon 输入一一对应：
     .allow_lan = true,                 // clash allow-lan（clash 专用）
     .tproxy_port = 60080,              // tproxy 端口（clash + sing-box）
     .tproxy_ipv6 = true,               // v6 tproxy 双栈（clash ipv6 / sing-box tproxy-in-v6）
-    .log_level = "warning",            // 客户端日志级别 debug|info|warning|error
+    .log_level = .warn,              // 客户端日志级别 debug|info|warn|err
     .controller = "127.0.0.1:65501",   // clash external-controller / sing-box clash_api（需 .singbox_clash_api）
     .singbox_clash_api = true,         // sing-box 输出启用 clash_api
     .reload_cmd = "systemctl restart clash",   // 所有输出的默认重载命令
@@ -171,7 +171,7 @@ proxies: []    # clash
     --allow-lan          clash allow-lan（默认关）
     --tproxy-port <n>    tproxy 端口（默认不启用）
     --tproxy-ipv6        v6 tproxy 双栈（默认关）
-    --log-level <lvl>    客户端日志级别 debug|info|warning|error（默认 info）
+    --log-level <level>  客户端日志级别 debug|info|warn|err（默认 info）
     --controller <a:p>   clash external-controller / sing-box clash_api
                          （sing-box 需配合 --singbox-clash-api）
     --secret <str>       API secret（默认自动生成并持久化，跨运行稳定）
