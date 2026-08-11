@@ -19,8 +19,8 @@ pub const Options = struct {
     /// node name separator; null = .zon sep or default "@"
     sep: ?[]const u8 = null,
     timeout: ?u32 = null,
-    /// 0=normal, 1=-v (bytes + node list)
-    verbose: u8 = 0,
+    /// -v/--verbose: node list + api secret (no deeper levels)
+    verbose: bool = false,
     nodes: std.ArrayListUnmanaged([]const u8) = .empty,
     node_files: std.ArrayListUnmanaged([]const u8) = .empty,
     /// CLI subscriptions (--url [name=]url), same semantics as .zon subscriptions
@@ -70,7 +70,7 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             // -v/--verbose: single verbose level (node list, api secret). -vv/-vvv
             // were removed: their old stdout semantics were replaced by -o fmt=-,
             // and no deeper verbose level exists (strict parsing, no -verbose)
-            opts.verbose = 1;
+            opts.verbose = true;
         } else if (std.mem.eql(u8, a, "--singbox-clash-api")) {
             opts.singbox_clash_api = true;
         } else if (std.mem.eql(u8, a, "--allow-lan")) {

@@ -211,7 +211,7 @@ pub fn main() !void {
     var rendered: std.ArrayListUnmanaged(Rendered) = .empty;
     for (opts.outputs.items) |o| {
         // verbose: report nodes skipped due to unsupported protocol (explicit filter)
-        if (opts.verbose > 0) {
+        if (opts.verbose) {
             var unsupported: usize = 0;
             for (nodes) |n| {
                 if (!render_mod.supports(o.fmt, n)) unsupported += 1;
@@ -288,7 +288,7 @@ pub fn main() !void {
     logInfo(null, "subscriptions {d}/{d} ok, {d} failed, {d} nodes, {s}", .{
         ok_cnt, subs.items.len, fail_cnt, nodes.len, fmt_part,
     });
-    if (opts.secret == null and opts.verbose > 0 and !opts.dry_run) {
+    if (opts.secret == null and opts.verbose and !opts.dry_run) {
         var need_secret = false;
         for (opts.outputs.items) |o| {
             if (o.fmt == .clash or o.fmt == .singbox) need_secret = true;
@@ -611,7 +611,7 @@ fn processSubscription(
     if (result.info > 0) {
         try extras.append(arena, try std.fmt.allocPrint(arena, "{d} info", .{result.info}));
         // verbose: list filtered info (notice) nodes for debugging
-        if (opts.verbose > 0) {
+        if (opts.verbose) {
             for (result.info_names) |nm| {
                 logVerbose(null, "  ! {s} (info node, filtered)", .{nm});
             }
@@ -621,7 +621,7 @@ fn processSubscription(
     msg = try std.fmt.allocPrint(arena, "{s}, {s}", .{ msg, try std.mem.join(arena, ", ", extras.items) });
     logInfo(sub_label, "{s}", .{msg});
     // verbose: short node list (strip the "sub-name<sep>" prefix), indented under the summary
-    if (opts.verbose > 0) {
+    if (opts.verbose) {
         const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ s.name orelse "", sep });
         for (result.nodes) |n| {
             const short = if (std.mem.startsWith(u8, n.name(), prefix))

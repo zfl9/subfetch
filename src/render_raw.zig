@@ -6,8 +6,7 @@ const JsonValue = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
 
 /// render raw format: node JSON list (for other tools/scripts)
-pub fn renderRaw(arena: std.mem.Allocator, nodes: []const node.Node, template: ?[]const u8) ![]const render.File {
-    _ = template; // raw has no template support
+pub fn renderRaw(arena: std.mem.Allocator, nodes: []const node.Node) ![]const render.File {
     var arr = std.json.Array.init(arena);
     for (nodes) |n| {
         try arr.append(try nodeToJson(arena, n));
@@ -203,7 +202,7 @@ test "render raw" {
             .password = "ss-pass",
         } },
     };
-    const text = (try renderRaw(a, &nodes, null))[0].content;
+    const text = (try renderRaw(a, &nodes))[0].content;
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, text, .{});
     try std.testing.expectEqual(@as(usize, 2), v.array.items.len);
     const t = v.array.items[0].object;
@@ -251,7 +250,7 @@ test "raw full fields (vless reality + ws/grpc + alpn + plugin)" {
             .plugin = .{ .shadow_tls = .{ .host = "www.bing.com", .password = "st", .version = 3 } },
         } },
     };
-    const text = (try renderRaw(a, &nodes, null))[0].content;
+    const text = (try renderRaw(a, &nodes))[0].content;
     const v = try std.json.parseFromSliceLeaky(JsonValue, a, text, .{});
     const arr = v.array.items;
 

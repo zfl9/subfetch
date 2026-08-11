@@ -93,13 +93,13 @@ pub fn render(
     return switch (fmt) {
         .clash => @import("render_clash.zig").renderClash(arena, use_nodes, opts, template),
         .singbox => @import("render_singbox.zig").renderSingbox(arena, use_nodes, opts, template),
-        .trojan => @import("render_native.zig").renderTrojan(arena, use_nodes, opts, template),
-        .hysteria => @import("render_native.zig").renderHysteria(arena, use_nodes, opts, template),
-        .hysteria2 => @import("render_native.zig").renderHysteria2(arena, use_nodes, opts, template),
-        .xray => @import("render_native.zig").renderXray(arena, use_nodes, opts, template),
-        .ss => @import("render_native.zig").renderSs(arena, use_nodes, opts, template),
-        .ssr => @import("render_native.zig").renderSsr(arena, use_nodes, opts, template),
-        .raw => @import("render_raw.zig").renderRaw(arena, use_nodes, template),
+        .trojan => @import("render_native.zig").renderTrojan(arena, use_nodes, opts),
+        .hysteria => @import("render_native.zig").renderHysteria(arena, use_nodes, opts),
+        .hysteria2 => @import("render_native.zig").renderHysteria2(arena, use_nodes, opts),
+        .xray => @import("render_native.zig").renderXray(arena, use_nodes, opts),
+        .ss => @import("render_native.zig").renderSs(arena, use_nodes, opts),
+        .ssr => @import("render_native.zig").renderSsr(arena, use_nodes, opts),
+        .raw => @import("render_raw.zig").renderRaw(arena, use_nodes),
     };
 }
 
