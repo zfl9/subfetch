@@ -42,8 +42,8 @@ subfetch -c config.zon -o clash=/etc/clash/config.yaml \
             .name = "xx机场", // 订阅名，作为节点名的前缀
             .url = "https://example.com/sub?token=xxx",
         },
-        .{ 
-            // 不需要订阅名，那就省略name
+        .{
+            // 不需要订阅名就省略 name
             .url = "https://example.com/anon",
         },
     },
@@ -103,27 +103,30 @@ crontab / systemd timer 中只需执行：`subfetch -c /path/to/config.zon`。
 
 - `-o` 语法：`-o <fmt>[:模板路径]=<输出路径>`，可多次
 - 路径写 `-` 则输出到终端（配合 `--dry-run` 预览）
-- 原生格式文件名即节点名；没装校验程序时退化为语法检查；sing-box 不支持的节点（ssr、v2ray-plugin）自动跳过并在日志提示
 
 ## 模板
 
 clash / sing-box 输出支持自定义模板：一份完整的配置文件，把节点列表位置留成空：
 
 ```yaml
-proxies: []    # clash
+// 对于 clash
+proxies: []
 ```
 
 ```json
-"outbounds": []    // sing-box
+// 对于 sing-box
+"outbounds": []
 ```
 
 - 模板里没写 `proxy-groups` / `rules` 会自动补默认，写了就完全保留
-- 组里的节点列表用 `__NODES__` 标记插入位置
-- 模板即最终配置：subfetch 只填充节点列表，不改动任何其他字段
+- proxy-groups 的节点列表中可用 `__NODES__` 特殊节点名来标记插入位置
+- 模板即最终配置：subfetch 只填充 & 展开节点列表，不改动任何其他字段
 
 ## 内置模板
 
-不提供模板时使用内置模板，按 ss-tproxy 场景设计：DNS 分流交给 chinadns-ng、L4 分流交给 ss-tproxy（流量全部进代理）、不启用 tun、监听 127.0.0.1。配置里的 `listen` / `port` / `mixed_port` / `tproxy_port` / `allow_lan` / `tproxy_ipv6` / `log_level` / `controller` / `secret` / `singbox_clash_api` 就是内置模板的参数，自定义模板下这些字段不生效。
+不提供模板时将使用内置模板，内置模板是按 ss-tproxy 使用场景设计的：DNS 分流交给 chinadns-ng、L4 分流交给 ss-tproxy（流量全部进代理）、只监听 127.0.0.1 (socks5 / tproxy)。
+
+这些配置属于内置模板的控制参数（自定义模板时将完全忽略）：`listen` / `port` / `mixed_port` / `tproxy_port` / `allow_lan` / `tproxy_ipv6` / `log_level` / `controller` / `secret` / `singbox_clash_api`。
 
 ## CLI 参数
 
@@ -184,7 +187,7 @@ Misc:
 | hysteria 2.x | ✅ | ✅ | ✅ | ✅ hy2 |
 | tuic | ✅ | ✅ | ✅ | — |
 
-不支持的协议（如 anytls / wireguard）按行跳过并在日志提示。
+> 不支持的协议（如 anytls / wireguard）自动跳过并在日志中提示。
 
 ## 构建
 
@@ -202,7 +205,7 @@ zig build -Dtarget=aarch64-linux-musl -Doptimize=ReleaseSmall
 
 ## 平台
 
-Linux 是目标平台（x86_64 / aarch64 / arm / riscv64 等）。macOS / Windows 能编译但不发布——本工具是 ss-tproxy 工具链的一环。
+Linux 是目标平台（x86_64 / aarch64 / arm / riscv64 等）。macOS / Windows 能编译但不发布。
 
 ## 相关项目
 
