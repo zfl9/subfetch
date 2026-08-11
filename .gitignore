@@ -1,6 +1,5 @@
 # user configs (copy from config.example.zon; contain real subscription tokens, never commit)
 config.zon
-real.zon
 
 # install-time backups (deploy renames old configs to .bak)
 *.bak
