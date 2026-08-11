@@ -9,13 +9,12 @@
 - 支持的协议：ss / ssr / vmess / vless / trojan / hysteria / hysteria2 / tuic
 - 订阅格式：URI 列表、base64、clash YAML、v2rayN JSON、sing-box JSON
 - 输出：clash / sing-box 聚合配置，原生客户端配置，raw 节点列表（JSON）
-- 写配置前先校验，校验不过就不覆盖旧配置
+- 写配置前先校验（优先使用真实客户端进行校验），校验失败将保留原有配置
 - 安装后自动重载代理（可自定义重载命令）；订阅没更新时自动跳过安装与重载
-- 任一订阅失败时保留上次成功配置并自动重试，配置不会因为一次失败就丢失
 
 ## 快速开始
 
-先从 [Releases](https://github.com/zfl9/subfetch/releases) 下载对应架构的二进制（想自己构建见文末）。
+从 [Releases](https://github.com/zfl9/subfetch/releases) 下载对应架构的二进制。
 
 ```sh
 # 1. 复制示例配置并编辑
@@ -38,19 +37,18 @@ subfetch -c config.zon -o clash=/etc/clash/config.yaml \
 
 ```zig
 .{
-    .ua = "clash-verge/v2.2.3",        // 默认 User-Agent
     .subscriptions = .{
         .{
-            .name = "xx机场",            // 订阅名，作为节点名的前缀
+            .name = "xx机场", // 订阅名，作为节点名的前缀
             .url = "https://example.com/sub?token=xxx",
-            // .ua = "custom-ua/1.0",   // 本条订阅单独的 User-Agent
         },
-        .{ .url = "/etc/nodes.txt" },   // 不需要订阅名就省略 name
+        .{ 
+            // 不需要订阅名，那就省略name
+            .url = "https://example.com/anon",
+        },
     },
 }
 ```
-
-`url` 支持 https / http / `file://` 或本地路径。节点名格式为 `订阅名@节点名`，分隔符可用 `--sep` 修改。
 
 CLI 与 .zon 一一对应：
 
@@ -84,8 +82,6 @@ CLI 与 .zon 一一对应：
             .fmt = .clash,
             .path = "/etc/clash/config.yaml",
             .reload_cmd = "systemctl restart clash",
-            .verify = false,               // 可选：跳过该校验（默认开）
-            .reload = false,               // 可选：跳过该重载（默认开）
         },
         .{ .fmt = .singbox, .path = "/etc/sing-box/config.json" },
     },
@@ -93,21 +89,7 @@ CLI 与 .zon 一一对应：
 }
 ```
 
-之后每天只需一条命令：`subfetch -c config.zon`。
-
-## 通知节点过滤
-
-机场订阅常夹带通知节点（如 `到期2026-12-21 剩余流量279.95G`）。默认按关键词过滤：`到期` `剩余` `有效期` `套餐` `官网` + `expire` `traffic` `usage` `plan`（英文不区分大小写）。日志会显示过滤数量，`-v` 可列出被过滤的节点。
-
-自定义关键词会覆盖默认（空数组 = 不过滤）：
-
-```zig
-.{
-    .info_keywords = .{ "到期", "剩余流量" },
-}
-```
-
-CLI 等价写法：`--info-keyword 到期 --info-keyword 剩余流量`；`--info-keyword ""` 清空。
+crontab / systemd timer 中只需执行：`subfetch -c /path/to/config.zon`。
 
 ## 输出格式
 
@@ -204,27 +186,16 @@ Misc:
 
 不支持的协议（如 anytls / wireguard）按行跳过并在日志提示。
 
-## 退出码
-
-| 退出码 | 含义 |
-|---|---|
-| 0 | 成功（含 dry-run 通过） |
-| 1 | 运行出错（文件读写、安装、备份等） |
-| 2 | 命令行用法错误（未知参数、--url 为空、-o 缺少输出路径） |
-| 3 | 配置或数据错误（配置文件缺失或格式错误、订阅名重复、模板错误、无可用节点、校验失败） |
-| 4 | 订阅源失败：任一订阅或节点文件拉取/解析失败（保留上次成功配置，下次运行自动重试） |
-
 ## 构建
 
-需要 Zig 0.15.2（其他版本直接编译报错）。
+> 工具链锁定为 Zig 0.15.2 版本。
 
 ```sh
-zig build -Doptimize=ReleaseSmall                     # x86_64-linux-musl 静态二进制
-zig build -Dtarget=aarch64-linux-musl -Doptimize=ReleaseSmall   # 交叉编译
-zig build test                                          # 单元测试
-zig build smoke                                        # 9 格式冒烟（dry-run）
-zig build integration                                 # 集成测试（安装/退出码/并发锁）
-                                                      # -Dintegration_filter=lock 只跑单套件
+# 本机 musl 静态链接
+zig build -Doptimize=ReleaseSmall
+
+# 交叉编译：aarch64 (arm64)
+zig build -Dtarget=aarch64-linux-musl -Doptimize=ReleaseSmall
 ```
 
 产物在 `zig-out/bin/subfetch`。
