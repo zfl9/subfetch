@@ -26,7 +26,9 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(arena);
     var opts = cli.Options{};
     cli.parseArgs(arena, args, &opts) catch |e| {
-        log.err(null, "failed to parse arguments: {s}", .{@errorName(e)});
+        // BadArg already logged its specific reason inside parseArgs
+        // (unknown argument / invalid value / missing value ...)
+        if (e == error.OutOfMemory) log.err(null, "out of memory", .{});
         cli.printUsage();
         std.process.exit(2);
     };
