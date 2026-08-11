@@ -220,7 +220,7 @@ const max_name_len = 60;
 /// sanitize a name: strip control chars, collapse whitespace, drop decorative
 /// codepoints (emoji, misc symbols, variation selectors, ZWJ), truncate overlong
 /// names. invalid/truncated UTF-8 tails pass through byte-wise.
-pub fn sanitizeName(allocator: std.mem.Allocator, n: []const u8) ![]const u8 {
+fn sanitizeName(allocator: std.mem.Allocator, n: []const u8) ![]const u8 {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     errdefer buf.deinit(allocator);
     var prev_space = false;
