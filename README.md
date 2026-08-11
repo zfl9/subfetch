@@ -207,7 +207,9 @@ proxies: []    # clash
 ```sh
 zig build -Doptimize=ReleaseSmall                     # x86_64-linux-musl 静态二进制
 zig build -Dtarget=aarch64-linux-musl -Doptimize=ReleaseSmall   # 交叉编译
-zig build test                                        # 单元测试
+zig build test                                          # 单元测试
+zig build smoke                                        # 9 格式冒烟（dry-run）
+zig build integration                                 # 集成测试（安装/退出码/并发锁）
 ```
 
 产物在 `zig-out/bin/subfetch`。

@@ -1,11 +1,11 @@
 #!/bin/sh
-# install-path smoke test: first install -> unchanged skip -> partial rewrite.
+# install-path integration test: first install -> unchanged skip -> partial rewrite.
 # fully isolated: outputs go to the build cache dir, --no-reload, and
 # XDG_STATE_HOME points into the isolated dir - never touches real configs,
 # services, or state.
 set -eu
 
-echo "=== smoke-install ==="
+echo "=== integration-install ==="
 
 EXE=$1
 DIR=$2

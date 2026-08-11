@@ -35,21 +35,21 @@ jobs:
           echo "::endgroup::"
       - name: Build release target
         run: zig build release -Doptimize=${{ inputs.optimize || 'ReleaseSmall' }} -Drelease_filter=${{ matrix.target }}
-      - name: Test release target (unit tests + fixtures smoke, qemu for cross)
+      - name: Release-check (unit tests + 9-format smokes, qemu for cross)
         # note: qemu-mips (big-endian 32-bit O32) emulation has a musl libc
         # 64-bit-return bug (localtime_r shows 1970-01-01 timestamps); it only
         # affects log timestamps under qemu, real mips hardware is unaffected.
-        run: zig build release-test -Doptimize=${{ inputs.optimize || 'ReleaseSmall' }} -Drelease_filter=${{ matrix.target }}
+        run: zig build release-check -Doptimize=${{ inputs.optimize || 'ReleaseSmall' }} -Drelease_filter=${{ matrix.target }}
       - name: Native integration tests (install path / exit codes / flock, x86_64 only)
         # unit tests + 9 format smokes are already covered per-arch by
-        # release-test (qemu); the three integration suites (install path /
+        # release-check (qemu); the three integration suites (install path /
         # exit codes / flock lock) need real processes/fs/locks, so they run
         # natively on the x86_64 entry only.
         if: matrix.target == 'x86_64'
         run: |
-          zig build smoke-install
-          zig build smoke-exitcodes
-          zig build smoke-lock
+          zig build integration-install
+          zig build integration-exitcodes
+          zig build integration-lock
       - name: Package
         run: |
           mkdir -p dist

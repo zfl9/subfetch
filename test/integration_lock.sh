@@ -4,7 +4,7 @@
 # releases. isolated XDG_STATE_HOME, --no-reload, --no-verify.
 set -eu
 
-echo "=== smoke-lock ==="
+echo "=== integration-lock ==="
 
 EXE=$1
 WORK=$2
@@ -37,4 +37,4 @@ grep -q "another subfetch instance is running, waiting" "$TMP/log" || {
 }
 echo "ok: concurrent run waited and completed"
 
-echo "smoke-lock OK"
+echo "integration-lock OK"

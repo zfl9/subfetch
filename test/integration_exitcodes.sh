@@ -6,7 +6,7 @@
 # / 4 any subscription/node-file source failed (cron must not see success).
 set -eu
 
-echo "=== smoke-exitcodes ==="
+echo "=== integration-exitcodes ==="
 
 EXE=$1
 WORK=$2
@@ -67,4 +67,4 @@ expect_exit 0 "reset with state" "$EXE" --reset-state
 [ -f "$XDG_STATE_HOME/subfetch/lock" ] || { echo "FAIL: lock file must be kept"; exit 1; }
 expect_exit 0 "reset again" "$EXE" --reset-state
 
-echo "smoke-exitcodes OK"
+echo "integration-exitcodes OK"

@@ -53,12 +53,12 @@ fn createMod(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
 }
 
 fn addSmokeTest(b: *std.Build, exe: *std.Build.Step.Compile, arg_output: []const u8, matrix: ?ReleaseMatrix, prev: ?*std.Build.Step.Run) *std.Build.Step.Run {
-    const name = if (matrix) |m| b.fmt("smoke-test {s}", .{m.triple}) else "smoke-test";
+    const name = if (matrix) |m| b.fmt("smoke {s}", .{m.triple}) else "smoke";
 
     // visible separator before each run: subscription output is identical across
     // formats, only the trailing summary line differs. chained after prev so
     // parallel builds keep the runs ordered
-    const sep = b.addSystemCommand(&.{ "echo", b.fmt("=== smoke-test {s} ===", .{arg_output}) });
+    const sep = b.addSystemCommand(&.{ "echo", b.fmt("=== smoke {s} ===", .{arg_output}) });
     sep.stdio = .inherit;
     if (prev) |p| sep.step.dependOn(&p.step);
 
@@ -141,54 +141,56 @@ pub fn build(b: *std.Build) !void {
     const run_tests = b.addRunArtifact(tests);
     b.step("test", "run unit tests").dependOn(&run_tests.step);
 
-    // smoke test: all 9 output formats (native multi-file formats run too).
+    // smoke: all 9 output formats (native multi-file formats run too).
     // chained serially: the runs share identical output and the separator
     // lines must stay ordered
-    const smoke_test_step = b.step("smoke-test", "run smoke tests");
+    const smoke_step = b.step("smoke", "run 9-format smoke tests");
     const last_smoke = addAllSmokeTests(b, exe, null, null);
-    smoke_test_step.dependOn(&last_smoke.step);
+    smoke_step.dependOn(&last_smoke.step);
 
-    // install-path smoke test: first install -> unchanged skip -> partial rewrite.
-    // isolated dir + --no-reload + isolated XDG_STATE_HOME: never touches real
-    // configs, services, or state. native host only (CI's cross-arch release-test
-    // depends on addSmokeTest directly, unaffected).
-    const smoke_install_step = b.step("smoke-install", "run install-path smoke tests (isolated)");
-    const smoke_exitcodes_step = b.step("smoke-exitcodes", "run exit-code/reset-state smoke tests (isolated)");
-    const smoke_lock_step = b.step("smoke-lock", "run flock concurrency smoke test (isolated)");
+    // integration suites: real processes/fs/locks - install path (first install
+    // -> unchanged skip -> partial rewrite), exit-code semantics + reset-state,
+    // and flock concurrency. isolated dirs + --no-reload + isolated XDG_STATE_HOME:
+    // never touches real configs, services, or state. native host only (CI's
+    // cross-arch release-check depends on addSmokeTest directly, unaffected).
+    const integration_step = b.step("integration", "run integration test suites");
+    const integration_install_step = b.step("integration-install", "install path: first install -> unchanged skip -> partial rewrite");
+    const integration_exitcodes_step = b.step("integration-exitcodes", "exit-code semantics + reset-state file handling");
+    const integration_lock_step = b.step("integration-lock", "flock concurrency: overlapping runs serialize");
     var prev_install: ?*std.Build.Step.Run = null;
     {
-        const run = b.addSystemCommand(&.{ "sh", "test/smoke_install.sh" });
+        const run = b.addSystemCommand(&.{ "sh", "test/integration_install.sh" });
         run.addArtifactArg(exe);
-        run.addArg(b.pathFromRoot(".zig-cache/smoke-install"));
+        run.addArg(b.pathFromRoot(".zig-cache/integration-install"));
         run.stdio = .inherit;
         // after all format runs: its output would otherwise race into the
         // middle of the format list
         run.step.dependOn(&last_smoke.step);
         prev_install = run;
-        smoke_install_step.dependOn(&run.step);
-        smoke_test_step.dependOn(&run.step);
+        integration_install_step.dependOn(&run.step);
+        integration_step.dependOn(&run.step);
     }
     {
-        const run = b.addSystemCommand(&.{ "sh", "test/smoke_exitcodes.sh" });
+        const run = b.addSystemCommand(&.{ "sh", "test/integration_exitcodes.sh" });
         run.addArtifactArg(exe);
-        run.addArg(b.pathFromRoot(".zig-cache/smoke-exitcodes"));
+        run.addArg(b.pathFromRoot(".zig-cache/integration-exitcodes"));
         run.stdio = .inherit;
         if (prev_install) |p| run.step.dependOn(&p.step);
-        smoke_exitcodes_step.dependOn(&run.step);
-        smoke_test_step.dependOn(&run.step);
+        integration_exitcodes_step.dependOn(&run.step);
+        integration_step.dependOn(&run.step);
     }
     {
-        const run = b.addSystemCommand(&.{ "sh", "test/smoke_lock.sh" });
+        const run = b.addSystemCommand(&.{ "sh", "test/integration_lock.sh" });
         run.addArtifactArg(exe);
-        run.addArg(b.pathFromRoot(".zig-cache/smoke-lock"));
+        run.addArg(b.pathFromRoot(".zig-cache/integration-lock"));
         run.stdio = .inherit;
         if (prev_install) |p| run.step.dependOn(&p.step);
-        smoke_lock_step.dependOn(&run.step);
-        smoke_test_step.dependOn(&run.step);
+        integration_lock_step.dependOn(&run.step);
+        integration_step.dependOn(&run.step);
     }
 
     // release filter
-    const release_filter_raw = b.option([]const u8, "release_filter", "only build/test release targets for this arch");
+    const release_filter_raw = b.option([]const u8, "release_filter", "only build/check release targets for this arch");
     const release_filter = if (release_filter_raw) |filter| b.fmt("{s}-", .{filter}) else null;
 
     const release_step = b.step("release", "build exe for all release targets");
@@ -207,8 +209,8 @@ pub fn build(b: *std.Build) !void {
         release_step.dependOn(&r_install.step);
     }
 
-    const release_test_step = b.step("release-test", "unit-test & smoke-test for all release targets");
-    release_test_step.dependOn(release_step);
+    const release_check_step = b.step("release-check", "unit tests + 9-format smokes for all release targets");
+    release_check_step.dependOn(release_step);
     for (release_matrix, release_exes) |r_matrix, r_exe| {
         if (release_filter) |filter| if (!std.mem.startsWith(u8, r_matrix.triple, filter)) continue;
         // unit test
@@ -225,9 +227,9 @@ pub fn build(b: *std.Build) !void {
         r_run_tests.setName(b.fmt("unit-test {s}", .{r_matrix.triple}));
         r_run_tests.producer = r_tests;
         r_run_tests.stdio = .inherit;
-        release_test_step.dependOn(&r_run_tests.step);
+        release_check_step.dependOn(&r_run_tests.step);
 
-        // smoke test: all 9 formats (full protocol + serializer coverage per arch)
-        release_test_step.dependOn(&addAllSmokeTests(b, r_exe, r_matrix, null).step);
+        // smoke: all 9 formats (full protocol + serializer coverage per arch)
+        release_check_step.dependOn(&addAllSmokeTests(b, r_exe, r_matrix, null).step);
     }
 }
