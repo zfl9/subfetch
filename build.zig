@@ -144,7 +144,7 @@ pub fn build(b: *std.Build) !void {
     // smoke: all 9 output formats (native multi-file formats run too).
     // chained serially: the runs share identical output and the separator
     // lines must stay ordered
-    const smoke_step = b.step("smoke", "run 9-format smoke tests");
+    const smoke_step = b.step("smoke", "run smoke tests");
     const last_smoke = addAllSmokeTests(b, exe, null, null);
     smoke_step.dependOn(&last_smoke.step);
 
@@ -212,7 +212,7 @@ pub fn build(b: *std.Build) !void {
         release_step.dependOn(&r_install.step);
     }
 
-    const release_check_step = b.step("release-check", "unit tests + 9-format smokes for all release targets");
+    const release_check_step = b.step("release-check", "unit tests + smokes for all release targets");
     release_check_step.dependOn(release_step);
     for (release_matrix, release_exes) |r_matrix, r_exe| {
         if (release_filter) |filter| if (!std.mem.startsWith(u8, r_matrix.triple, filter)) continue;
