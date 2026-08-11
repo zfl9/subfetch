@@ -60,10 +60,10 @@ fn noCleanup(_: WaitCtx) void {}
 /// failure or timeout (the verifier is SIGKILLed so it cannot linger).
 fn runVerifier(arena: std.mem.Allocator, argv: []const []const u8) ?u8 {
     _ = arena;
-    return runVerifierTimed(argv, verify_timeout_ms);
+    return runCommandTimed(argv, verify_timeout_ms);
 }
 
-fn runVerifierTimed(argv: []const []const u8, timeout_ms: u32) ?u8 {
+fn runCommandTimed(argv: []const []const u8, timeout_ms: u32) ?u8 {
     var child = std.process.Child.init(argv, std.heap.page_allocator);
     child.stdin_behavior = .Ignore;
     child.stdout_behavior = .Ignore;
@@ -175,13 +175,17 @@ pub fn reloadSingbox(
     return reloadApi(arena, controller, secret, path, "sing-box");
 }
 
-/// run a user-defined reload command (acme.sh --reloadcmd style): /bin/sh -c <cmd>
+/// user-defined reload commands get the same timeout policy as the verifier:
+/// a hung command (script waiting on a network resource, stuck service tool)
+/// must not stall the cron run; it is SIGKILLed at the deadline.
+const reload_cmd_timeout_ms = 30_000;
+
+/// run a user-defined reload command (acme.sh --reloadcmd style): /bin/sh -c <cmd>,
+/// 30s timeout + SIGKILL (see runCommandTimed)
 pub fn reloadCustom(arena: std.mem.Allocator, cmd: []const u8) ReloadResult {
-    const r = std.process.Child.run(.{
-        .allocator = arena,
-        .argv = &.{ "/bin/sh", "-c", cmd },
-    }) catch return .failed;
-    return if (r.term == .Exited and r.term.Exited == 0) .custom else .failed;
+    _ = arena;
+    const code = runCommandTimed(&.{ "/bin/sh", "-c", cmd }, reload_cmd_timeout_ms);
+    return if (code != null and code.? == 0) .custom else .failed;
 }
 
 /// http PUT /configs?force=true with a timeout: std.http.Client has no built-in
@@ -339,6 +343,16 @@ test "reloadCustom runs shell command" {
     try std.testing.expectEqual(ReloadResult.failed, reloadCustom(a, "definitely-not-a-command-xyz"));
 }
 
+test "reloadCustom exit codes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    // success / failure exit codes (the hung-command timeout path is the
+    // same runCommandTimed code covered by the runVerifier timeout test)
+    try std.testing.expectEqual(ReloadResult.custom, reloadCustom(arena.allocator(), "true"));
+    try std.testing.expectEqual(ReloadResult.failed, reloadCustom(arena.allocator(), "false"));
+    try std.testing.expectEqual(ReloadResult.failed, reloadCustom(arena.allocator(), "definitely-not-a-command-xyz"));
+}
+
 test "runVerifier exit code and timeout kill" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -350,7 +364,7 @@ test "runVerifier exit code and timeout kill" {
     try std.testing.expectEqual(@as(?u8, null), runVerifier(a, &.{"definitely-not-a-command-xyz"}));
     // hung verifier: killed on timeout, runVerifier returns null promptly
     const t0 = std.time.milliTimestamp();
-    try std.testing.expectEqual(@as(?u8, null), runVerifierTimed(&.{ "sleep", "300" }, 1000));
+    try std.testing.expectEqual(@as(?u8, null), runCommandTimed(&.{ "sleep", "300" }, 1000));
     const elapsed = std.time.milliTimestamp() - t0;
     try std.testing.expect(elapsed >= 900);
     try std.testing.expect(elapsed < 5000);
@@ -367,6 +381,6 @@ test "compile-check" {
     _ = &reloadCustom;
     _ = &reloadApi;
     _ = &runVerifier;
-    _ = &runVerifierTimed;
+    _ = &runCommandTimed;
     _ = &waitWorker;
 }
