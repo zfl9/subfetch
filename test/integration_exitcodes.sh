@@ -34,6 +34,17 @@ OUT=$("$EXE" --version) || { echo "FAIL: --version exit"; exit 1; }
 echo "$OUT" | grep -q "^subfetch 0\." || { echo "FAIL: --version output: $OUT"; exit 1; }
 echo "ok: --version -> $OUT"
 
+# stdout purity: -o raw=- streams pure data (stdout is reserved for output,
+# log lines go to stderr; scripts pipe stdout to files/tools)
+OUT=$("$EXE" -c fixtures/config.zon -o raw=- --dry-run 2>/dev/null)
+echo "$OUT" | grep -q "^\[" || { echo "FAIL: raw=- stdout must start with [ (got: $(echo "$OUT" | head -1))"; exit 1; }
+echo "$OUT" | grep -q '"type": "trojan"' || { echo "FAIL: raw=- stdout missing node data"; exit 1; }
+echo "$OUT" | grep -q "2026-" && { echo "FAIL: log line leaked into stdout"; exit 1; }
+echo "ok: raw=- stdout is data-only"
+
+# --node-file input path (one URI per line)
+expect_exit 0 "node-file input" "$EXE" --node-file fixtures/plain_uris.txt --dry-run
+
 # 2: CLI usage errors
 expect_exit 2 "unknown option" "$EXE" -x
 expect_exit 2 "empty --url" "$EXE" --url "" --dry-run
