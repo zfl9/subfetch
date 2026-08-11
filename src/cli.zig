@@ -217,24 +217,15 @@ const Section = struct { title: []const u8, options: []const Opt };
 /// columns (indent included) go on their own line with the description
 /// indented below - the renderer computes this, no hand-padded text.
 const usage_sections = [_]Section{
-    .{ .title = "Options", .options = &.{
-        .{ .opt = "-c, --config <path>", .desc = &.{"configuration zon (default ./config.zon)"} },
-    } },
-    .{ .title = "Output targets", .options = &.{
-        .{ .opt = "-o, --output <fmt>[:<tmpl>][=<path>]", .desc = &.{
-            "output target (repeatable; default raw)",
-            "fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw",
-            "tmpl: template file (clash/singbox; optional)",
-            "path: output file (single-file) or directory (native); '-' = stdout",
-        } },
-    } },
     .{ .title = "Input sources", .options = &.{
+        .{ .opt = "-c, --config <path>", .desc = &.{"configuration zon (default ./config.zon)"} },
         .{ .opt = "--url <url>", .desc = &.{
             "subscription url (repeatable; [name=] prefix names the",
             "subscription, same semantics as .zon; omit for anonymous)",
         } },
         .{ .opt = "--node <uri>", .desc = &.{"directly pasted node URI (repeatable)"} },
         .{ .opt = "--node-file <path>", .desc = &.{"node list file (one URI per line)"} },
+        .{ .opt = "--ua <str>", .desc = &.{"User-Agent sent to subscription servers"} },
     } },
     .{ .title = "Filtering & naming", .options = &.{
         .{ .opt = "--info-keyword <kw>", .desc = &.{
@@ -243,9 +234,13 @@ const usage_sections = [_]Section{
         } },
         .{ .opt = "--sep <str>", .desc = &.{"node name separator between sub and node names (default @)"} },
     } },
-    .{ .title = "Run behavior", .options = &.{
-        .{ .opt = "--dry-run", .desc = &.{"verify only, write nothing"} },
-        .{ .opt = "--ua <str>", .desc = &.{"default User-Agent"} },
+    .{ .title = "Output targets", .options = &.{
+        .{ .opt = "-o, --output <fmt>[:<tmpl>][=<path>]", .desc = &.{
+            "output target (repeatable; default raw)",
+            "fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw",
+            "tmpl: template file (clash/singbox; optional)",
+            "path: output file (single-file) or directory (native); '-' = stdout",
+        } },
     } },
     .{ .title = "Output config", .options = &.{
         .{ .opt = "--listen <addr>", .desc = &.{"native client listen address (default 127.0.0.1)"} },
@@ -276,6 +271,9 @@ const usage_sections = [_]Section{
             "custom reload command after install (sh -c, overrides",
             "auto reload; acme.sh style)",
         } },
+    } },
+    .{ .title = "Run behavior", .options = &.{
+        .{ .opt = "--dry-run", .desc = &.{"verify only, write nothing"} },
     } },
     .{ .title = "Misc", .options = &.{
         .{ .opt = "--reset-state", .desc = &.{
