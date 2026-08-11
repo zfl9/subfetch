@@ -269,7 +269,7 @@ const usage_sections = [_]Section{
             "tproxy inbound port (clash + sing-box built-in",
             "templates; socks inbound stays; default off)",
         } },
-        .{ .opt = "--log-level <lvl>", .desc = &.{
+        .{ .opt = "--log-level <level>", .desc = &.{
             "client log level: debug|info|warn|error",
             "(built-in templates; default info)",
         } },
