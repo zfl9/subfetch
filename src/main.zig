@@ -230,14 +230,14 @@ pub fn main() !void {
                     for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
                 }
             }
-            try verifyDryRunFiles(arena, r.out.fmt, r.files);
+            if (r.out.verify orelse true) try verifyDryRunFiles(arena, r.out.fmt, r.files);
         }
     } else {
         // real mode: verify all first (atomic), then install all
         for (rendered.items) |r| {
             if (r.out.path) |p| {
                 if (std.mem.eql(u8, p, "-")) continue; // stdout: nothing to install
-                verifyAll(arena, r.out.fmt, r.files, p, opts.no_verify);
+                verifyAll(arena, r.out.fmt, r.files, p, !(r.out.verify orelse !opts.no_verify));
             }
         }
         // any source failure -> keep the last good configs: installing a
@@ -255,7 +255,7 @@ pub fn main() !void {
                         // stdout output
                         for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
                     } else {
-                        installAll(arena, r.out.fmt, r.files, p, opts, ropts, opts.reload_cmd orelse r.out.reload_cmd orelse cfg.reload_cmd);
+                        installAll(arena, r.out.fmt, r.files, p, ropts, r.out.verify orelse !opts.no_verify, r.out.reload orelse !opts.no_reload, opts.reload_cmd orelse r.out.reload_cmd orelse cfg.reload_cmd);
                     }
                 } else {
                     log.err(null, "output path required for {s} (use -o {s}=<path> or --dry-run)", .{ @tagName(r.out.fmt), @tagName(r.out.fmt) });
@@ -382,8 +382,9 @@ fn installAll(
     fmt: render.Format,
     files: []const render.File,
     path: []const u8,
-    opts: cli.Options,
     ropts: render.Options,
+    verify: bool,
+    reload: bool,
     reload_cmd: ?[]const u8,
 ) void {
     if (isDirFormat(fmt)) {
@@ -400,7 +401,7 @@ fn installAll(
             };
             if (!deploy.contentDiffers(arena, fpath, f.content)) continue;
             installed += 1;
-            if (opts.no_verify) {
+            if (!verify) {
                 deploy.atomicWrite(arena, fpath, f.content) catch |e| {
                     abort(arena, 1, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
                 };
@@ -434,7 +435,7 @@ fn installAll(
             return;
         }
         log.info(null, "wrote {d} files to {s} ({d} unchanged)", .{ installed, dir, files.len - installed });
-        if (!opts.no_reload) {
+        if (reload) {
             if (reload_cmd) |cmd| {
                 switch (deploy.reloadCustom(arena, cmd)) {
                     .custom => log.info(null, "custom reload command executed", .{}),
@@ -456,7 +457,7 @@ fn installAll(
             log.info(null, "config unchanged, skip install & reload: {s}", .{path});
             return;
         }
-        if (opts.no_verify) {
+        if (!verify) {
             deploy.atomicWrite(arena, path, f.content) catch |e| {
                 abort(arena, 1, "failed to write {s}: {s}", .{ path, @errorName(e) });
             };
@@ -478,7 +479,7 @@ fn installAll(
             };
             log.info(null, "installed {s} (verify passed)", .{path});
         }
-        if (!opts.no_reload) {
+        if (reload) {
             if (reload_cmd) |cmd| {
                 // custom reload command takes priority (acme.sh --reloadcmd style)
                 switch (deploy.reloadCustom(arena, cmd)) {

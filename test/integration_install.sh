@@ -40,4 +40,24 @@ echo "$OUT" | grep -q "wrote 1 files" || { echo "FAIL: expected 1 file rewrite";
 DEBRIS=$(find "$DIR" \( -name '*.new' -o -name '*.new.json' \) || true)
 [ -z "$DEBRIS" ] || { echo "FAIL: .new debris left behind: $DEBRIS"; exit 1; }
 
+# 5. per-output switches: .reload=false overrides the global reload_cmd,
+#    .verify=false skips verification for that output only
+cat > "$DIR/perout.zon" <<ZON
+.{
+    .subscriptions = .{
+        .{ .name = "t", .url = "fixtures/plain_uris.txt" },
+    },
+    .reload_cmd = "touch $DIR/reloaded",
+    .outputs = .{
+        .{ .fmt = .raw, .path = "$DIR/per-out.json", .reload = false },
+        .{ .fmt = .singbox, .path = "$DIR/per-sb.json", .verify = false, .reload = false },
+    },
+}
+ZON
+OUT=$("$EXE" -c "$DIR/perout.zon" 2>&1) || { echo "FAIL: per-output install exit"; exit 1; }
+echo "$OUT" | grep -q "installed $DIR/per-out.json (verify passed)" || { echo "FAIL: per-output raw install missing"; echo "$OUT"; exit 1; }
+echo "$OUT" | grep -q "installed $DIR/per-sb.json" || { echo "FAIL: per-output singbox install missing"; echo "$OUT"; exit 1; }
+[ ! -f "$DIR/reloaded" ] || { echo "FAIL: reload=false did not suppress global reload_cmd"; exit 1; }
+echo "ok: per-output verify/reload switches"
+
 echo "integration-install OK"

@@ -19,12 +19,16 @@
 
     // ── output targets (default: raw format) ────────────────────────
     //
-    // # one .{...} each; .fmt required, .tmpl/.path/.reload_cmd optional
+    // # one .{...} each; .fmt required, others optional
     //   fmt        : clash | singbox | trojan | hysteria | hysteria2 | xray | ss | ssr | raw
     //   tmpl       : user template path (clash/singbox only; replaces the built-in template)
     //   path       : output file (single-file formats) or directory (native formats);
     //                "-" = stdout; omitted + --dry-run = verify only
     //   reload_cmd : per-output reload command (overrides global .reload_cmd below)
+    //   verify     : per-output verify switch (default on; false = never verify,
+    //                true = always verify even with --no-verify)
+    //   reload     : per-output reload switch (default on; false = never reload,
+    //                true = always reload even with --no-reload)
     //
     // .outputs = .{
     //     .{

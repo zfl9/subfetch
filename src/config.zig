@@ -17,6 +17,13 @@ pub const Output = struct {
     path: ?[]const u8 = null,
     /// per-output reload command (overrides global .reload_cmd; CLI --reload-cmd wins)
     reload_cmd: ?[]const u8 = null,
+    /// per-output verify switch: null = global default (on; --no-verify turns
+    /// it off), false = never verify this output, true = always verify
+    /// (per-output explicit value wins over the CLI flag)
+    verify: ?bool = null,
+    /// per-output reload switch: null = global default (on; --no-reload turns
+    /// it off), false = never reload this output, true = always reload
+    reload: ?bool = null,
 };
 
 pub const Config = struct {
@@ -211,6 +218,31 @@ test "reject explicit empty name" {
         error.EmptySubscriptionName,
         parse(std.testing.allocator, source),
     );
+}
+
+test "parse per-output verify/reload switches" {
+    const src =
+        \\.{
+        \\    .outputs = .{
+        \\        .{ .fmt = .clash, .path = "/etc/clash/config.yaml", .verify = false, .reload = false },
+        \\        .{ .fmt = .singbox, .path = "/etc/sing-box/config.json" },
+        \\        .{ .fmt = .raw, .path = "/tmp/raw.json", .verify = true },
+        \\    },
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const cfg = try parse(arena.allocator(), src);
+    const outs = cfg.outputs.?;
+    try std.testing.expectEqual(@as(usize, 3), outs.len);
+    // explicit false
+    try std.testing.expectEqual(false, outs[0].verify.?);
+    try std.testing.expectEqual(false, outs[0].reload.?);
+    // omitted -> null (global default applies)
+    try std.testing.expect(outs[1].verify == null);
+    try std.testing.expect(outs[1].reload == null);
+    // explicit true
+    try std.testing.expectEqual(true, outs[2].verify.?);
 }
 
 test "parse render/deploy config fields" {

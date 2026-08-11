@@ -91,7 +91,13 @@ CLI 与 .zon 输入一一对应：
     .singbox_clash_api = true,         // sing-box 输出启用 clash_api
     .reload_cmd = "systemctl restart clash",   // 所有输出的默认重载命令
     .outputs = .{                               // 输出目标，默认 raw
-        .{ .fmt = .clash, .path = "/etc/clash/config.yaml", .reload_cmd = "systemctl restart clash" },
+        .{
+            .fmt = .clash,
+            .path = "/etc/clash/config.yaml",
+            .reload_cmd = "systemctl restart clash",
+            .verify = false,          // 可选：跳过该校验（默认开）
+            .reload = false,          // 可选：跳过该重载（默认开）
+        },
         .{ .fmt = .singbox, .path = "/etc/sing-box/config.json" },
     },
     .subscriptions = .{ ... },
