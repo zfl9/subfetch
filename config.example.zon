@@ -3,7 +3,8 @@
 .{
     // ── subscription list (the only required config) ────────────────
     //
-    // # one .{...} each; name + url required; ua optional
+    // # one .{...} each; url required, name optional (anonymous subscription
+    // # omits name entirely, so no "name@" prefix is added)
     //   name   : subscription name (node name prefix, Chinese OK, length <= 32)
     //   url    : subscription URL (https://) or a local file path / file://
     //   ua     : custom User-Agent (optional, overrides the global .ua)

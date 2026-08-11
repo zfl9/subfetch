@@ -9,7 +9,7 @@
 - 支持的代理协议：ss / ssr / vmess / vless / trojan / hysteria / hysteria2 / tuic
 - 支持的订阅链接格式：URI 列表、base64、clash YAML、v2rayN JSON、sing-box JSON
 - 支持的配置输出格式：clash / sing-box 聚合，ss / ssr / trojan / xray / hysteria / hysteria2 原生，raw 节点列表
-- 安装配置文件前校验：`mihomo -t` / `sing-box check` / `xray -test`，校验成功后才会覆盖旧配置；校验进程 30s 超时保护（挂起自动终止，不会卡住定时任务）
+- 安装配置文件前校验：`mihomo -t` / `sing-box check` / `xray -test`，校验成功后才会覆盖旧配置；校验进程 15s 超时保护（挂起自动终止，不会卡住定时任务）
 - 安装配置文件后重载：clash controller API 优先，失败自动回退 systemctl，可自定义重载命令
 - 配置无变化时跳过安装与重载：生成的配置与现有配置字节一致（订阅未更新）时，不写文件、不触发 reload，避免无意义的 systemctl restart
 - 订阅内部节点按名称稳定排序（所有输出格式生效，含 raw）：上游节点顺序变化不会改变配置内容，进一步避免误触发 reload；订阅之间的顺序与用户直接提供的节点（--node / --node-file）保持原样
@@ -135,7 +135,7 @@ CLI 等价写法：`--info-keyword 到期 --info-keyword 剩余流量`，`--info
 
 - `-o` 语法：`-o <fmt>[:模板路径]=<输出路径>`，可多次
 - 路径写 `-` 则输出到 stdout（配合 `--dry-run` 预览）
-- 原生格式文件名即节点名；校验程序不在 PATH 时自动跳过；sing-box 不支持的节点（ssr、v2ray-plugin）自动跳过并在日志提示
+- 原生格式文件名即节点名；校验程序不在 PATH 时降级为 JSON/YAML 语法检查（强制层，`--no-verify` 也执行）；sing-box 不支持的节点（ssr、v2ray-plugin）自动跳过并在日志提示
 
 ## 模板
 
