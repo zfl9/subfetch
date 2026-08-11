@@ -50,6 +50,25 @@ fn matchFillLine(line: []const u8, key: []const u8) bool {
 
 pub const FillError = error{ MissingFillPoint, NonEmptyList };
 
+/// outermost key line (smallest indent); nested same-name keys (e.g. a
+/// clash group's inner `proxies:`) are ignored.
+fn findOutermostKey(text: []const u8, key: []const u8) ?[]const u8 {
+    var target: ?[]const u8 = null;
+    var target_indent: usize = std.math.maxInt(usize);
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |line| {
+        if (matchKeyLine(line, key)) {
+            var li: usize = 0;
+            while (li < line.len and (line[li] == ' ' or line[li] == '\t')) : (li += 1) {}
+            if (li < target_indent) {
+                target_indent = li;
+                target = line;
+            }
+        }
+    }
+    return target;
+}
+
 /// replace the single-line empty list of `key` with `block`.
 ///
 /// `block` is the complete list body with relative indent (first level at
@@ -69,24 +88,9 @@ pub fn fillList(
     // trim trailing newlines so split does not yield a phantom empty line
     const src = std.mem.trimRight(u8, text, "\n");
 
-    // pass 1: locate the outermost key line (smallest indent); nested keys
-    // with the same name (e.g. a clash group's inner `proxies:`) are ignored.
-    var target: ?[]const u8 = null;
-    var target_indent: usize = std.math.maxInt(usize);
-    {
-        var scan = std.mem.splitScalar(u8, src, '\n');
-        while (scan.next()) |line| {
-            if (matchKeyLine(line, key)) {
-                var li: usize = 0;
-                while (li < line.len and (line[li] == ' ' or line[li] == '\t')) : (li += 1) {}
-                if (li < target_indent) {
-                    target_indent = li;
-                    target = line;
-                }
-            }
-        }
-    }
-    const tline = target orelse return error.MissingFillPoint;
+    // pass 1: locate the outermost key line (nested keys with the same
+    // name, e.g. a clash group's inner `proxies:`, are ignored)
+    const tline = findOutermostKey(src, key) orelse return error.MissingFillPoint;
     if (!matchFillLine(tline, key)) return error.NonEmptyList;
 
     // pass 2: rebuild, replacing the target line
@@ -134,21 +138,7 @@ pub fn fillList(
 pub const FillState = enum { empty, non_empty, missing };
 
 pub fn fillState(text: []const u8, key: []const u8) FillState {
-    // outermost key line wins (nested same-name keys ignored)
-    var target: ?[]const u8 = null;
-    var target_indent: usize = std.math.maxInt(usize);
-    var lines = std.mem.splitScalar(u8, text, '\n');
-    while (lines.next()) |line| {
-        if (matchKeyLine(line, key)) {
-            var li: usize = 0;
-            while (li < line.len and (line[li] == ' ' or line[li] == '\t')) : (li += 1) {}
-            if (li < target_indent) {
-                target_indent = li;
-                target = line;
-            }
-        }
-    }
-    const t = target orelse return .missing;
+    const t = findOutermostKey(text, key) orelse return .missing;
     return if (matchFillLine(t, key)) .empty else .non_empty;
 }
 
@@ -350,5 +340,6 @@ test "compile-check" {
     _ = &fillState;
     _ = &matchFillLine;
     _ = &matchKeyLine;
+    _ = &findOutermostKey;
     _ = &matchAnchorLine;
 }

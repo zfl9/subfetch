@@ -40,10 +40,7 @@ pub fn parseSubscription(
     sep: []const u8,
     keywords: []const []const u8,
 ) ParseError!ParseResult {
-    const s = sniff.sniff(arena, text) catch |e| return switch (e) {
-        error.OutOfMemory => error.OutOfMemory,
-        else => error.SniffError,
-    };
+    const s = sniff.sniff(arena, text) catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else error.SniffError;
     var nodes: std.ArrayListUnmanaged(node.Node) = .empty;
     var skipped: usize = 0;
     var info: usize = 0;
@@ -436,18 +433,20 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
     // transport {} block (ws / grpc / http)
     const transport = jsonGetObj(obj, "transport");
     const t_type = if (transport) |tr| jsonGetStr(tr, "type") else null;
-    const network: node.Network = if (std.mem.eql(u8, t_type orelse "", "ws")) .ws else if (std.mem.eql(u8, t_type orelse "", "grpc")) .grpc else if (std.mem.eql(u8, t_type orelse "", "http")) .http else .tcp;
+    const network: node.Network = std.meta.stringToEnum(node.Network, t_type orelse "") orelse .tcp;
     var ws: ?node.WsOpts = null;
     var grpc: ?node.GrpcOpts = null;
-    if (transport) |tr| {
-        if (std.mem.eql(u8, jsonGetStr(tr, "type") orelse "", "ws")) {
+    if (transport) |tr| switch (network) {
+        .ws => {
             var host: ?[]const u8 = null;
             if (jsonGetObj(tr, "headers")) |h| host = jsonGetStr(h, "Host");
             ws = .{ .path = jsonGetStr(tr, "path") orelse "/", .host = host };
-        } else if (std.mem.eql(u8, jsonGetStr(tr, "type") orelse "", "grpc")) {
+        },
+        .grpc => {
             grpc = .{ .service_name = jsonGetStr(tr, "service_name") orelse "" };
-        }
-    }
+        },
+        else => {},
+    };
 
     const ob_type = jsonGetStr(obj, "type") orelse return error.MissingField;
     if (std.mem.eql(u8, ob_type, "vless")) {

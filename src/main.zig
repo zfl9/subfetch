@@ -454,16 +454,7 @@ fn installAll(
             return;
         }
         log.info(null, "wrote {d} files to {s} ({d} unchanged)", .{ installed, dir, files.len - installed });
-        if (reload) {
-            if (reload_cmd) |cmd| {
-                switch (deploy.reloadCustom(arena, cmd)) {
-                    .custom => log.info(null, "custom reload command executed", .{}),
-                    else => log.warn(null, "custom reload command failed (exit != 0)", .{}),
-                }
-            } else {
-                log.info(null, "no auto-reload for this format; restart manually (or use --reload-cmd)", .{});
-            }
-        }
+        if (reload) reloadAfterInstall(arena, fmt, ropts, path, reload_cmd);
     } else {
         // single-file format
         const f = files[0];
@@ -482,28 +473,38 @@ fn installAll(
             installVerified(arena, path, tmpName(arena, path, false));
             log.info(null, "installed {s} (verify passed)", .{path});
         }
-        if (reload) {
-            if (reload_cmd) |cmd| {
-                // custom reload command takes priority (acme.sh --reloadcmd style)
-                switch (deploy.reloadCustom(arena, cmd)) {
-                    .custom => log.info(null, "custom reload command executed", .{}),
-                    else => log.warn(null, "custom reload command failed (exit != 0)", .{}),
-                }
-            } else {
-                const rr = switch (fmt) {
-                    .clash => deploy.reloadClash(arena, ropts.controller, ropts.secret, path),
-                    .singbox => deploy.reloadSingbox(arena, ropts.controller, ropts.secret, path),
-                    else => deploy.ReloadResult.skipped,
-                };
-                switch (rr) {
-                    .api => log.info(null, "reloaded via API", .{}),
-                    .systemctl => log.info(null, "restarted via systemctl", .{}),
-                    .custom => unreachable,
-                    .skipped => log.info(null, "no auto-reload for this format; restart manually (or use --reload-cmd)", .{}),
-                    .failed => log.warn(null, "reload failed; restart manually", .{}),
-                }
-            }
+        if (reload) reloadAfterInstall(arena, fmt, ropts, path, reload_cmd);
+    }
+}
+
+/// reload after install: custom reload command takes priority (acme.sh
+/// --reloadcmd style); without one, clash/sing-box fall back to API +
+/// systemctl restart, other formats have no auto-reload.
+fn reloadAfterInstall(
+    arena: std.mem.Allocator,
+    fmt: render.Format,
+    ropts: render.Options,
+    path: []const u8,
+    reload_cmd: ?[]const u8,
+) void {
+    if (reload_cmd) |cmd| {
+        switch (deploy.reloadCustom(arena, cmd)) {
+            .custom => log.info(null, "custom reload command executed", .{}),
+            else => log.warn(null, "custom reload command failed (exit != 0)", .{}),
         }
+        return;
+    }
+    const rr = switch (fmt) {
+        .clash => deploy.reloadClash(arena, ropts.controller, ropts.secret, path),
+        .singbox => deploy.reloadSingbox(arena, ropts.controller, ropts.secret, path),
+        else => deploy.ReloadResult.skipped,
+    };
+    switch (rr) {
+        .api => log.info(null, "reloaded via API", .{}),
+        .systemctl => log.info(null, "restarted via systemctl", .{}),
+        .custom => unreachable,
+        .skipped => log.info(null, "no auto-reload for this format; restart manually (or use --reload-cmd)", .{}),
+        .failed => log.warn(null, "reload failed; restart manually", .{}),
     }
 }
 
@@ -630,5 +631,6 @@ test "compile-check" {
     _ = &verifyDryRunFiles;
     _ = &verifyAll;
     _ = &installAll;
+    _ = &reloadAfterInstall;
     _ = &isDirFormat;
 }

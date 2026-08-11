@@ -48,14 +48,24 @@ fn colorizeKeywords(file: std.fs.File, text: []const u8) void {
         var best: ?Keyword = null;
         var best_idx: usize = text.len;
         for (keywords) |kw| {
-            if (std.mem.indexOfPos(u8, text, pos, kw.word)) |idx| {
+            // keep searching past a boundary-violating match: "XOK OK" must
+            // still color the second OK (indexOfPos returns the first hit only)
+            var search = pos;
+            while (std.mem.indexOfPos(u8, text, search, kw.word)) |idx| {
                 // word boundary: not glued to alphanumeric characters
-                if (idx > 0 and std.ascii.isAlphanumeric(text[idx - 1])) continue;
-                if (idx + kw.word.len < text.len and std.ascii.isAlphanumeric(text[idx + kw.word.len])) continue;
+                if (idx > 0 and std.ascii.isAlphanumeric(text[idx - 1])) {
+                    search = idx + 1;
+                    continue;
+                }
+                if (idx + kw.word.len < text.len and std.ascii.isAlphanumeric(text[idx + kw.word.len])) {
+                    search = idx + 1;
+                    continue;
+                }
                 if (idx < best_idx) {
                     best = kw;
                     best_idx = idx;
                 }
+                break; // earliest boundary-clean match for this kw
             }
         }
         if (best) |kw| {

@@ -42,16 +42,7 @@ pub const Format = enum {
     ssr,
 
     pub fn parse(s: []const u8) ?Format {
-        if (std.mem.eql(u8, s, "clash")) return .clash;
-        if (std.mem.eql(u8, s, "singbox")) return .singbox;
-        if (std.mem.eql(u8, s, "trojan")) return .trojan;
-        if (std.mem.eql(u8, s, "hysteria")) return .hysteria;
-        if (std.mem.eql(u8, s, "hysteria2")) return .hysteria2;
-        if (std.mem.eql(u8, s, "raw")) return .raw;
-        if (std.mem.eql(u8, s, "xray")) return .xray;
-        if (std.mem.eql(u8, s, "ss")) return .ss;
-        if (std.mem.eql(u8, s, "ssr")) return .ssr;
-        return null;
+        return std.meta.stringToEnum(Format, s);
     }
 };
 

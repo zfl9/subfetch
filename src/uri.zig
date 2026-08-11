@@ -122,11 +122,7 @@ fn queryBool(params: []const QueryParam, key: []const u8) bool {
 
 pub fn parseNetwork(s: ?[]const u8) ParseError!node.Network {
     const v = s orelse return .tcp;
-    if (std.mem.eql(u8, v, "tcp")) return .tcp;
-    if (std.mem.eql(u8, v, "ws")) return .ws;
-    if (std.mem.eql(u8, v, "grpc")) return .grpc;
-    if (std.mem.eql(u8, v, "http")) return .http;
-    return error.UnsupportedNetwork;
+    return std.meta.stringToEnum(node.Network, v) orelse error.UnsupportedNetwork;
 }
 
 pub fn parseAlpn(allocator: std.mem.Allocator, v: ?[]const u8) ParseError!?[]const []const u8 {
@@ -188,6 +184,25 @@ fn applyWsGrpc(
         },
         else => {},
     }
+}
+
+/// shared per-protocol preamble: server/port (default 443) + query params + name.
+/// used by trojan/hysteria2/tuic (all "password/userinfo@host" URIs).
+const CommonParts = struct {
+    server: []const u8,
+    port: u16,
+    params: []const QueryParam,
+    name: []const u8,
+};
+
+fn parseCommon(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, sep: []const u8) ParseError!CommonParts {
+    if (p.host.len == 0) return error.MissingField;
+    // port omitted defaults to 443 (parsePortOrDefault behavior in community implementations)
+    const port = p.port orelse 443;
+    const server = try urlDecode(arena, p.host);
+    const params = try parseQuery(arena, p.query);
+    const name = try makeName(arena, try urlDecode(arena, p.fragment), sub_name, sep, server, port);
+    return .{ .server = server, .port = port, .params = params, .name = name };
 }
 
 // ---------------- ss ----------------
@@ -370,8 +385,7 @@ fn vmessFromJson(arena: std.mem.Allocator, json_text: []const u8, sub_name: []co
     const port = try parsePort(getStr(arena, obj, "port") orelse return error.MissingField);
     const uuid = getStr(arena, obj, "id") orelse return error.MissingField;
     const raw_name = getStr(arena, obj, "ps") orelse "";
-    const fallback = try std.fmt.allocPrint(arena, "{s}:{d}", .{ server, port });
-    const name = try node.prefixed(arena, sub_name, raw_name, sep, fallback);
+    const name = try makeName(arena, raw_name, sub_name, sep, server, port);
 
     var n: node.Vmess = .{
         .name = name,
@@ -465,30 +479,21 @@ fn parseVmess(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u
 fn parseTrojan(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, sep: []const u8) ParseError!Node {
     const password = try urlDecode(arena, p.userinfo orelse return error.MissingField);
     if (password.len == 0) return error.MissingField;
-    if (p.host.len == 0) return error.MissingField;
-    // port omitted defaults to 443 (parsePortOrDefault behavior in community implementations)
-    const port = p.port orelse 443;
-    const server = try urlDecode(arena, p.host);
-    const params = try parseQuery(arena, p.query);
+    const c = try parseCommon(arena, p, sub_name, sep);
 
     var n: node.Trojan = .{
-        .name = try makeName(arena, try urlDecode(arena, p.fragment), sub_name, sep, server, port),
-        .server = server,
-        .port = port,
+        .name = c.name,
+        .server = c.server,
+        .port = c.port,
         .password = password,
     };
-    n.servername = queryGet(params, "sni") orelse queryGet(params, "peer");
+    n.servername = queryGet(c.params, "sni") orelse queryGet(c.params, "peer");
     // v2rayN ecosystem uses allowInsecure; clash-verge/mihomo ecosystem uses skip-cert-verify
-    n.skip_cert_verify = queryBool(params, "allowInsecure") or queryBool(params, "skip-cert-verify");
-    n.alpn = try parseAlpn(arena, queryGet(params, "alpn"));
-    const net = queryGet(params, "type") orelse "";
-    if (std.mem.eql(u8, net, "ws")) {
-        n.network = .ws;
-        n.ws = .{ .path = queryGet(params, "path") orelse "/", .host = queryGet(params, "host") };
-    } else if (std.mem.eql(u8, net, "grpc")) {
-        n.network = .grpc;
-        n.grpc = .{ .service_name = queryGet(params, "serviceName") orelse queryGet(params, "path") orelse "" };
-    }
+    n.skip_cert_verify = queryBool(c.params, "allowInsecure") or queryBool(c.params, "skip-cert-verify");
+    n.alpn = try parseAlpn(arena, queryGet(c.params, "alpn"));
+    const net = parseNetwork(queryGet(c.params, "type")) catch .tcp;
+    n.network = net;
+    applyWsGrpc(&n.ws, &n.grpc, net, c.params);
     return .{ .trojan = n };
 }
 
@@ -516,26 +521,22 @@ fn parseHysteria(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []cons
 
 fn parseHy2(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, sep: []const u8) ParseError!Node {
     const password = try urlDecode(arena, p.userinfo orelse return error.MissingField);
-    if (p.host.len == 0) return error.MissingField;
-    // port omitted defaults to 443 (explicit in the official hy2 URI spec)
-    const port = p.port orelse 443;
-    const server = try urlDecode(arena, p.host);
-    const params = try parseQuery(arena, p.query);
+    const c = try parseCommon(arena, p, sub_name, sep);
 
     var n: node.Hysteria2 = .{
-        .name = try makeName(arena, try urlDecode(arena, p.fragment), sub_name, sep, server, port),
-        .server = server,
-        .port = port,
+        .name = c.name,
+        .server = c.server,
+        .port = c.port,
         .password = password,
     };
-    n.servername = queryGet(params, "sni") orelse queryGet(params, "peer");
-    n.skip_cert_verify = queryBool(params, "insecure");
+    n.servername = queryGet(c.params, "sni") orelse queryGet(c.params, "peer");
+    n.skip_cert_verify = queryBool(c.params, "insecure");
     // obfs=none is equivalent to unset (clash-verge behavior)
-    if (queryGet(params, "obfs")) |obfs| {
+    if (queryGet(c.params, "obfs")) |obfs| {
         if (!std.mem.eql(u8, obfs, "none")) n.obfs = obfs;
     }
-    n.obfs_password = queryGet(params, "obfs-password");
-    n.alpn = try parseAlpn(arena, queryGet(params, "alpn"));
+    n.obfs_password = queryGet(c.params, "obfs-password");
+    n.alpn = try parseAlpn(arena, queryGet(c.params, "alpn"));
     return .{ .hysteria2 = n };
 }
 
@@ -544,27 +545,23 @@ fn parseTuic(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8
     const colon = std.mem.indexOfScalar(u8, ui, ':') orelse return error.MissingField;
     const uuid = ui[0..colon];
     const password = ui[colon + 1 ..];
-    if (p.host.len == 0) return error.MissingField;
-    // port omitted defaults to 443 (parsePortOrDefault behavior in community implementations)
-    const port = p.port orelse 443;
-    const server = try urlDecode(arena, p.host);
-    const params = try parseQuery(arena, p.query);
+    const c = try parseCommon(arena, p, sub_name, sep);
 
     var n: node.Tuic = .{
-        .name = try makeName(arena, try urlDecode(arena, p.fragment), sub_name, sep, server, port),
-        .server = server,
-        .port = port,
+        .name = c.name,
+        .server = c.server,
+        .port = c.port,
         .uuid = uuid,
         .password = password,
     };
-    n.servername = queryGet(params, "sni");
+    n.servername = queryGet(c.params, "sni");
     // EAimTY official uses underscores; mihomo/clash-verge ecosystem uses hyphens; support both
-    n.skip_cert_verify = queryBool(params, "allow_insecure") or
-        queryBool(params, "allow-insecure") or
-        queryBool(params, "skip-cert-verify");
-    n.congestion_controller = queryGet(params, "congestion_control") orelse queryGet(params, "congestion-controller");
-    n.udp_relay_mode = queryGet(params, "udp_relay_mode") orelse queryGet(params, "udp-relay-mode");
-    n.alpn = try parseAlpn(arena, queryGet(params, "alpn"));
+    n.skip_cert_verify = queryBool(c.params, "allow_insecure") or
+        queryBool(c.params, "allow-insecure") or
+        queryBool(c.params, "skip-cert-verify");
+    n.congestion_controller = queryGet(c.params, "congestion_control") orelse queryGet(c.params, "congestion-controller");
+    n.udp_relay_mode = queryGet(c.params, "udp_relay_mode") orelse queryGet(c.params, "udp-relay-mode");
+    n.alpn = try parseAlpn(arena, queryGet(c.params, "alpn"));
     return .{ .tuic = n };
 }
 
@@ -834,6 +831,7 @@ test "compile-check" {
     _ = &normalizeRealityKey;
     _ = &makeName;
     _ = &applyWsGrpc;
+    _ = &parseCommon;
     _ = &b64Str;
     _ = &b64;
 }

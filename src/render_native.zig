@@ -56,16 +56,21 @@ fn jsonToString(arena: std.mem.Allocator, v: JsonValue) ![]const u8 {
     return std.json.Stringify.valueAlloc(arena, v, .{ .whitespace = .indent_2 });
 }
 
+/// alpn array (skipped when null or empty)
+fn putAlpn(arena: std.mem.Allocator, o: *ObjectMap, key: []const u8, alpn: ?[]const []const u8) !void {
+    const list = alpn orelse return;
+    if (list.len == 0) return;
+    var arr = std.json.Array.init(arena);
+    for (list) |a| try arr.append(str(a));
+    try o.put(key, .{ .array = arr });
+}
+
 /// trojan-go / trojan client config.json
 fn trojanJson(arena: std.mem.Allocator, v: node.Trojan, opts: Options) !JsonValue {
     var ssl = ObjectMap.init(arena);
     try ssl.put("sni", str(v.servername orelse v.server));
     try ssl.put("verify_cert", .{ .bool = !v.skip_cert_verify });
-    if (v.alpn) |alpn| {
-        var list = std.json.Array.init(arena);
-        for (alpn) |a| try list.append(str(a));
-        try ssl.put("alpn", .{ .array = list });
-    }
+    try putAlpn(arena, &ssl, "alpn", v.alpn);
 
     var fields: std.ArrayListUnmanaged(struct { []const u8, JsonValue }) = .empty;
     try fields.append(arena, .{ "run_type", str("client") });
@@ -119,13 +124,7 @@ fn hysteriaJson(arena: std.mem.Allocator, v: node.Hysteria, opts: Options) !Json
         var tls = ObjectMap.init(arena);
         if (v.sni) |sni| try tls.put("sni", str(sni));
         try tls.put("insecure", .{ .bool = v.skip_cert_verify });
-        if (v.alpn) |alpn| {
-            if (alpn.len > 0) {
-                var arr = std.json.Array.init(arena);
-                for (alpn) |a| try arr.append(str(a));
-                try tls.put("alpn", .{ .array = arr });
-            }
-        }
+        try putAlpn(arena, &tls, "alpn", v.alpn);
         try fields.append(arena, .{ "tls", .{ .object = tls } });
     }
     return buildObj(arena, fields.items);
@@ -212,13 +211,7 @@ fn xrayJson(arena: std.mem.Allocator, v: node.Vless, opts: Options) !JsonValue {
         if (v.servername) |sni| try ts.put("serverName", str(sni));
         if (v.skip_cert_verify) try ts.put("allowInsecure", .{ .bool = true });
         if (v.fingerprint) |fp| try ts.put("fingerprint", str(fp));
-        if (v.alpn) |alpn| {
-            if (alpn.len > 0) {
-                var arr = std.json.Array.init(arena);
-                for (alpn) |a| try arr.append(str(a));
-                try ts.put("alpn", .{ .array = arr });
-            }
-        }
+        try putAlpn(arena, &ts, "alpn", v.alpn);
         try stream.put("tlsSettings", .{ .object = ts });
     }
     switch (v.network) {
@@ -625,6 +618,7 @@ test "compile-check" {
     _ = &ssJson;
     _ = &ssrJson;
     _ = &v2rayPluginOpts;
+    _ = &putAlpn;
     _ = &safeFileName;
     _ = &buildObj;
     _ = &str;
