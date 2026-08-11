@@ -29,7 +29,7 @@ expect_exit() { # expect_exit <code> <name> cmd...
     echo "ok: $name -> $got"
 }
 
-# --version: prints "subfetch <ver>" and exits 0
+# -V/--version: prints "subfetch <ver>" and exits 0
 OUT=$("$EXE" --version) || { echo "FAIL: --version exit"; exit 1; }
 echo "$OUT" | grep -q "^subfetch 0\." || { echo "FAIL: --version output: $OUT"; exit 1; }
 echo "ok: --version -> $OUT"
