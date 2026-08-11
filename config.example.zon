@@ -35,6 +35,8 @@
     //         .fmt = .clash,
     //         .path = "/etc/clash/config.yaml",
     //         .reload_cmd = "systemctl restart clash",
+    //         // .verify = false,    // never verify this output
+    //         // .reload = false,    // never reload this output
     //     },
     //     .{
     //         .fmt = .singbox,
