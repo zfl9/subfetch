@@ -182,6 +182,7 @@ proxies: []    # clash
     --reset-state        删除持久化的 API secret（state 目录，下次运行自动生成新的；lock 文件保留）
 -v, --verbose            详细输出
 -h, --help               帮助
+    --version             输出版本号
 ```
 
 ## 协议支持

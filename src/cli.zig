@@ -59,6 +59,9 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
         if (std.mem.eql(u8, a, "-h") or std.mem.eql(u8, a, "--help")) {
             printUsage();
             std.process.exit(0);
+        } else if (std.mem.eql(u8, a, "--version")) {
+            log.outPrint("subfetch {f}\n", .{version});
+            std.process.exit(0);
         } else if (std.mem.eql(u8, a, "--dry-run")) {
             opts.dry_run = true;
         } else if (std.mem.eql(u8, a, "--reset-state")) {
@@ -284,6 +287,7 @@ const usage_sections = [_]Section{
         } },
         .{ .opt = "-v, --verbose", .desc = &.{"verbose output (node list)"} },
         .{ .opt = "-h, --help", .desc = &.{"show this help"} },
+        .{ .opt = "--version", .desc = &.{"show version"} },
     } },
 };
 
