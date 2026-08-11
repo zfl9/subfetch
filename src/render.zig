@@ -19,8 +19,8 @@ pub const LogLevel = enum {
     pub fn parse(s: []const u8) ?LogLevel {
         if (std.mem.eql(u8, s, "debug")) return .debug;
         if (std.mem.eql(u8, s, "info")) return .info;
-        if (std.mem.eql(u8, s, "warn") or std.mem.eql(u8, s, "warning")) return .warn;
-        if (std.mem.eql(u8, s, "err") or std.mem.eql(u8, s, "error")) return .err;
+        if (std.mem.eql(u8, s, "warn")) return .warn;
+        if (std.mem.eql(u8, s, "err")) return .err;
         return null;
     }
 
