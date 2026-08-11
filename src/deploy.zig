@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const util = @import("util.zig");
 const render = @import("render.zig");
+const yaml = @import("yaml.zig");
 const Format = render.Format;
 
 pub const VerifyResult = enum { ok, skipped, failed };
@@ -127,7 +128,6 @@ pub fn verifyContent(
         },
         .hysteria2 => blk: {
             // native config is yaml: validate with libyaml parser
-            const yaml = @import("yaml.zig");
             _ = yaml.parse(arena, content) catch break :blk .failed;
             break :blk .ok;
         },

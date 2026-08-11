@@ -1,5 +1,9 @@
 const std = @import("std");
 const node = @import("node.zig");
+const render_clash = @import("render_clash.zig");
+const render_singbox = @import("render_singbox.zig");
+const render_native = @import("render_native.zig");
+const render_raw = @import("render_raw.zig");
 const Node = node.Node;
 
 /// output format
@@ -91,15 +95,15 @@ pub fn render(
 ) ![]const File {
     const use_nodes = if (fmt == .raw) nodes else try uniqueNames(arena, nodes);
     return switch (fmt) {
-        .clash => @import("render_clash.zig").renderClash(arena, use_nodes, opts, template),
-        .singbox => @import("render_singbox.zig").renderSingbox(arena, use_nodes, opts, template),
-        .trojan => @import("render_native.zig").renderTrojan(arena, use_nodes, opts),
-        .hysteria => @import("render_native.zig").renderHysteria(arena, use_nodes, opts),
-        .hysteria2 => @import("render_native.zig").renderHysteria2(arena, use_nodes, opts),
-        .xray => @import("render_native.zig").renderXray(arena, use_nodes, opts),
-        .ss => @import("render_native.zig").renderSs(arena, use_nodes, opts),
-        .ssr => @import("render_native.zig").renderSsr(arena, use_nodes, opts),
-        .raw => @import("render_raw.zig").renderRaw(arena, use_nodes),
+        .clash => render_clash.renderClash(arena, use_nodes, opts, template),
+        .singbox => render_singbox.renderSingbox(arena, use_nodes, opts, template),
+        .trojan => render_native.renderTrojan(arena, use_nodes, opts),
+        .hysteria => render_native.renderHysteria(arena, use_nodes, opts),
+        .hysteria2 => render_native.renderHysteria2(arena, use_nodes, opts),
+        .xray => render_native.renderXray(arena, use_nodes, opts),
+        .ss => render_native.renderSs(arena, use_nodes, opts),
+        .ssr => render_native.renderSsr(arena, use_nodes, opts),
+        .raw => render_raw.renderRaw(arena, use_nodes),
     };
 }
 
