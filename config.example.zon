@@ -87,7 +87,7 @@
     // # v6 tproxy dual-stack: clash ipv6 + sing-box tproxy-in-v6 (default off)
     // .tproxy_ipv6 = false,
 
-    // # client log level: debug | info | warn | error (default info)
+    // # client log level: debug | info | warn | err (default info)
     // .log_level = .info,
 
     // # clash external-controller / sing-box clash_api (default 127.0.0.1:65501)
