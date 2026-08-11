@@ -40,6 +40,17 @@ jobs:
         # 64-bit-return bug (localtime_r shows 1970-01-01 timestamps); it only
         # affects log timestamps under qemu, real mips hardware is unaffected.
         run: zig build release-test -Doptimize=${{ inputs.optimize || 'ReleaseSmall' }} -Drelease_filter=${{ matrix.target }}
+      - name: Native full test suite (unit + smokes + integrations, x86_64 only)
+        # the other matrix entries run unit tests + 9 format smokes under qemu
+        # (release-test). the three integration suites (install path / exit
+        # codes / flock lock) need real processes/fs/locks: native runner only.
+        if: matrix.target == 'x86_64'
+        run: |
+          zig build test
+          zig build smoke-test
+          zig build smoke-install
+          zig build smoke-exitcodes
+          zig build smoke-lock
       - name: Package
         run: |
           mkdir -p dist
@@ -53,34 +64,10 @@ jobs:
           name: subfetch-${{ matrix.target }}
           path: dist/
 
-  test:
-    # native-only full test suite: unit + all 9 format smokes + the three
-    # integration suites (install path / exit codes / flock lock). cross-arch
-    # coverage lives in the build job (release-test); integration tests need
-    # real processes/fs/locks and are meaningless under qemu - native only.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Zig 0.15.2 (official)
-        run: |
-          wget -q https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz
-          tar xJf zig-x86_64-linux-0.15.2.tar.xz
-          echo "$PWD/zig-x86_64-linux-0.15.2" >> "$GITHUB_PATH"
-          "$PWD/zig-x86_64-linux-0.15.2/zig" version
-      - name: Unit tests
-        run: zig build test
-      - name: Smoke tests (all 9 formats)
-        run: zig build smoke-test
-      - name: "Integration: install path"
-        run: zig build smoke-install
-      - name: "Integration: exit codes"
-        run: zig build smoke-exitcodes
-      - name: "Integration: flock lock"
-        run: zig build smoke-lock
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [build, test]
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
