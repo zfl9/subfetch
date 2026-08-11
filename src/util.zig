@@ -125,8 +125,22 @@ const vtable: std.Io.Writer.VTable = .{
     .drain = drain,
     .sendFile = sendFile,
     .flush = std.Io.Writer.noopFlush,
-    .rebase = std.Io.Writer.failingRebase,
+    .rebase = rebase,
 };
+
+/// std's writable-slice path calls rebase when the buffer has less than
+/// `capacity` bytes left (instead of drain). for a bounded writer that means
+/// the limit was reached: drop the buffered bytes (they are past-limit
+/// garbage anyway) and report full capacity. preserving callers (preserve != 0)
+/// or absurd capacity requests cannot be honored, keep the failing behavior.
+fn rebase(w: *std.Io.Writer, preserve: usize, capacity: usize) std.Io.Writer.Error!void {
+    if (preserve != 0 or capacity > w.buffer.len) {
+        return std.Io.Writer.failingRebase(w, preserve, capacity);
+    }
+    const self: *BoundedWriter = @alignCast(@fieldParentPtr("writer", w));
+    self.exceeded = true;
+    w.end = 0;
+}
 
 fn drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
     const self: *BoundedWriter = @alignCast(@fieldParentPtr("writer", w));
