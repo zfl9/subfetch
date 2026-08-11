@@ -39,4 +39,4 @@ echo "$OUT" | grep -q "wrote 1 files" || { echo "FAIL: expected 1 file rewrite";
 DEBRIS=$(find "$DIR" \( -name '*.new' -o -name '*.new.json' \) || true)
 [ -z "$DEBRIS" ] || { echo "FAIL: .new debris left behind: $DEBRIS"; exit 1; }
 
-echo "smoke-install OK"
+echo "integration-install OK"

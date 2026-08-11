@@ -1,5 +1,5 @@
 #!/bin/sh
-# flock concurrency smoke test: a second instance must block on the run lock
+# flock concurrency integration test: a second instance must block on the run lock
 # (with a waiting log line) instead of racing, then complete after the holder
 # releases. isolated XDG_STATE_HOME, --no-reload, --no-verify.
 set -eu

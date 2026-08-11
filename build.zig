@@ -80,7 +80,7 @@ const all_formats = [_][]const u8{
     "clash", "singbox", "trojan", "hysteria", "hysteria2", "xray", "ss", "ssr", "raw",
 };
 
-/// chain all 9 format smoke runs serially (shared separator keeps the output
+/// chain all format smoke runs serially (shared separator keeps the output
 /// ordered); returns the last run so callers can chain follow-up steps.
 fn addAllSmokeTests(
     b: *std.Build,
@@ -141,7 +141,7 @@ pub fn build(b: *std.Build) !void {
     const run_tests = b.addRunArtifact(tests);
     b.step("test", "run unit tests").dependOn(&run_tests.step);
 
-    // smoke: all 9 output formats (native multi-file formats run too).
+    // smoke: all output formats (native multi-file formats run too).
     // chained serially: the runs share identical output and the separator
     // lines must stay ordered
     const smoke_step = b.step("smoke", "run smoke tests");
@@ -229,7 +229,7 @@ pub fn build(b: *std.Build) !void {
         r_run_tests.stdio = .inherit;
         release_check_step.dependOn(&r_run_tests.step);
 
-        // smoke: all 9 formats (full protocol + serializer coverage per arch)
+        // smoke: all formats (full protocol + serializer coverage per arch)
         release_check_step.dependOn(&addAllSmokeTests(b, r_exe, r_matrix, null).step);
     }
 }
