@@ -25,8 +25,8 @@ const libyaml_sources = &.{
 const app_version = std.SemanticVersion.parse(@import("build.zig.zon").version) catch unreachable;
 
 /// bundled libyaml (MIT): C sources are compiled directly into the module, @cImport consumes the headers.
-/// single include path: yaml.h (public header) and config.h (moved from the
-/// repo root) both live in include/; yaml_private.h resolves via same-dir quotes.
+/// single include path: yaml.h (public header); version macros are inlined in
+/// yaml_private.h (vendored build: no autotools-generated config.h).
 fn linkLibYaml(b: *std.Build, mod: *std.Build.Module) void {
     mod.link_libc = true;
     mod.addIncludePath(b.path("vendor/libyaml/include"));
@@ -161,9 +161,9 @@ pub fn build(b: *std.Build) !void {
         script: []const u8,
         dir: []const u8,
     }{
-        .{ .name = "install", .script = "test/integration_install.sh", .dir = ".zig-cache/integration-install" },
-        .{ .name = "cli", .script = "test/integration_cli.sh", .dir = ".zig-cache/integration-cli" },
-        .{ .name = "lock", .script = "test/integration_lock.sh", .dir = ".zig-cache/integration-lock" },
+        .{ .name = "install", .script = "test/integration_install.sh", .dir = "integration-install" },
+        .{ .name = "cli", .script = "test/integration_cli.sh", .dir = "integration-cli" },
+        .{ .name = "lock", .script = "test/integration_lock.sh", .dir = "integration-lock" },
     };
     const integration_filter = b.option([]const u8, "integration_filter", "only run integration suites whose name contains this substring");
     const integration_step = b.step("integration", "run integration test suites");
@@ -176,7 +176,8 @@ pub fn build(b: *std.Build) !void {
         }
         const run = b.addSystemCommand(&.{ "sh", suite.script });
         run.addArtifactArg(exe);
-        run.addArg(b.pathFromRoot(suite.dir));
+        // workspace under the real cache root (honors --cache-dir)
+        run.addArg(try b.cache_root.join(b.allocator, &.{suite.dir}));
         run.stdio = .inherit;
         // suites run serially (shared exe, ordered output); they do NOT
         // depend on the smoke step: smoke and integration are independent
@@ -195,8 +196,10 @@ pub fn build(b: *std.Build) !void {
 
     const release_step = b.step("release", "build exe for all release targets");
     var release_exes: [release_matrix.len]*std.Build.Step.Compile = undefined;
+    var release_matched = false;
     for (release_matrix, &release_exes) |r_matrix, *r_exe| {
         if (release_filter) |filter| if (!std.mem.startsWith(u8, r_matrix.triple, filter)) continue;
+        release_matched = true;
         const r_target = b.resolveTargetQuery(try std.Target.Query.parse(.{
             .arch_os_abi = r_matrix.triple,
             .cpu_features = r_matrix.cpu,
@@ -207,6 +210,9 @@ pub fn build(b: *std.Build) !void {
         });
         const r_install = b.addInstallArtifact(r_exe.*, .{});
         release_step.dependOn(&r_install.step);
+    }
+    if (release_filter_raw != null and !release_matched) {
+        @panic("release_filter matches no target (x86_64|aarch64|arm|riscv64|mipsel|mips|mips64el|mips64)");
     }
 
     const release_check_step = b.step("release-check", "unit tests + smokes for all release targets");
