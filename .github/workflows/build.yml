@@ -71,11 +71,11 @@ jobs:
         run: zig build test
       - name: Smoke tests (all 9 formats)
         run: zig build smoke-test
-      - name: Integration: install path
+      - name: "Integration: install path"
         run: zig build smoke-install
-      - name: Integration: exit codes
+      - name: "Integration: exit codes"
         run: zig build smoke-exitcodes
-      - name: Integration: flock lock
+      - name: "Integration: flock lock"
         run: zig build smoke-lock
 
   release:
