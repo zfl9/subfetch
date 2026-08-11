@@ -153,40 +153,43 @@ pub fn build(b: *std.Build) !void {
     // and flock concurrency. isolated dirs + --no-reload + isolated XDG_STATE_HOME:
     // never touches real configs, services, or state. native host only (CI's
     // cross-arch release-check depends on addSmokeTest directly, unaffected).
+    // suites are data + a single step: run all by default, or filter with
+    // -Dintegration_filter=<substring> (same pattern as -Drelease_filter).
+    const integration_suites = [_]struct {
+        name: []const u8,
+        script: []const u8,
+        dir: []const u8,
+    }{
+        .{ .name = "install", .script = "test/integration_install.sh", .dir = ".zig-cache/integration-install" },
+        .{ .name = "exitcodes", .script = "test/integration_exitcodes.sh", .dir = ".zig-cache/integration-exitcodes" },
+        .{ .name = "lock", .script = "test/integration_lock.sh", .dir = ".zig-cache/integration-lock" },
+    };
+    const integration_filter = b.option([]const u8, "integration_filter",
+        "only run integration suites whose name contains this substring");
     const integration_step = b.step("integration", "run integration test suites");
-    const integration_install_step = b.step("integration-install", "install path: first install -> unchanged skip -> partial rewrite");
-    const integration_exitcodes_step = b.step("integration-exitcodes", "exit-code semantics + reset-state file handling");
-    const integration_lock_step = b.step("integration-lock", "flock concurrency: overlapping runs serialize");
+    var integration_matched = false;
     var prev_install: ?*std.Build.Step.Run = null;
-    {
-        const run = b.addSystemCommand(&.{ "sh", "test/integration_install.sh" });
+    for (integration_suites) |suite| {
+        if (integration_filter) |f| {
+            if (std.mem.indexOf(u8, suite.name, f) == null) continue;
+            integration_matched = true;
+        }
+        const run = b.addSystemCommand(&.{ "sh", suite.script });
         run.addArtifactArg(exe);
-        run.addArg(b.pathFromRoot(".zig-cache/integration-install"));
+        run.addArg(b.pathFromRoot(suite.dir));
         run.stdio = .inherit;
         // after all format runs: its output would otherwise race into the
         // middle of the format list
-        run.step.dependOn(&last_smoke.step);
+        if (prev_install) |p| {
+            run.step.dependOn(&p.step);
+        } else {
+            run.step.dependOn(&last_smoke.step);
+        }
         prev_install = run;
-        integration_install_step.dependOn(&run.step);
         integration_step.dependOn(&run.step);
     }
-    {
-        const run = b.addSystemCommand(&.{ "sh", "test/integration_exitcodes.sh" });
-        run.addArtifactArg(exe);
-        run.addArg(b.pathFromRoot(".zig-cache/integration-exitcodes"));
-        run.stdio = .inherit;
-        if (prev_install) |p| run.step.dependOn(&p.step);
-        integration_exitcodes_step.dependOn(&run.step);
-        integration_step.dependOn(&run.step);
-    }
-    {
-        const run = b.addSystemCommand(&.{ "sh", "test/integration_lock.sh" });
-        run.addArtifactArg(exe);
-        run.addArg(b.pathFromRoot(".zig-cache/integration-lock"));
-        run.stdio = .inherit;
-        if (prev_install) |p| run.step.dependOn(&p.step);
-        integration_lock_step.dependOn(&run.step);
-        integration_step.dependOn(&run.step);
+    if (integration_filter != null and !integration_matched) {
+        @panic("integration_filter matches no suite (install|exitcodes|lock)");
     }
 
     // release filter

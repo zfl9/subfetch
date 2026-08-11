@@ -46,10 +46,7 @@ jobs:
         # exit codes / flock lock) need real processes/fs/locks, so they run
         # natively on the x86_64 entry only.
         if: matrix.target == 'x86_64'
-        run: |
-          zig build integration-install
-          zig build integration-exitcodes
-          zig build integration-lock
+        run: zig build integration
       - name: Package
         run: |
           mkdir -p dist

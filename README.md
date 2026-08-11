@@ -210,6 +210,7 @@ zig build -Dtarget=aarch64-linux-musl -Doptimize=ReleaseSmall   # 交叉编译
 zig build test                                          # 单元测试
 zig build smoke                                        # 9 格式冒烟（dry-run）
 zig build integration                                 # 集成测试（安装/退出码/并发锁）
+                                                      # -Dintegration_filter=lock 只跑单套件
 ```
 
 产物在 `zig-out/bin/subfetch`。
