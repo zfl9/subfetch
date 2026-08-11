@@ -2,6 +2,7 @@ const std = @import("std");
 const node = @import("node.zig");
 const render = @import("render.zig");
 const tpl = @import("template.zig");
+const yaml = @import("yaml.zig");
 const Options = render.Options;
 
 const Writer = std.Io.Writer;
@@ -376,34 +377,33 @@ const test_nodes = [_]node.Node{
 test "render clash config structure" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const yaml = try renderClash(arena.allocator(), &test_nodes, .{ .secret = "test-secret" }, null);
-    const yaml_text = yaml[0].content;
+    const files = try renderClash(arena.allocator(), &test_nodes, .{ .secret = "test-secret" }, null);
+    const yaml_text = files[0].content;
 
     // re-parse with libyaml to validate structure
-    const ymod = @import("yaml.zig");
-    const root = try ymod.parse(arena.allocator(), yaml_text);
-    const m = ymod.mappingOf(root).?;
-    try std.testing.expectEqualStrings("65500", ymod.mappingGetScalar(m, "mixed-port").?);
-    try std.testing.expectEqualStrings("test-secret", ymod.mappingGetScalar(m, "secret").?);
-    try std.testing.expectEqualStrings("127.0.0.1:65501", ymod.mappingGetScalar(m, "external-controller").?);
-    const proxies = ymod.sequenceOf(ymod.mappingGet(m, "proxies").?).?;
+    const root = try yaml.parse(arena.allocator(), yaml_text);
+    const m = yaml.mappingOf(root).?;
+    try std.testing.expectEqualStrings("65500", yaml.mappingGetScalar(m, "mixed-port").?);
+    try std.testing.expectEqualStrings("test-secret", yaml.mappingGetScalar(m, "secret").?);
+    try std.testing.expectEqualStrings("127.0.0.1:65501", yaml.mappingGetScalar(m, "external-controller").?);
+    const proxies = yaml.sequenceOf(yaml.mappingGet(m, "proxies").?).?;
     try std.testing.expectEqual(@as(usize, 4), proxies.len);
-    const groups = ymod.sequenceOf(ymod.mappingGet(m, "proxy-groups").?).?;
+    const groups = yaml.sequenceOf(yaml.mappingGet(m, "proxy-groups").?).?;
     try std.testing.expectEqual(@as(usize, 2), groups.len);
-    const rules = ymod.sequenceOf(ymod.mappingGet(m, "rules").?).?;
+    const rules = yaml.sequenceOf(yaml.mappingGet(m, "rules").?).?;
     try std.testing.expectEqual(@as(usize, 1), rules.len);
-    try std.testing.expectEqualStrings("MATCH,PROXY", ymod.scalarOf(rules[0]).?);
+    try std.testing.expectEqualStrings("MATCH,PROXY", yaml.scalarOf(rules[0]).?);
 
     // spot-check node fields
-    const p0 = ymod.mappingOf(proxies[0]).?;
-    try std.testing.expectEqualStrings("trojan", ymod.mappingGetScalar(p0, "type").?);
-    try std.testing.expectEqualStrings("true", ymod.mappingGetScalar(p0, "skip-cert-verify").?);
-    const p1 = ymod.mappingOf(proxies[1]).?;
-    try std.testing.expectEqualStrings("vless", ymod.mappingGetScalar(p1, "type").?);
-    const ro = ymod.mappingOf(ymod.mappingGet(p1, "reality-opts").?).?;
-    try std.testing.expectEqualStrings("abc-def", ymod.mappingGetScalar(ro, "public-key").?);
+    const p0 = yaml.mappingOf(proxies[0]).?;
+    try std.testing.expectEqualStrings("trojan", yaml.mappingGetScalar(p0, "type").?);
+    try std.testing.expectEqualStrings("true", yaml.mappingGetScalar(p0, "skip-cert-verify").?);
+    const p1 = yaml.mappingOf(proxies[1]).?;
+    try std.testing.expectEqualStrings("vless", yaml.mappingGetScalar(p1, "type").?);
+    const ro = yaml.mappingOf(yaml.mappingGet(p1, "reality-opts").?).?;
+    try std.testing.expectEqualStrings("abc-def", yaml.mappingGetScalar(ro, "public-key").?);
     // node name with special chars is quoted and round-trips
-    try std.testing.expectEqualStrings("node:with-colon", ymod.mappingGetScalar(ymod.mappingOf(proxies[3]).?, "name").?);
+    try std.testing.expectEqualStrings("node:with-colon", yaml.mappingGetScalar(yaml.mappingOf(proxies[3]).?, "name").?);
 }
 
 test "yaml scalar quoting" {
@@ -439,16 +439,15 @@ test "clash ss shadow-tls plugin yaml" {
     };
     const yaml_text = (try renderClash(arena.allocator(), &nodes, .{}, null))[0].content;
     // re-parse with libyaml: the plugin-opts block must be structurally valid
-    const ymod = @import("yaml.zig");
-    const root = try ymod.parse(arena.allocator(), yaml_text);
-    const m = ymod.mappingOf(root).?;
-    const proxies = ymod.sequenceOf(ymod.mappingGet(m, "proxies").?).?;
-    const p0 = ymod.mappingOf(proxies[0]).?;
-    try std.testing.expectEqualStrings("shadow-tls", ymod.mappingGetScalar(p0, "plugin").?);
-    const po = ymod.mappingOf(ymod.mappingGet(p0, "plugin-opts").?).?;
-    try std.testing.expectEqualStrings("www.bing.com", ymod.mappingGetScalar(po, "host").?);
-    try std.testing.expectEqualStrings("st-pw", ymod.mappingGetScalar(po, "password").?);
-    try std.testing.expectEqualStrings("3", ymod.mappingGetScalar(po, "version").?);
+    const root = try yaml.parse(arena.allocator(), yaml_text);
+    const m = yaml.mappingOf(root).?;
+    const proxies = yaml.sequenceOf(yaml.mappingGet(m, "proxies").?).?;
+    const p0 = yaml.mappingOf(proxies[0]).?;
+    try std.testing.expectEqualStrings("shadow-tls", yaml.mappingGetScalar(p0, "plugin").?);
+    const po = yaml.mappingOf(yaml.mappingGet(p0, "plugin-opts").?).?;
+    try std.testing.expectEqualStrings("www.bing.com", yaml.mappingGetScalar(po, "host").?);
+    try std.testing.expectEqualStrings("st-pw", yaml.mappingGetScalar(po, "password").?);
+    try std.testing.expectEqualStrings("3", yaml.mappingGetScalar(po, "version").?);
 }
 
 test "clash with user template" {
@@ -459,15 +458,15 @@ test "clash with user template" {
     const tpl_text = "# my template\nmixed-port: 7890\nproxies: []\n";
     const files = try renderClash(a, &test_nodes, .{}, tpl_text);
     try std.testing.expectEqualStrings("config.yaml", files[0].path);
-    const yaml = files[0].content;
+    const yaml_text = files[0].content;
     // template kept byte-for-byte except fill points
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "# my template") != null);
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "mixed-port: 7890") != null);
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "proxies: []") == null);
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "- name: HK-01-CM") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "# my template") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "mixed-port: 7890") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "proxies: []") == null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "- name: HK-01-CM") != null);
     // default groups/rules appended
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "- name: PROXY") != null);
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "- MATCH,PROXY") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "- name: PROXY") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "- MATCH,PROXY") != null);
     // missing fill point -> error
     try std.testing.expectError(error.MissingFillPoint, renderClash(a, &test_nodes, .{}, "a: 1\n"));
     // non-empty fill point -> error
@@ -481,11 +480,11 @@ test "clash user groups/rules kept" {
     // user-defined non-empty groups + rules are kept as-is; only proxies is filled
     const tpl_text = "proxies: []\nproxy-groups:\n  - name: PROXY\n    type: select\n    proxies:\n      - DIRECT\nrules:\n- DOMAIN-SUFFIX,netflix.com,PROXY\n- MATCH,PROXY\n";
     const files = try renderClash(a, &test_nodes, .{}, tpl_text);
-    const yaml = files[0].content;
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "proxies:\n  - name: HK-01-CM") != null);
+    const yaml_text = files[0].content;
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "proxies:\n  - name: HK-01-CM") != null);
     // user groups kept (no AUTO url-test appended since non-empty)
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "type: url-test") == null);
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "DOMAIN-SUFFIX,netflix.com,PROXY") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "type: url-test") == null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "DOMAIN-SUFFIX,netflix.com,PROXY") != null);
 }
 
 test "clash anchor expansion in user groups" {
@@ -494,12 +493,12 @@ test "clash anchor expansion in user groups" {
     const a = arena.allocator();
     const tpl_text = "proxies: []\nproxy-groups:\n  - name: PROXY\n    type: select\n    proxies:\n      - AUTO\n      - __NODES__\nrules: []\n";
     const files = try renderClash(a, &test_nodes, .{}, tpl_text);
-    const yaml = files[0].content;
+    const yaml_text = files[0].content;
     // anchor expanded between AUTO and rules
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "- AUTO\n      - HK-01-CM") != null);
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "__NODES__") == null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "- AUTO\n      - HK-01-CM") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "__NODES__") == null);
     // empty rules stay empty (present = user content, no default fill)
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "rules: []") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "rules: []") != null);
     // empty group list stays empty (explicit), empty rules stay empty (no default fill)
     const tpl2 = "proxies: []\nproxy-groups:\n  - name: G\n    type: select\n    proxies: []\nrules: []\n";
     const files2 = try renderClash(a, &test_nodes, .{}, tpl2);
@@ -516,24 +515,23 @@ test "clash anchor edge cases" {
     // multiple groups each with anchors + mixed user refs
     const tpl_text = "proxies: []\nproxy-groups:\n  - name: PROXY\n    type: select\n    proxies:\n      - AUTO\n      - __NODES__\n  - name: AUTO\n    type: url-test\n    proxies:\n      - __NODES__\n  - name: 香港\n    type: select\n    proxies:\n      - AUTO\nrules:\n  - MATCH,PROXY\n";
     const files = try renderClash(a, &test_nodes, .{}, tpl_text);
-    const yaml = files[0].content;
+    const yaml_text = files[0].content;
     // both anchors expanded, user ref kept, count matches
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "__NODES__") == null);
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "- AUTO\n      - HK-01-CM") != null);
-    try std.testing.expect(std.mem.indexOf(u8, yaml, "- name: 香港\n    type: select\n    proxies:\n      - AUTO") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "__NODES__") == null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "- AUTO\n      - HK-01-CM") != null);
+    try std.testing.expect(std.mem.indexOf(u8, yaml_text, "- name: 香港\n    type: select\n    proxies:\n      - AUTO") != null);
     // re-parse with libyaml: PROXY group proxies = AUTO + 4 nodes + HK group = AUTO
-    const ymod = @import("yaml.zig");
-    const root = try ymod.parse(a, yaml);
-    const m = ymod.mappingOf(root).?;
-    const groups = ymod.sequenceOf(ymod.mappingGet(m, "proxy-groups").?).?;
+    const root = try yaml.parse(a, yaml_text);
+    const m = yaml.mappingOf(root).?;
+    const groups = yaml.sequenceOf(yaml.mappingGet(m, "proxy-groups").?).?;
     try std.testing.expectEqual(@as(usize, 3), groups.len);
-    const proxy_group = ymod.mappingOf(groups[0]).?;
-    const plist = ymod.sequenceOf(ymod.mappingGet(proxy_group, "proxies").?).?;
+    const proxy_group = yaml.mappingOf(groups[0]).?;
+    const plist = yaml.sequenceOf(yaml.mappingGet(proxy_group, "proxies").?).?;
     try std.testing.expectEqual(@as(usize, 5), plist.len); // AUTO + 4 nodes
-    try std.testing.expectEqualStrings("AUTO", ymod.scalarOf(plist[0]).?);
-    try std.testing.expectEqualStrings("HK-01-CM", ymod.scalarOf(plist[1]).?);
-    const auto_group = ymod.mappingOf(groups[1]).?;
-    try std.testing.expectEqual(@as(usize, 4), ymod.sequenceOf(ymod.mappingGet(auto_group, "proxies").?).?.len);
+    try std.testing.expectEqualStrings("AUTO", yaml.scalarOf(plist[0]).?);
+    try std.testing.expectEqualStrings("HK-01-CM", yaml.scalarOf(plist[1]).?);
+    const auto_group = yaml.mappingOf(groups[1]).?;
+    try std.testing.expectEqual(@as(usize, 4), yaml.sequenceOf(yaml.mappingGet(auto_group, "proxies").?).?.len);
 
     // misplaced anchor propagates as error
     try std.testing.expectError(error.MisplacedAnchor, renderClash(a, &test_nodes, .{}, "proxies: []\nproxy-groups:\n  - name: G\n    proxies: [__NODES__]\n"));
