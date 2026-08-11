@@ -142,7 +142,9 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
     }
 }
 
-/// add a directly-pasted node URI (--node / .zon .nodes): no sniff, no info filtering, no prefix
+/// parse a --url argument: optional [name=] prefix -> subscription name,
+/// rest is the subscription url. (--node / .zon .nodes do NOT go through
+/// here: they are raw node URIs without name prefixes, see addDirectNode)
 pub fn parseUrlArg(arg: []const u8) !struct { name: ?[]const u8, url: []const u8 } {
     if (std.mem.indexOfScalar(u8, arg, '=')) |i| {
         if (config.isValidName(arg[0..i])) return .{ .name = arg[0..i], .url = arg[i + 1 ..] };
