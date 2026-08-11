@@ -148,9 +148,10 @@ pub fn build(b: *std.Build) !void {
     const last_smoke = addAllSmokeTests(b, exe, null, null);
     smoke_step.dependOn(&last_smoke.step);
 
-    // integration suites: real processes/fs/locks - install path (first install
-    // -> unchanged skip -> partial rewrite), exit-code semantics + reset-state,
-    // and flock concurrency. isolated dirs + --no-reload + isolated XDG_STATE_HOME:
+    // integration suites: real processes/fs/locks - cli (single-run behavior
+    // contracts: exit codes, input paths, stdout purity, reset-state), install
+    // path (first install -> unchanged skip -> partial rewrite), flock concurrency.
+    // isolated dirs + --no-reload + isolated XDG_STATE_HOME:
     // never touches real configs, services, or state. native host only (CI's
     // cross-arch release-check depends on addSmokeTest directly, unaffected).
     // suites are data + a single step: run all by default, or filter with
