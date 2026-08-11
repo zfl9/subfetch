@@ -1,3 +1,7 @@
+//! subscription decoding: content bytes -> node list.
+//! sniffs the format (uri list / base64 / clash yaml / v2rayN json /
+//! sing-box json) then parses into nodes; single node URIs (ss:// etc.)
+//! are handled by uri.zig, raw transport by fetch.zig.
 const std = @import("std");
 const node = @import("node.zig");
 const uri = @import("uri.zig");

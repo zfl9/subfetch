@@ -1,3 +1,6 @@
+//! transport layer: subscription URL -> content bytes.
+//! (parse.zig consumes these bytes: content -> node list; uri.zig parses
+//! single node URIs like ss:// trojan://. fetch never interprets payloads.)
 const std = @import("std");
 const util = @import("util.zig");
 
