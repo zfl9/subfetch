@@ -88,7 +88,7 @@
     // .tproxy_ipv6 = false,
 
     // # client log level: debug | info | warning | error (default info)
-    // .log_level = "info",
+    // .log_level = .info,
 
     // # clash external-controller / sing-box clash_api (default 127.0.0.1:65501)
     // .controller = "127.0.0.1:65501",

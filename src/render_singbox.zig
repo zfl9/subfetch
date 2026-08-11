@@ -21,10 +21,8 @@ pub fn renderSingbox(
 
     // log
     var log = ObjectMap.init(arena);
-    const log_lvl = if (opts.log_level) |l|
-        (if (std.mem.eql(u8, l, "warning")) "warn" else l)
-    else
-        "info"; // clash says warning, sing-box says warn
+    const lvl = opts.log_level orelse .info;
+    const log_lvl = lvl.singboxName();
     try log.put("level", .{ .string = log_lvl });
     try log.put("timestamp", .{ .bool = true });
     try root.put("log", .{ .object = log });

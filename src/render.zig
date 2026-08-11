@@ -6,6 +6,42 @@ const render_native = @import("render_native.zig");
 const render_raw = @import("render_raw.zig");
 const Node = node.Node;
 
+/// client log level; user-facing values: debug|info|warning|error.
+/// enum so .zon parses type-checked (std.zon type-driven) and CLI
+/// validation is a single parse() lookup.
+pub const LogLevel = enum {
+    debug,
+    info,
+    warning,
+    error_,
+
+    pub fn parse(s: []const u8) ?LogLevel {
+        if (std.mem.eql(u8, s, "debug")) return .debug;
+        if (std.mem.eql(u8, s, "info")) return .info;
+        if (std.mem.eql(u8, s, "warning")) return .warning;
+        if (std.mem.eql(u8, s, "error")) return .error_;
+        return null;
+    }
+
+    /// canonical name as written in clash configs (and CLI/.zon values)
+    pub fn name(self: LogLevel) []const u8 {
+        return switch (self) {
+            .debug => "debug",
+            .info => "info",
+            .warning => "warning",
+            .error_ => "error",
+        };
+    }
+
+    /// sing-box spelling: warning -> warn
+    pub fn singboxName(self: LogLevel) []const u8 {
+        return switch (self) {
+            .warning => "warn",
+            else => self.name(),
+        };
+    }
+};
+
 /// output format
 pub const Format = enum {
     clash,
@@ -54,7 +90,7 @@ pub const Options = struct {
     /// tproxy inbound port (clash + sing-box built-in templates; null = off)
     tproxy_port: ?u16 = null,
     /// client log level (built-in templates; null = info)
-    log_level: ?[]const u8 = null,
+    log_level: ?LogLevel = null,
     /// whether sing-box enables clash_api (node switching via WebUI).
     /// default off: main passes the CLI/.zon flag explicitly; the struct
     /// default is false so accidental Options{} construction cannot enable it

@@ -43,7 +43,7 @@ pub const Options = struct {
     /// tproxy inbound port (clash + singbox built-in templates; null = off)
     tproxy_port: ?u16 = null,
     /// client log level (built-in templates; null = info)
-    log_level: ?[]const u8 = null,
+    log_level: ?render.LogLevel = null,
     no_verify: bool = false,
     no_reload: bool = false,
     /// user-defined reload command (acme.sh --reloadcmd style);
@@ -117,7 +117,10 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
                 return error.BadArg;
             };
         } else if (try takeRequired(&i, args, a, "--log-level", null)) |v| {
-            opts.log_level = v;
+            opts.log_level = render.LogLevel.parse(v) orelse {
+                log.err(null, "invalid log level: {s} (debug|info|warning|error)", .{v});
+                return error.BadArg;
+            };
         } else if (takeValue(&i, args, a, "--tproxy-port", null)) |v| {
             opts.tproxy_port = std.fmt.parseInt(u16, v, 10) catch {
                 log.err(null, "invalid number for {s}: {s}", .{ a, v });
