@@ -1,13 +1,13 @@
 const std = @import("std");
-const config_mod = @import("config.zig");
-const render_mod = @import("render.zig");
+const config = @import("config.zig");
+const render = @import("render.zig");
 const log = @import("log.zig");
 
 const build_options = @import("build_options");
 const version = build_options.version;
 
 /// one -o/--output target: format[:template][=path] (shared with .zon outputs)
-const Output = config_mod.Output;
+const Output = config.Output;
 
 pub const Options = struct {
     config: []const u8 = "config.zon",
@@ -142,7 +142,7 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
 /// add a directly-pasted node URI (--node / .zon .nodes): no sniff, no info filtering, no prefix
 pub fn parseUrlArg(arg: []const u8) !struct { name: ?[]const u8, url: []const u8 } {
     if (std.mem.indexOfScalar(u8, arg, '=')) |i| {
-        if (config_mod.isValidName(arg[0..i])) return .{ .name = arg[0..i], .url = arg[i + 1 ..] };
+        if (config.isValidName(arg[0..i])) return .{ .name = arg[0..i], .url = arg[i + 1 ..] };
     }
     return .{ .name = null, .url = arg };
 }
@@ -160,7 +160,7 @@ pub fn parseOutput(v: []const u8) !Output {
         template = rest[colon + 1 ..];
         rest = rest[0..colon];
     }
-    const fmt = render_mod.Format.parse(rest) orelse return error.BadArg;
+    const fmt = render.Format.parse(rest) orelse return error.BadArg;
     return .{ .fmt = fmt, .tmpl = template, .path = path };
 }
 
@@ -324,27 +324,27 @@ fn printUsageOpt(o: Opt) void {
 test "parseOutput grammar" {
     // format only
     const o1 = try parseOutput("clash");
-    try std.testing.expectEqual(render_mod.Format.clash, o1.fmt);
+    try std.testing.expectEqual(render.Format.clash, o1.fmt);
     try std.testing.expect(o1.tmpl == null);
     try std.testing.expect(o1.path == null);
     // format + template
     const o2 = try parseOutput("clash:tmpl.yaml");
-    try std.testing.expectEqual(render_mod.Format.clash, o2.fmt);
+    try std.testing.expectEqual(render.Format.clash, o2.fmt);
     try std.testing.expectEqualStrings("tmpl.yaml", o2.tmpl.?);
     try std.testing.expect(o2.path == null);
     // format + path
     const o3 = try parseOutput("singbox=/etc/sing-box/config.json");
-    try std.testing.expectEqual(render_mod.Format.singbox, o3.fmt);
+    try std.testing.expectEqual(render.Format.singbox, o3.fmt);
     try std.testing.expectEqualStrings("/etc/sing-box/config.json", o3.path.?);
     try std.testing.expect(o3.tmpl == null);
     // full: format + template + path
     const o4 = try parseOutput("clash:tmpl.yaml=out/c.yaml");
-    try std.testing.expectEqual(render_mod.Format.clash, o4.fmt);
+    try std.testing.expectEqual(render.Format.clash, o4.fmt);
     try std.testing.expectEqualStrings("tmpl.yaml", o4.tmpl.?);
     try std.testing.expectEqualStrings("out/c.yaml", o4.path.?);
     // stdout path
     const o5 = try parseOutput("raw=-");
-    try std.testing.expectEqual(render_mod.Format.raw, o5.fmt);
+    try std.testing.expectEqual(render.Format.raw, o5.fmt);
     try std.testing.expectEqualStrings("-", o5.path.?);
     // unknown format errors
     try std.testing.expectError(error.BadArg, parseOutput("bogus"));

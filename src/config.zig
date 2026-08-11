@@ -1,6 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const render_mod = @import("render.zig");
+const render = @import("render.zig");
 
 pub const Subscription = struct {
     /// null/omitted = anonymous subscription (no "name@" prefix);
@@ -12,7 +12,7 @@ pub const Subscription = struct {
 
 /// one output target (mirrors -o/--output; .zon: .fmt = .clash etc.)
 pub const Output = struct {
-    fmt: render_mod.Format,
+    fmt: render.Format,
     tmpl: ?[]const u8 = null,
     path: ?[]const u8 = null,
     /// per-output reload command (overrides global .reload_cmd; CLI --reload-cmd wins)
@@ -249,11 +249,11 @@ test "parse render/deploy config fields" {
     try std.testing.expectEqual(@as(?u16, 60080), cfg.tproxy_port);
     try std.testing.expectEqualStrings("warning", cfg.log_level.?);
     try std.testing.expectEqual(@as(usize, 2), cfg.outputs.?.len);
-    try std.testing.expectEqual(render_mod.Format.clash, cfg.outputs.?[0].fmt);
+    try std.testing.expectEqual(render.Format.clash, cfg.outputs.?[0].fmt);
     try std.testing.expectEqualStrings("/etc/clash/config.yaml", cfg.outputs.?[0].path.?);
     try std.testing.expectEqualStrings("systemctl restart clash", cfg.outputs.?[0].reload_cmd.?);
     try std.testing.expect(cfg.outputs.?[0].tmpl == null);
-    try std.testing.expectEqual(render_mod.Format.singbox, cfg.outputs.?[1].fmt);
+    try std.testing.expectEqual(render.Format.singbox, cfg.outputs.?[1].fmt);
     try std.testing.expectEqualStrings("/etc/singbox.tmpl.json", cfg.outputs.?[1].tmpl.?);
     try std.testing.expectEqualStrings("/etc/sing-box/config.json", cfg.outputs.?[1].path.?);
     try std.testing.expect(cfg.outputs.?[1].reload_cmd == null);
