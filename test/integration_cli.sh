@@ -1,17 +1,17 @@
 #!/bin/sh
-# exit-code semantics + --reset-state file handling.
+# single-run CLI behavior contracts: exit-code semantics, input paths,
 # isolated: XDG_STATE_HOME points into the build cache dir.
 #
 # exit codes: 0 success / 1 runtime (io, install) / 2 usage / 3 config & data
 # / 4 any subscription/node-file source failed (cron must not see success).
 set -eu
 
-echo "=== integration-exitcodes ==="
+echo "=== integration-cli ==="
 
 EXE=$1
 WORK=$2
 mkdir -p "$WORK"
-TMP=$(mktemp -d "$WORK/exitcodes.XXXXXX")
+TMP=$(mktemp -d "$WORK/cli.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 export XDG_STATE_HOME="$TMP/state"
 
@@ -78,4 +78,4 @@ expect_exit 0 "reset with state" "$EXE" --reset-state
 [ -f "$XDG_STATE_HOME/subfetch/lock" ] || { echo "FAIL: lock file must be kept"; exit 1; }
 expect_exit 0 "reset again" "$EXE" --reset-state
 
-echo "integration-exitcodes OK"
+echo "integration-cli OK"

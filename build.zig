@@ -161,7 +161,7 @@ pub fn build(b: *std.Build) !void {
         dir: []const u8,
     }{
         .{ .name = "install", .script = "test/integration_install.sh", .dir = ".zig-cache/integration-install" },
-        .{ .name = "exitcodes", .script = "test/integration_exitcodes.sh", .dir = ".zig-cache/integration-exitcodes" },
+        .{ .name = "cli", .script = "test/integration_cli.sh", .dir = ".zig-cache/integration-cli" },
         .{ .name = "lock", .script = "test/integration_lock.sh", .dir = ".zig-cache/integration-lock" },
     };
     const integration_filter = b.option([]const u8, "integration_filter", "only run integration suites whose name contains this substring");
@@ -185,7 +185,7 @@ pub fn build(b: *std.Build) !void {
         integration_step.dependOn(&run.step);
     }
     if (integration_filter != null and !integration_matched) {
-        @panic("integration_filter matches no suite (install|exitcodes|lock)");
+        @panic("integration_filter matches no suite (install|cli|lock)");
     }
 
     // release filter
