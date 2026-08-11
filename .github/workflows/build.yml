@@ -53,6 +53,31 @@ jobs:
           name: subfetch-${{ matrix.target }}
           path: dist/
 
+  test:
+    # native-only full test suite: unit + all 9 format smokes + the three
+    # integration suites (install path / exit codes / flock lock). cross-arch
+    # coverage lives in the build job (release-test); integration tests need
+    # real processes/fs/locks and are meaningless under qemu - native only.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Zig 0.15.2 (official)
+        run: |
+          wget -q https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz
+          tar xJf zig-x86_64-linux-0.15.2.tar.xz
+          echo "$PWD/zig-x86_64-linux-0.15.2" >> "$GITHUB_PATH"
+          "$PWD/zig-x86_64-linux-0.15.2/zig" version
+      - name: Unit tests
+        run: zig build test
+      - name: Smoke tests (all 9 formats)
+        run: zig build smoke-test
+      - name: Integration: install path
+        run: zig build smoke-install
+      - name: Integration: exit codes
+        run: zig build smoke-exitcodes
+      - name: Integration: flock lock
+        run: zig build smoke-lock
+
   release:
     if: startsWith(github.ref, 'refs/tags/')
     needs: build

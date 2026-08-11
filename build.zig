@@ -74,6 +74,27 @@ fn addSmokeTest(b: *std.Build, exe: *std.Build.Step.Compile, arg_output: []const
     return smoke_test;
 }
 
+/// all output formats: aggregate first (clash/singbox cover all 8 protocols and
+/// both serializer paths - yaml + json), then per-node native formats
+const all_formats = [_][]const u8{
+    "clash", "singbox", "trojan", "hysteria", "hysteria2", "xray", "ss", "ssr", "raw",
+};
+
+/// chain all 9 format smoke runs serially (shared separator keeps the output
+/// ordered); returns the last run so callers can chain follow-up steps.
+fn addAllSmokeTests(
+    b: *std.Build,
+    exe: *std.Build.Step.Compile,
+    matrix: ?ReleaseMatrix,
+    prev: ?*std.Build.Step.Run,
+) *std.Build.Step.Run {
+    var last = prev;
+    for (all_formats) |fmt| {
+        last = addSmokeTest(b, exe, fmt, matrix, last);
+    }
+    return last.?;
+}
+
 const ReleaseMatrix = struct {
     triple: []const u8,
     cpu: []const u8,
@@ -124,12 +145,8 @@ pub fn build(b: *std.Build) !void {
     // chained serially: the runs share identical output and the separator
     // lines must stay ordered
     const smoke_test_step = b.step("smoke-test", "run smoke tests");
-    var prev_smoke: ?*std.Build.Step.Run = null;
-    for ([_][]const u8{ "clash", "singbox", "trojan", "hysteria", "hysteria2", "xray", "ss", "ssr", "raw" }) |fmt| {
-        const r = addSmokeTest(b, exe, fmt, null, prev_smoke);
-        prev_smoke = r;
-        smoke_test_step.dependOn(&r.step);
-    }
+    const last_smoke = addAllSmokeTests(b, exe, null, null);
+    smoke_test_step.dependOn(&last_smoke.step);
 
     // install-path smoke test: first install -> unchanged skip -> partial rewrite.
     // isolated dir + --no-reload + isolated XDG_STATE_HOME: never touches real
@@ -146,7 +163,7 @@ pub fn build(b: *std.Build) !void {
         run.stdio = .inherit;
         // after all format runs: its output would otherwise race into the
         // middle of the format list
-        if (prev_smoke) |p| run.step.dependOn(&p.step);
+        run.step.dependOn(&last_smoke.step);
         prev_install = run;
         smoke_install_step.dependOn(&run.step);
         smoke_test_step.dependOn(&run.step);
@@ -210,8 +227,7 @@ pub fn build(b: *std.Build) !void {
         r_run_tests.stdio = .inherit;
         release_test_step.dependOn(&r_run_tests.step);
 
-        // smoke test
-        release_test_step.dependOn(&addSmokeTest(b, r_exe, "clash", r_matrix, null).step);
-        release_test_step.dependOn(&addSmokeTest(b, r_exe, "singbox", r_matrix, null).step);
+        // smoke test: all 9 formats (full protocol + serializer coverage per arch)
+        release_test_step.dependOn(&addAllSmokeTests(b, r_exe, r_matrix, null).step);
     }
 }
