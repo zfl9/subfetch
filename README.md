@@ -109,7 +109,7 @@ crontab / systemd timer 中只需执行：`subfetch -c /path/to/config.zon`。
 clash / sing-box 输出支持自定义模板：一份完整的配置文件，把节点列表位置留成空：
 
 ```yaml
-// 对于 clash
+# 对于 clash
 proxies: []
 ```
 
@@ -124,7 +124,7 @@ proxies: []
 
 ## 内置模板
 
-不提供模板时将使用内置模板，内置模板是按 ss-tproxy 使用场景设计的：DNS 分流交给 chinadns-ng、L4 分流交给 ss-tproxy（流量全部进代理）、只监听 127.0.0.1 (socks5 / tproxy)。
+不提供模板时将使用内置模板，内置模板是按 ss-tproxy 使用场景设计的：DNS 分流交给 chinadns-ng、L4 分流交给 ss-tproxy（流量全部进代理）、只监听 127.0.0.1（socks5 / tproxy）。
 
 这些配置属于内置模板的控制参数（自定义模板时将完全忽略）：`listen` / `port` / `mixed_port` / `tproxy_port` / `allow_lan` / `tproxy_ipv6` / `log_level` / `controller` / `secret` / `singbox_clash_api`。
 
