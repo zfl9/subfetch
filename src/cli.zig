@@ -136,7 +136,7 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
         } else if (try takeRequired(&i, args, a, "--secret", null)) |v| {
             opts.secret = v;
         } else {
-            log.err(null, "unknown argument: {s}", .{a});
+            log.err(null, "unknown option: {s}", .{a});
             return error.BadArg;
         }
     }
