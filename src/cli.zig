@@ -117,7 +117,7 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
                 return error.BadArg;
             };
         } else if (try takeRequired(&i, args, a, "--log-level", null)) |v| {
-            opts.log_level = render.LogLevel.parse(v) orelse {
+            opts.log_level = std.meta.stringToEnum(render.LogLevel, v) orelse {
                 log.err(null, "invalid log level: {s} (debug|info|warn|error)", .{v});
                 return error.BadArg;
             };

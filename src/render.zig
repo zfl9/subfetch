@@ -16,14 +16,6 @@ pub const LogLevel = enum {
     warn,
     err,
 
-    pub fn parse(s: []const u8) ?LogLevel {
-        if (std.mem.eql(u8, s, "debug")) return .debug;
-        if (std.mem.eql(u8, s, "info")) return .info;
-        if (std.mem.eql(u8, s, "warn")) return .warn;
-        if (std.mem.eql(u8, s, "err")) return .err;
-        return null;
-    }
-
     /// clash/xray spelling (warn->warning, err->error); @tagName for sing-box
     pub fn clashName(self: LogLevel) []const u8 {
         return switch (self) {
