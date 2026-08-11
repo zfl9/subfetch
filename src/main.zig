@@ -27,7 +27,7 @@ pub fn main() !void {
     var opts = cli.Options{};
     cli.parseArgs(arena, args, &opts) catch |e| {
         // BadArg already logged its specific reason inside parseArgs
-        // (unknown argument / invalid value / missing value ...)
+        // (unknown option / invalid value / missing value ...)
         if (e == error.OutOfMemory) log.err(null, "out of memory", .{});
         cli.printUsage();
         std.process.exit(2);
