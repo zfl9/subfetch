@@ -229,7 +229,7 @@ pub fn main() !void {
                     for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
                 }
             }
-            if (r.out.verify orelse true) try verifyDryRunFiles(arena, r.out.fmt, r.files);
+            try verifyDryRunFiles(arena, r.out.fmt, r.files, !(r.out.verify orelse true));
         }
     } else {
         // real mode: verify all first (atomic), then install all
@@ -289,8 +289,16 @@ pub fn main() !void {
     if (fail_cnt > 0) std.process.exit(4);
 }
 
-fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render.Format, files: []const render.File) !void {
+fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render.Format, files: []const render.File, no_verify: bool) !void {
     for (files) |f| {
+        // --no-verify / verify=false: mandatory syntax layer only, no temp file
+        if (no_verify) {
+            if (deploy.syntaxCheck(arena, fmt, f.content) == .failed) {
+                log.err(null, "dry-run syntax check failed: {s}", .{f.path});
+                std.process.exit(3);
+            }
+            continue;
+        }
         const ext = switch (fmt) {
             .hysteria2 => "yaml",
             else => "json",
@@ -337,7 +345,16 @@ fn abort(arena: std.mem.Allocator, exit_code: u8, comptime fmt: []const u8, args
 /// all temp files are removed and nothing is installed (atomic across targets).
 /// no-op when --no-verify (install stage writes directly).
 fn verifyAll(arena: std.mem.Allocator, fmt: render.Format, files: []const render.File, path: []const u8, no_verify: bool) void {
-    if (no_verify) return;
+    if (no_verify) {
+        // syntax self-check always runs: it guards the generator/template
+        // output (millisecond work), while only the client command is skipped
+        for (files) |f| {
+            if (deploy.syntaxCheck(arena, fmt, f.content) == .failed) {
+                abort(arena, 3, "syntax check failed, aborting: {s} (nothing installed)", .{path});
+            }
+        }
+        return;
+    }
     if (isDirFormat(fmt)) {
         std.fs.cwd().makePath(path) catch |e| {
             abort(arena, 1, "failed to create directory {s}: {s}", .{ path, @errorName(e) });

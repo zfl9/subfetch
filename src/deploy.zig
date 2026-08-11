@@ -100,43 +100,57 @@ fn runCommandTimed(argv: []const []const u8, timeout_ms: u32) ?u8 {
 
 /// verify generated content. tmp_path is the written temp file (the verifier reads it).
 /// verifier not found -> skipped (does not block install); verification failure -> failed.
+/// cheap syntax-level self-check: guards the generator/template output, not the
+/// client. always runs, even with --no-verify / per-output verify=false (it is
+/// millisecond work; skipping it would save nothing). clash/hysteria2 are yaml,
+/// singbox/trojan/hysteria/ss/ssr/xray are json; raw is trivially fine.
+pub fn syntaxCheck(arena: std.mem.Allocator, fmt: Format, content: []const u8) VerifyResult {
+    return switch (fmt) {
+        .clash, .hysteria2 => blk: {
+            _ = yaml.parse(arena, content) catch break :blk .failed;
+            break :blk .ok;
+        },
+        .singbox, .trojan, .hysteria, .ss, .ssr, .xray => blk: {
+            _ = std.json.parseFromSlice(std.json.Value, arena, content, .{}) catch break :blk .failed;
+            break :blk .ok;
+        },
+        .raw => .ok,
+    };
+}
+
+/// verify generated content. tmp_path is the written temp file (the verifier reads it).
+/// client command first when a bin is available (skippable via --no-verify);
+/// without a bin it falls back to the mandatory syntax layer.
 pub fn verifyContent(
     arena: std.mem.Allocator,
     fmt: Format,
     content: []const u8,
     tmp_path: []const u8,
 ) VerifyResult {
-    return switch (fmt) {
+    // client-command layer first (skippable via --no-verify): when a bin is
+    // available it is the authoritative check; without a bin we fall through
+    // to the mandatory syntax layer below
+    const cmd = switch (fmt) {
         .clash => blk: {
-            const bin = findBin(arena, "clash") orelse findBin(arena, "mihomo") orelse break :blk .skipped;
+            const bin = findBin(arena, "clash") orelse findBin(arena, "mihomo") orelse break :blk null;
             const dir = std.fs.path.dirname(tmp_path) orelse ".";
-            const code = runVerifier(arena, &.{ bin, "-t", "-d", dir, "-f", tmp_path });
-            break :blk if (code != null and code.? == 0) .ok else .failed;
+            break :blk runVerifier(arena, &.{ bin, "-t", "-d", dir, "-f", tmp_path });
         },
         .singbox => blk: {
-            const bin = findBin(arena, "sing-box") orelse break :blk .skipped;
-            const code = runVerifier(arena, &.{ bin, "check", "-c", tmp_path });
-            break :blk if (code != null and code.? == 0) .ok else .failed;
-        },
-        .trojan, .hysteria, .ss, .ssr => blk: {
-            // no check mode: JSON syntax validation
-            _ = std.json.parseFromSlice(std.json.Value, arena, content, .{}) catch break :blk .failed;
-            break :blk .ok;
+            const bin = findBin(arena, "sing-box") orelse break :blk null;
+            break :blk runVerifier(arena, &.{ bin, "check", "-c", tmp_path });
         },
         .xray => blk: {
-            // JSON syntax validation; run xray -test -c when the xray binary is available
-            _ = std.json.parseFromSlice(std.json.Value, arena, content, .{}) catch break :blk .failed;
-            const bin = findBin(arena, "xray") orelse break :blk .ok;
-            const code = runVerifier(arena, &.{ bin, "-test", "-c", tmp_path });
-            break :blk if (code != null and code.? == 0) .ok else .failed;
+            const bin = findBin(arena, "xray") orelse break :blk null;
+            break :blk runVerifier(arena, &.{ bin, "-test", "-c", tmp_path });
         },
-        .hysteria2 => blk: {
-            // native config is yaml: validate with libyaml parser
-            _ = yaml.parse(arena, content) catch break :blk .failed;
-            break :blk .ok;
-        },
-        .raw => .ok,
+        else => null, // trojan/hysteria/ss/ssr/hysteria2/raw: no client check mode
     };
+    if (cmd) |code| {
+        return if (code == 0) .ok else .failed;
+    }
+    // mandatory syntax layer (also runs standalone under --no-verify)
+    return syntaxCheck(arena, fmt, content);
 }
 
 /// atomic file write (write .new then rename)
@@ -293,6 +307,24 @@ test "findBin local and path" {
     } else |_| {}
     // nonexistent
     try std.testing.expect(findBin(a, "definitely-not-exists-xyz") == null);
+}
+
+test "syntaxCheck validates per-format syntax" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // clash / hysteria2: yaml syntax
+    try std.testing.expectEqual(VerifyResult.ok, syntaxCheck(a, .clash, "proxies: []\n"));
+    try std.testing.expectEqual(VerifyResult.failed, syntaxCheck(a, .clash, "a: \"unclosed\n"));
+    try std.testing.expectEqual(VerifyResult.ok, syntaxCheck(a, .hysteria2, "listen: 0.0.0.0:1080\n"));
+    try std.testing.expectEqual(VerifyResult.failed, syntaxCheck(a, .hysteria2, "a: \"unclosed\n"));
+    // singbox / trojan / hysteria / ss / ssr / xray: json syntax
+    try std.testing.expectEqual(VerifyResult.ok, syntaxCheck(a, .singbox, "{\"log\": {}}"));
+    try std.testing.expectEqual(VerifyResult.failed, syntaxCheck(a, .singbox, "{bad"));
+    try std.testing.expectEqual(VerifyResult.ok, syntaxCheck(a, .ss, "{\"server\":\"h\"}"));
+    try std.testing.expectEqual(VerifyResult.failed, syntaxCheck(a, .xray, "not json"));
+    // raw: trivially fine
+    try std.testing.expectEqual(VerifyResult.ok, syntaxCheck(a, .raw, "anything at all"));
 }
 
 test "verifyContent trojan json" {

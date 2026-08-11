@@ -217,70 +217,49 @@ const Section = struct { title: []const u8, options: []const Opt };
 /// columns (indent included) go on their own line with the description
 /// indented below - the renderer computes this, no hand-padded text.
 const usage_sections = [_]Section{
-    .{ .title = "Input sources", .options = &.{
+    .{ .title = "Config", .options = &.{
         .{ .opt = "-c, --config <path>", .desc = &.{"configuration zon (default ./config.zon)"} },
-        .{ .opt = "--url <url>", .desc = &.{
-            "subscription url (repeatable; [name=] prefix names the",
-            "subscription, same semantics as .zon; omit for anonymous)",
+    } },
+    .{ .title = "Input", .options = &.{
+        .{ .opt = "--url <[name=]url>", .desc = &.{
+            "subscription url (repeatable; omit [name=] for anonymous)",
         } },
         .{ .opt = "--node <uri>", .desc = &.{"directly pasted node URI (repeatable)"} },
         .{ .opt = "--node-file <path>", .desc = &.{"node list file (one URI per line)"} },
-        .{ .opt = "--ua <str>", .desc = &.{"User-Agent sent to subscription servers"} },
     } },
-    .{ .title = "Filtering & naming", .options = &.{
-        .{ .opt = "--info-keyword <kw>", .desc = &.{
-            "info-node keyword override (repeatable; \"\" clears all,",
-            "i.e. disables filtering; overrides .zon info_keywords)",
-        } },
-        .{ .opt = "--sep <str>", .desc = &.{"node name separator between sub and node names (default @)"} },
-    } },
-    .{ .title = "Output targets", .options = &.{
+    .{ .title = "Output", .options = &.{
         .{ .opt = "-o, --output <fmt>[:<tmpl>][=<path>]", .desc = &.{
             "output target (repeatable; default raw)",
             "fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw",
-            "tmpl: template file (clash/singbox; optional)",
-            "path: output file (single-file) or directory (native); '-' = stdout",
+            "tmpl: custom template file (clash/singbox)",
+            "path: output file or directory; '-' = stdout",
         } },
     } },
-    .{ .title = "Output config", .options = &.{
-        .{ .opt = "--listen <addr>", .desc = &.{"native client listen address (default 127.0.0.1)"} },
-        .{ .opt = "--port <n>", .desc = &.{"native client listen port (default 1080)"} },
+    .{ .title = "Client config (built-in templates only)", .options = &.{
+        .{ .opt = "--listen <addr>", .desc = &.{"socks5 listen address (default 127.0.0.1)"} },
+        .{ .opt = "--port <n>", .desc = &.{"socks5 listen port (default 1080)"} },
         .{ .opt = "--mixed-port <n>", .desc = &.{"clash mixed-port (default 65500)"} },
-        .{ .opt = "--controller <a:p>", .desc = &.{"clash/singbox external-controller (default 127.0.0.1:65501)"} },
+        .{ .opt = "--controller <a:p>", .desc = &.{"API address (clash/sing-box; default 127.0.0.1:65501)"} },
         .{ .opt = "--secret <str>", .desc = &.{"API secret (auto-generated UUID if omitted)"} },
-        .{ .opt = "--singbox-clash-api", .desc = &.{"add clash_api to sing-box output (default off)"} },
-        .{ .opt = "--allow-lan", .desc = &.{"clash allow-lan in built-in template (default off)"} },
-        .{ .opt = "--tproxy-ipv6", .desc = &.{
-            "v6 tproxy dual-stack in built-in templates:",
-            "clash ipv6 flag + sing-box tproxy-in-v6",
-            "inbound (default off)",
-        } },
-        .{ .opt = "--tproxy-port <n>", .desc = &.{
-            "tproxy inbound port (clash + sing-box built-in",
-            "templates; socks inbound stays; default off)",
-        } },
-        .{ .opt = "--log-level <level>", .desc = &.{
-            "client log level: debug|info|warn|err",
-            "(built-in templates; default info)",
-        } },
+        .{ .opt = "--singbox-clash-api", .desc = &.{"add clash_api to sing-box output"} },
+        .{ .opt = "--allow-lan", .desc = &.{"clash allow-lan"} },
+        .{ .opt = "--tproxy-ipv6", .desc = &.{"v6 tproxy dual-stack (clash + sing-box)"} },
+        .{ .opt = "--tproxy-port <n>", .desc = &.{"tproxy inbound port (clash + sing-box)"} },
+        .{ .opt = "--log-level <level>", .desc = &.{"client log level: debug|info|warn|err (default info)"} },
     } },
     .{ .title = "Deploy", .options = &.{
-        .{ .opt = "--no-verify", .desc = &.{"skip verification"} },
-        .{ .opt = "--no-reload", .desc = &.{"skip reload after install"} },
-        .{ .opt = "--reload-cmd <cmd>", .desc = &.{
-            "custom reload command after install (sh -c, overrides",
-            "auto reload; acme.sh style)",
-        } },
-    } },
-    .{ .title = "Run behavior", .options = &.{
-        .{ .opt = "--dry-run", .desc = &.{"verify only, write nothing"} },
+        .{ .opt = "--no-verify", .desc = &.{"skip client verify command"} },
+        .{ .opt = "--no-reload", .desc = &.{"skip reload after config install"} },
+        .{ .opt = "--reload-cmd <cmd>", .desc = &.{"custom reload command (sh -c '<cmd>')"} },
     } },
     .{ .title = "Misc", .options = &.{
-        .{ .opt = "--reset-state", .desc = &.{
-            "delete the persisted api secret (state dir",
-            "$XDG_STATE_HOME or ~/.local/state/subfetch);",
-            "next run generates a fresh one (lock file kept)",
+        .{ .opt = "--dry-run", .desc = &.{"verify only, write nothing"} },
+        .{ .opt = "--ua <str>", .desc = &.{"User-Agent sent to subscription servers"} },
+        .{ .opt = "--info-keyword <kw>", .desc = &.{
+            "info-node keyword (repeatable; \"\" = no filtering)",
         } },
+        .{ .opt = "--sep <str>", .desc = &.{"subscription/node name separator (default @)"} },
+        .{ .opt = "--reset-state", .desc = &.{"delete the persisted API secret (regenerated on next run)"} },
         .{ .opt = "-v, --verbose", .desc = &.{"verbose output (node list)"} },
         .{ .opt = "-h, --help", .desc = &.{"show this help"} },
         .{ .opt = "-V, --version", .desc = &.{"show version"} },
@@ -297,19 +276,19 @@ fn printUsageOpt(o: Opt) void {
     const w = buf.writer(a);
     const short = o.opt.len > 1 and o.opt[0] == '-' and o.opt[1] != '-';
     const opt_col = o.opt.len + (if (short) @as(usize, 2) else 6);
-    if (opt_col > 24) {
+    if (opt_col > 26) {
         w.print("{s}{s}\n", .{ if (short) "  " else "      ", o.opt }) catch return;
     } else {
         w.print("{s}{s}", .{ if (short) "  " else "      ", o.opt }) catch return;
-        var pad: usize = 26 - opt_col;
+        var pad: usize = 28 - opt_col;
         while (pad > 0) : (pad -= 1) w.writeByte(' ') catch return;
     }
     for (o.desc, 0..) |l, i| {
         if (i > 0) {
             w.writeByte('\n') catch return;
-            w.print("                          ", .{}) catch return;
-        } else if (opt_col > 24) {
-            w.print("                          ", .{}) catch return;
+            w.print("                            ", .{}) catch return;
+        } else if (opt_col > 26) {
+            w.print("                            ", .{}) catch return;
         }
         w.print("{s}", .{l}) catch return;
     }
