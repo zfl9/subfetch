@@ -41,7 +41,11 @@ pub fn fileExists(path: []const u8) bool {
 
 /// verifier subprocess timeout: a hung verifier (broken binary, deadlock) must
 /// not stall the whole cron run forever; the process is killed on timeout.
-const verify_timeout_ms = 30_000;
+/// all external-process operations share one timeout: verifier and reload
+/// commands are both trigger/parse tasks well under 15s in practice; the
+/// timeout is a hang guard (network wait, stuck tool), and killing the
+/// verifier is fail-safe (verify failed -> nothing installed).
+const verify_timeout_ms = 15_000;
 
 const WaitCtx = struct {
     base: util.TimeoutBase,
