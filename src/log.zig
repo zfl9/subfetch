@@ -7,7 +7,7 @@ const c_time = @cImport({
 
 pub const LogLevel = enum { info, warn, err, verbose };
 
-pub fn levelChar(level: LogLevel) u8 {
+fn levelChar(level: LogLevel) u8 {
     return switch (level) {
         .info => 'I',
         .warn => 'W',
@@ -16,7 +16,7 @@ pub fn levelChar(level: LogLevel) u8 {
     };
 }
 
-pub fn levelColor(level: LogLevel) []const u8 {
+fn levelColor(level: LogLevel) []const u8 {
     return switch (level) {
         .info => "\x1b[36m", // cyan
         .warn => "\x1b[33m", // yellow
@@ -26,7 +26,7 @@ pub fn levelColor(level: LogLevel) []const u8 {
 }
 
 /// Format local time as "YYYY-MM-DD HH:MM:SS" (libc localtime_r + strftime; musl is linked anyway).
-pub fn localTimestamp(buf: []u8) []const u8 {
+fn localTimestamp(buf: []u8) []const u8 {
     const now: c_time.time_t = @intCast(std.time.timestamp());
     var tm: c_time.struct_tm = undefined;
     _ = c_time.localtime_r(&now, &tm);
@@ -35,7 +35,7 @@ pub fn localTimestamp(buf: []u8) []const u8 {
 }
 
 /// Colorize summary keywords (ok/OK/failed/skipped) in the message body, with word boundaries.
-pub fn colorizeKeywords(file: std.fs.File, text: []const u8) void {
+fn colorizeKeywords(file: std.fs.File, text: []const u8) void {
     const Keyword = struct { word: []const u8, color: []const u8 };
     const keywords = [_]Keyword{
         .{ .word = "OK", .color = "\x1b[32m" },
@@ -103,7 +103,7 @@ pub fn log(level: LogLevel, source: ?[]const u8, comptime fmt: []const u8, args:
 }
 
 /// write `text` wrapped in color code `code` (no-op coloring when !color)
-pub fn writeColored(file: std.fs.File, color: bool, code: []const u8, text: []const u8) void {
+fn writeColored(file: std.fs.File, color: bool, code: []const u8, text: []const u8) void {
     if (color) file.writeAll(code) catch {};
     file.writeAll(text) catch {};
     if (color) file.writeAll("\x1b[0m") catch {};

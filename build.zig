@@ -164,8 +164,7 @@ pub fn build(b: *std.Build) !void {
         .{ .name = "exitcodes", .script = "test/integration_exitcodes.sh", .dir = ".zig-cache/integration-exitcodes" },
         .{ .name = "lock", .script = "test/integration_lock.sh", .dir = ".zig-cache/integration-lock" },
     };
-    const integration_filter = b.option([]const u8, "integration_filter",
-        "only run integration suites whose name contains this substring");
+    const integration_filter = b.option([]const u8, "integration_filter", "only run integration suites whose name contains this substring");
     const integration_step = b.step("integration", "run integration test suites");
     var integration_matched = false;
     var prev_install: ?*std.Build.Step.Run = null;

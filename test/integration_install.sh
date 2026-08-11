@@ -13,6 +13,7 @@ CFG=fixtures/config.zon
 
 rm -rf "$DIR"
 mkdir -p "$DIR"
+trap 'rm -rf "$DIR"' EXIT
 export XDG_STATE_HOME="$DIR/state"
 
 run() {
