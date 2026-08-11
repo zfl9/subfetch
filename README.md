@@ -9,11 +9,12 @@
 - 支持的代理协议：ss / ssr / vmess / vless / trojan / hysteria / hysteria2 / tuic
 - 支持的订阅链接格式：URI 列表、base64、clash YAML、v2rayN JSON、sing-box JSON
 - 支持的配置输出格式：clash / sing-box 聚合，ss / ssr / trojan / xray / hysteria / hysteria2 原生，raw 节点列表
-- 安装配置文件前校验：`mihomo -t` / `sing-box check` / `xray -test`，校验成功后才会覆盖旧配置
+- 安装配置文件前校验：`mihomo -t` / `sing-box check` / `xray -test`，校验成功后才会覆盖旧配置；校验进程 30s 超时保护（挂起自动终止，不会卡住定时任务）
 - 安装配置文件后重载：clash controller API 优先，失败自动回退 systemctl，可自定义重载命令
 - 配置无变化时跳过安装与重载：生成的配置与现有配置字节一致（订阅未更新）时，不写文件、不触发 reload，避免无意义的 systemctl restart
 - 订阅内部节点按名称稳定排序（所有输出格式生效，含 raw）：上游节点顺序变化不会改变配置内容，进一步避免误触发 reload；订阅之间的顺序与用户直接提供的节点（--node / --node-file）保持原样
 - 并发运行保护：flock 互斥锁（state 目录），cron 重叠触发时等待前一次完成后再执行，避免临时文件与安装竞争；进程异常退出时内核自动释放锁
+- 订阅源失败保护：任一订阅或节点文件 fetch/parse 失败 → 跳过本次安装（保留上次成功配置，失败订阅的节点不会从运行配置中消失），退出码 4 通知 cron；瞬时网络错误自动重试 1 次
 - 明确的退出码语义（见下表），cron / 脚本可区分成功、用法错误、配置错误与订阅源失败
 
 ## 退出码
@@ -24,7 +25,7 @@
 | 1 | 运行期失败（IO、安装、备份、state 操作等） |
 | 2 | 命令行用法错误（未知参数、--url 为空、-o 缺少输出路径） |
 | 3 | 配置/数据错误（config 缺失或解析失败、重复名称、模板失败、无可用节点、校验失败） |
-| 4 | 订阅源失败：任一订阅或节点文件 fetch/parse 失败即返回（其余健康源照常生成与安装，cron 可据此感知） |
+| 4 | 订阅源失败：任一订阅或节点文件 fetch/parse 失败即返回 4（跳过本次安装、保留上次成功配置，cron 可据此感知，下个周期自动重试） |
 
 ## 快速开始
 

@@ -3,11 +3,10 @@
 .{
     // ── subscription list (the only required config) ────────────────
     //
-    // # one .{...} each; name + url required; ua/enable optional
+    // # one .{...} each; name + url required; ua optional
     //   name   : subscription name (node name prefix, Chinese OK, length <= 32)
     //   url    : subscription URL (https://) or a local file path / file://
     //   ua     : custom User-Agent (optional, overrides the global .ua)
-    //   enable : false temporarily disables the subscription (default true)
     //
     .subscriptions = .{
         .{
