@@ -1,16 +1,16 @@
-# user config (copy from config.example.zon; contains real subscription tokens, never commit)
+# user configs (copy from config.example.zon; contain real subscription tokens, never commit)
 config.zon
+real.zon
 
-# test artifacts
+# install-time backups (deploy renames old configs to .bak)
 *.bak
 
-# Zig
+# Zig build artifacts
 .zig-cache/
 zig-out/
 
 # test client binaries (downloaded from GitHub releases)
 bin/
-real.zon
 
 # collaborative planning docs (working files, not project artifacts)
 plan.md
