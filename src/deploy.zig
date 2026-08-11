@@ -175,10 +175,11 @@ pub fn reloadSingbox(
     return reloadApi(arena, controller, secret, path, "sing-box");
 }
 
-/// user-defined reload commands get the same timeout policy as the verifier:
-/// a hung command (script waiting on a network resource, stuck service tool)
-/// must not stall the cron run; it is SIGKILLed at the deadline.
-const reload_cmd_timeout_ms = 30_000;
+/// user-defined reload commands get a timeout too (trigger-type operation:
+/// restart/notify - a hung script must not stall the cron run); SIGKILLed at
+/// the deadline. 15s is a middle ground: generous for restart/notify scripts,
+/// tighter than the verifier's 30s (config parsing is the heavier task).
+const reload_cmd_timeout_ms = 15_000;
 
 /// run a user-defined reload command (acme.sh --reloadcmd style): /bin/sh -c <cmd>,
 /// 30s timeout + SIGKILL (see runCommandTimed)
