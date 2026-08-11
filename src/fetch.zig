@@ -141,14 +141,18 @@ pub fn fetchWithTimeout(
 /// network error / timeout): cron environments see flaky links, and a single
 /// retry converts most spurious failures. non-transient errors (missing file,
 /// oversized body, bad url) fail immediately - retrying cannot help them.
+/// fixed per-subscription fetch timeout (the user-tunable --timeout/.timeout
+/// option was removed: verify/reload timeouts are fixed too, and 5s + one
+/// retry is the settled policy for a 1MB-bounded subscription body)
+const fetch_timeout_ms = 5_000;
+
 pub fn fetchWithRetry(
     allocator: std.mem.Allocator,
     url: []const u8,
     ua: ?[]const u8,
-    timeout_ms: ?u32,
 ) FetchError![]const u8 {
-    return fetchWithTimeout(allocator, url, ua, timeout_ms) catch |e| switch (e) {
-        error.HttpError, error.NetworkError, error.Timeout => fetchWithTimeout(allocator, url, ua, timeout_ms),
+    return fetchWithTimeout(allocator, url, ua, fetch_timeout_ms) catch |e| switch (e) {
+        error.HttpError, error.NetworkError, error.Timeout => fetchWithTimeout(allocator, url, ua, fetch_timeout_ms),
         else => e,
     };
 }
@@ -281,7 +285,7 @@ test "fetchWithRetry retries once on http error" {
     defer server_thread.join();
 
     const url = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}/flaky", .{port});
-    const body = try fetchWithRetry(a, url, null, 5000);
+    const body = try fetchWithRetry(a, url, null);
     try std.testing.expectEqualStrings("ok", body);
 }
 
@@ -289,7 +293,7 @@ test "fetchWithRetry no retry on missing file" {
     // non-transient: missing local file fails immediately (no retry attempt)
     try std.testing.expectError(
         error.InvalidUrl,
-        fetchWithRetry(std.testing.allocator, "/nonexistent/xyz/retry.txt", null, 1000),
+        fetchWithRetry(std.testing.allocator, "/nonexistent/xyz/retry.txt", null),
     );
 }
 

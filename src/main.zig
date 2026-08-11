@@ -97,7 +97,6 @@ pub fn main() !void {
     } else if (cfg.info_keywords) |k| k else &node.default_info_keywords;
 
     // merge CLI > .zon > defaults for render/deploy/behavior fields
-    opts.timeout = opts.timeout orelse cfg.timeout orelse 5; // per-subscription default
     const listen = opts.listen orelse cfg.listen orelse "127.0.0.1";
     const port = opts.port orelse cfg.port orelse 1080;
     const mixed_port = opts.mixed_port orelse cfg.mixed_port orelse 65500;
@@ -570,9 +569,7 @@ fn processSubscription(
     // fixed "anonymous" label: short, and never leaks the url (may contain a token)
     const sub_label = if (s.name) |n| n else "anonymous";
     const ua = s.ua orelse cfg.ua orelse opts.ua;
-    // CLI --timeout is in seconds, fetchWithTimeout expects milliseconds
-    const timeout_ms: ?u32 = if (opts.timeout) |t| t * 1000 else null;
-    const body = fetch.fetchWithRetry(arena, s.url, ua, timeout_ms) catch |e| {
+    const body = fetch.fetchWithRetry(arena, s.url, ua) catch |e| {
         log.warn(sub_label, "fetch failed: {s}", .{@errorName(e)});
         fail_cnt.* += 1;
         return;

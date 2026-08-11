@@ -18,7 +18,6 @@ pub const Options = struct {
     ua: ?[]const u8 = null,
     /// node name separator; null = .zon sep or default "@"
     sep: ?[]const u8 = null,
-    timeout: ?u32 = null,
     /// -v/--verbose: node list + api secret (no deeper levels)
     verbose: bool = false,
     nodes: std.ArrayListUnmanaged([]const u8) = .empty,
@@ -104,11 +103,6 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             opts.ua = v;
         } else if (try takeRequired(&i, args, a, "--sep", null)) |v| {
             opts.sep = v;
-        } else if (takeValue(&i, args, a, "--timeout", null)) |v| {
-            opts.timeout = std.fmt.parseInt(u32, v, 10) catch {
-                log.err(null, "invalid number for {s}: {s}", .{ a, v });
-                return error.BadArg;
-            };
         } else if (try takeRequired(&i, args, a, "--listen", null)) |v| {
             opts.listen = v;
         } else if (takeValue(&i, args, a, "--port", null)) |v| {
@@ -252,7 +246,6 @@ const usage_sections = [_]Section{
     .{ .title = "Run behavior", .options = &.{
         .{ .opt = "--dry-run", .desc = &.{"verify only, write nothing"} },
         .{ .opt = "--ua <str>", .desc = &.{"default User-Agent"} },
-        .{ .opt = "--timeout <sec>", .desc = &.{"per-subscription fetch timeout in seconds (default 5)"} },
     } },
     .{ .title = "Output config", .options = &.{
         .{ .opt = "--listen <addr>", .desc = &.{"native client listen address (default 127.0.0.1)"} },

@@ -39,8 +39,6 @@ pub const Config = struct {
     sep: ?[]const u8 = null,
     /// clash / sing-box API secret (overrides auto-generated UUID; CLI --secret wins)
     secret: ?[]const u8 = null,
-    /// per-subscription fetch timeout in seconds (CLI --timeout wins)
-    timeout: ?u32 = null,
     /// native client listen address (CLI --listen wins)
     listen: ?[]const u8 = null,
     /// native client listen port (CLI --port wins)
@@ -248,7 +246,6 @@ test "parse per-output verify/reload switches" {
 test "parse render/deploy config fields" {
     const source =
         \\.{
-        \\    .timeout = 42,
         \\    .listen = "0.0.0.0",
         \\    .port = 7890,
         \\    .mixed_port = 7891,
@@ -269,7 +266,6 @@ test "parse render/deploy config fields" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const cfg = try parse(arena.allocator(), source);
-    try std.testing.expectEqual(@as(?u32, 42), cfg.timeout);
     try std.testing.expectEqualStrings("0.0.0.0", cfg.listen.?);
     try std.testing.expectEqual(@as(?u16, 7890), cfg.port);
     try std.testing.expectEqual(@as(?u16, 7891), cfg.mixed_port);
