@@ -226,7 +226,7 @@ test "parse render/deploy config fields" {
         \\    .allow_lan = true,
         \\    .tproxy_ipv6 = true,
         \\    .tproxy_port = 60080,
-        \\    .log_level = .warning,
+        \\    .log_level = .warn,
         \\    .outputs = .{
         \\        .{ .fmt = .clash, .path = "/etc/clash/config.yaml", .reload_cmd = "systemctl restart clash" },
         \\        .{ .fmt = .singbox, .tmpl = "/etc/singbox.tmpl.json", .path = "/etc/sing-box/config.json" },
@@ -247,7 +247,7 @@ test "parse render/deploy config fields" {
     try std.testing.expect(cfg.allow_lan.?);
     try std.testing.expect(cfg.tproxy_ipv6.?);
     try std.testing.expectEqual(@as(?u16, 60080), cfg.tproxy_port);
-    try std.testing.expectEqual(.warning, cfg.log_level.?);
+    try std.testing.expectEqual(.warn, cfg.log_level.?);
     try std.testing.expectEqual(@as(usize, 2), cfg.outputs.?.len);
     try std.testing.expectEqual(render.Format.clash, cfg.outputs.?[0].fmt);
     try std.testing.expectEqualStrings("/etc/clash/config.yaml", cfg.outputs.?[0].path.?);

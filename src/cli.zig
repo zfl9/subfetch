@@ -118,7 +118,7 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             };
         } else if (try takeRequired(&i, args, a, "--log-level", null)) |v| {
             opts.log_level = render.LogLevel.parse(v) orelse {
-                log.err(null, "invalid log level: {s} (debug|info|warning|error)", .{v});
+                log.err(null, "invalid log level: {s} (debug|info|warn|error)", .{v});
                 return error.BadArg;
             };
         } else if (takeValue(&i, args, a, "--tproxy-port", null)) |v| {
@@ -270,7 +270,7 @@ const usage_sections = [_]Section{
             "templates; socks inbound stays; default off)",
         } },
         .{ .opt = "--log-level <lvl>", .desc = &.{
-            "client log level: debug|info|warning|error",
+            "client log level: debug|info|warn|error",
             "(built-in templates; default info)",
         } },
     } },

@@ -6,38 +6,30 @@ const render_native = @import("render_native.zig");
 const render_raw = @import("render_raw.zig");
 const Node = node.Node;
 
-/// client log level; user-facing values: debug|info|warning|error.
+/// client log level; members are the sing-box spellings (warn/err) so
+/// @tagName works directly there; clash/xray need clashName().
 /// enum so .zon parses type-checked (std.zon type-driven) and CLI
 /// validation is a single parse() lookup.
 pub const LogLevel = enum {
     debug,
     info,
-    warning,
-    error_,
+    warn,
+    err,
 
     pub fn parse(s: []const u8) ?LogLevel {
         if (std.mem.eql(u8, s, "debug")) return .debug;
         if (std.mem.eql(u8, s, "info")) return .info;
-        if (std.mem.eql(u8, s, "warning")) return .warning;
-        if (std.mem.eql(u8, s, "error")) return .error_;
+        if (std.mem.eql(u8, s, "warn") or std.mem.eql(u8, s, "warning")) return .warn;
+        if (std.mem.eql(u8, s, "err") or std.mem.eql(u8, s, "error")) return .err;
         return null;
     }
 
-    /// canonical name as written in clash configs (and CLI/.zon values)
-    pub fn name(self: LogLevel) []const u8 {
+    /// clash/xray spelling (warn->warning, err->error); @tagName for sing-box
+    pub fn clashName(self: LogLevel) []const u8 {
         return switch (self) {
-            .debug => "debug",
-            .info => "info",
-            .warning => "warning",
-            .error_ => "error",
-        };
-    }
-
-    /// sing-box spelling: warning -> warn
-    pub fn singboxName(self: LogLevel) []const u8 {
-        return switch (self) {
-            .warning => "warn",
-            else => self.name(),
+            .warn => "warning",
+            .err => "error",
+            else => @tagName(self),
         };
     }
 };

@@ -22,7 +22,7 @@ pub fn renderSingbox(
     // log
     var log = ObjectMap.init(arena);
     const lvl = opts.log_level orelse .info;
-    const log_lvl = lvl.singboxName();
+    const log_lvl = @tagName(lvl);
     try log.put("level", .{ .string = log_lvl });
     try log.put("timestamp", .{ .bool = true });
     try root.put("log", .{ .object = log });

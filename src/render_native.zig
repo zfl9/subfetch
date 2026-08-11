@@ -163,7 +163,7 @@ fn xrayJson(arena: std.mem.Allocator, v: node.Vless, opts: Options) !JsonValue {
 
     var log = ObjectMap.init(arena);
     const lvl = opts.log_level orelse .info;
-    try log.put("loglevel", str(lvl.name()));
+    try log.put("loglevel", str(lvl.clashName()));
     try root.put("log", .{ .object = log });
 
     var inbounds = std.json.Array.init(arena);
