@@ -29,8 +29,7 @@ pub fn main() !void {
         // BadArg already logged its specific reason inside parseArgs
         // (unknown option / invalid value / missing value ...)
         if (e == error.OutOfMemory) log.err(null, "out of memory", .{});
-        std.debug.print("
-", .{});
+        log.outPrint("\n", .{});
         cli.printUsage();
         std.process.exit(2);
     };
