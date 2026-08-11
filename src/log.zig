@@ -116,19 +116,19 @@ pub fn getPid() u32 {
     return @intCast(std.c.getpid());
 }
 
-pub fn logInfo(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
+pub fn info(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
     log(.info, source, fmt, args);
 }
 
-pub fn logWarn(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
+pub fn warn(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
     log(.warn, source, fmt, args);
 }
 
-pub fn logErr(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
+pub fn err(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
     log(.err, source, fmt, args);
 }
 
-pub fn logVerbose(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
+pub fn verbose(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
     log(.verbose, source, fmt, args);
 }
 

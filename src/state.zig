@@ -48,7 +48,7 @@ pub fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) ![]const u
     if (readPersistedSecret(arena, path)) |s| return s;
     const s = try genSecret(arena);
     writeStateSecret(arena, path, s) catch |e| {
-        log.logWarn(null, "failed to persist api secret to {s}: {s}", .{ path, @errorName(e) });
+        log.warn(null, "failed to persist api secret to {s}: {s}", .{ path, @errorName(e) });
     };
     return s;
 }
@@ -101,7 +101,7 @@ pub fn acquireRunLock(arena: std.mem.Allocator) void {
     };
     const f = std.fs.cwd().createFile(path, flags) catch |e| switch (e) {
         error.WouldBlock => blk: {
-            log.logWarn(null, "another subfetch instance is running, waiting...", .{});
+            log.warn(null, "another subfetch instance is running, waiting...", .{});
             flags.lock_nonblocking = false;
             break :blk std.fs.cwd().createFile(path, flags) catch return;
         },
@@ -127,20 +127,20 @@ pub fn releaseRunLock() void {
 /// instance, opening a concurrency window).
 pub fn resetStateSecret(arena: std.mem.Allocator) void {
     const path = stateSecretPath(arena) catch {
-        log.logErr(null, "no state dir, nothing to reset", .{});
+        log.err(null, "no state dir, nothing to reset", .{});
         std.process.exit(1);
     };
     std.fs.cwd().deleteFile(path) catch |e| switch (e) {
         error.FileNotFound => {
-            log.logInfo(null, "no persisted secret, nothing to reset ({s})", .{path});
+            log.info(null, "no persisted secret, nothing to reset ({s})", .{path});
             return;
         },
         else => {
-            log.logErr(null, "failed to delete {s}: {s}", .{ path, @errorName(e) });
+            log.err(null, "failed to delete {s}: {s}", .{ path, @errorName(e) });
             std.process.exit(1);
         },
     };
-    log.logInfo(null, "reset api secret (next run generates a fresh one): {s}", .{path});
+    log.info(null, "reset api secret (next run generates a fresh one): {s}", .{path});
 }
 
 test "secret persistence: create + reuse" {

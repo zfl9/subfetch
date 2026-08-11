@@ -87,7 +87,7 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             opts.config = v;
         } else if (try takeRequired(&i, args, a, "--output", "-o")) |v| {
             const out = parseOutput(v) catch {
-                log.logErr(null, "invalid output target: {s} (fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw)", .{v});
+                log.err(null, "invalid output target: {s} (fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw)", .{v});
                 return error.BadArg;
             };
             try opts.outputs.append(arena, out);
@@ -106,26 +106,26 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             opts.sep = v;
         } else if (takeValue(&i, args, a, "--timeout", null)) |v| {
             opts.timeout = std.fmt.parseInt(u32, v, 10) catch {
-                log.logErr(null, "invalid number for {s}: {s}", .{ a, v });
+                log.err(null, "invalid number for {s}: {s}", .{ a, v });
                 return error.BadArg;
             };
         } else if (try takeRequired(&i, args, a, "--listen", null)) |v| {
             opts.listen = v;
         } else if (takeValue(&i, args, a, "--port", null)) |v| {
             opts.port = std.fmt.parseInt(u16, v, 10) catch {
-                log.logErr(null, "invalid number for {s}: {s}", .{ a, v });
+                log.err(null, "invalid number for {s}: {s}", .{ a, v });
                 return error.BadArg;
             };
         } else if (try takeRequired(&i, args, a, "--log-level", null)) |v| {
             opts.log_level = v;
         } else if (takeValue(&i, args, a, "--tproxy-port", null)) |v| {
             opts.tproxy_port = std.fmt.parseInt(u16, v, 10) catch {
-                log.logErr(null, "invalid number for {s}: {s}", .{ a, v });
+                log.err(null, "invalid number for {s}: {s}", .{ a, v });
                 return error.BadArg;
             };
         } else if (takeValue(&i, args, a, "--mixed-port", null)) |v| {
             opts.mixed_port = std.fmt.parseInt(u16, v, 10) catch {
-                log.logErr(null, "invalid number for {s}: {s}", .{ a, v });
+                log.err(null, "invalid number for {s}: {s}", .{ a, v });
                 return error.BadArg;
             };
         } else if (try takeRequired(&i, args, a, "--controller", null)) |v| {
@@ -133,7 +133,7 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
         } else if (try takeRequired(&i, args, a, "--secret", null)) |v| {
             opts.secret = v;
         } else {
-            log.logErr(null, "unknown argument: {s}", .{a});
+            log.err(null, "unknown argument: {s}", .{a});
             return error.BadArg;
         }
     }
@@ -176,7 +176,7 @@ fn takeRequired(
 ) CliError!?[]const u8 {
     const v = takeValue(i, args, a, long, short) orelse return null;
     if (v.len == 0) {
-        log.logErr(null, "missing value for {s}", .{a});
+        log.err(null, "missing value for {s}", .{a});
         return error.BadArg;
     }
     return v;

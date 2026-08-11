@@ -26,7 +26,7 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(arena);
     var opts = cli.Options{};
     cli.parseArgs(arena, args, &opts) catch |e| {
-        log.logErr(null, "failed to parse arguments: {s}", .{@errorName(e)});
+        log.err(null, "failed to parse arguments: {s}", .{@errorName(e)});
         cli.printUsage();
         std.process.exit(2);
     };
@@ -37,7 +37,7 @@ pub fn main() !void {
     // --dry-run promises zero side effects; reset-state deletes the persisted
     // secret, so the combination is a contradiction (reject it as a usage error)
     if (opts.reset_state and opts.dry_run) {
-        log.logErr(null, "--dry-run cannot be combined with --reset-state", .{});
+        log.err(null, "--dry-run cannot be combined with --reset-state", .{});
         std.process.exit(2);
     }
 
@@ -55,27 +55,27 @@ pub fn main() !void {
             switch (e) {
                 error.FileNotFound => {
                     if (std.mem.eql(u8, opts.config, "config.zon")) {
-                        log.logInfo(null, "config: none, using defaults", .{});
+                        log.info(null, "config: none, using defaults", .{});
                         break :blk config.Config{};
                     }
-                    log.logErr(null, "failed to read config {s}: FileNotFound", .{opts.config});
+                    log.err(null, "failed to read config {s}: FileNotFound", .{opts.config});
                     std.process.exit(3);
                 },
                 else => {
-                    log.logErr(null, "failed to read config {s}: {s}", .{ opts.config, @errorName(e) });
+                    log.err(null, "failed to read config {s}: {s}", .{ opts.config, @errorName(e) });
                     std.process.exit(3);
                 },
             }
         };
         const cfg_src = arena.dupeZ(u8, text) catch {
-            log.logErr(null, "out of memory", .{});
+            log.err(null, "out of memory", .{});
             std.process.exit(1);
         };
         const parsed = config.parse(arena, cfg_src) catch |e| {
-            log.logErr(null, "failed to parse config {s}: {s}", .{ opts.config, @errorName(e) });
+            log.err(null, "failed to parse config {s}: {s}", .{ opts.config, @errorName(e) });
             std.process.exit(3);
         };
-        log.logInfo(null, "config: {s}", .{opts.config});
+        log.info(null, "config: {s}", .{opts.config});
         break :blk parsed;
     };
 
@@ -132,11 +132,11 @@ pub fn main() !void {
     var subs: std.ArrayListUnmanaged(config.Subscription) = .empty;
     for (opts.urls.items) |arg| {
         const p = cli.parseUrlArg(arg) catch {
-            log.logErr(null, "invalid --url: {s}", .{arg});
+            log.err(null, "invalid --url: {s}", .{arg});
             std.process.exit(2);
         };
         if (p.url.len == 0) {
-            log.logErr(null, "invalid --url: missing url ({s})", .{arg});
+            log.err(null, "invalid --url: missing url ({s})", .{arg});
             std.process.exit(2);
         }
         try subs.append(arena, .{ .name = p.name, .url = p.url });
@@ -147,7 +147,7 @@ pub fn main() !void {
     for (subs.items) |s| {
         const n = s.name orelse continue;
         if (used_names.contains(n)) {
-            log.logErr(null, "duplicate subscription name: {s}", .{n});
+            log.err(null, "duplicate subscription name: {s}", .{n});
             std.process.exit(3);
         }
         try used_names.put(arena, n, {});
@@ -158,10 +158,10 @@ pub fn main() !void {
 
     if (all_nodes.items.len == 0) {
         if (fail_cnt > 0) {
-            log.logErr(null, "no usable nodes, aborting ({d} source(s) failed)", .{fail_cnt});
+            log.err(null, "no usable nodes, aborting ({d} source(s) failed)", .{fail_cnt});
             std.process.exit(4);
         }
-        log.logErr(null, "no usable nodes, aborting", .{});
+        log.err(null, "no usable nodes, aborting", .{});
         std.process.exit(3);
     }
     // node-name dedupe + reserved-name protection now lives inside render()
@@ -201,19 +201,19 @@ pub fn main() !void {
                 if (!render.supports(o.fmt, n)) unsupported += 1;
             }
             if (unsupported > 0) {
-                log.logVerbose(null, "[{s}] {d} node(s) skipped (unsupported protocol)", .{ @tagName(o.fmt), unsupported });
+                log.verbose(null, "[{s}] {d} node(s) skipped (unsupported protocol)", .{ @tagName(o.fmt), unsupported });
             }
         }
         // load user template (clash/singbox only)
         var tpl_text: ?[]const u8 = null;
         if (o.tmpl) |tp| {
             tpl_text = std.fs.cwd().readFileAlloc(arena, tp, 1 << 20) catch |e| {
-                log.logErr(null, "failed to read template {s}: {s}", .{ tp, @errorName(e) });
+                log.err(null, "failed to read template {s}: {s}", .{ tp, @errorName(e) });
                 std.process.exit(3);
             };
         }
         const files = render.render(arena, o.fmt, nodes, ropts, tpl_text) catch |e| {
-            log.logErr(null, "render {s} failed: {s}", .{ @tagName(o.fmt), @errorName(e) });
+            log.err(null, "render {s} failed: {s}", .{ @tagName(o.fmt), @errorName(e) });
             std.process.exit(3);
         };
         try rendered.append(arena, .{ .out = o, .files = files });
@@ -244,7 +244,7 @@ pub fn main() !void {
         // temps are dropped, nothing is installed, exit 4 tells cron to retry.
         if (fail_cnt > 0) {
             cleanupStageATmps();
-            log.logWarn(null, "{d} source(s) failed, skip install (configs unchanged)", .{fail_cnt});
+            log.warn(null, "{d} source(s) failed, skip install (configs unchanged)", .{fail_cnt});
         } else {
             for (rendered.items) |r| {
                 if (r.out.path) |p| {
@@ -255,7 +255,7 @@ pub fn main() !void {
                         installAll(arena, r.out.fmt, r.files, p, opts, ropts, opts.reload_cmd orelse r.out.reload_cmd orelse cfg.reload_cmd);
                     }
                 } else {
-                    log.logErr(null, "output path required for {s} (use -o {s}=<path> or --dry-run)", .{ @tagName(r.out.fmt), @tagName(r.out.fmt) });
+                    log.err(null, "output path required for {s} (use -o {s}=<path> or --dry-run)", .{ @tagName(r.out.fmt), @tagName(r.out.fmt) });
                     std.process.exit(2);
                 }
             }
@@ -269,7 +269,7 @@ pub fn main() !void {
         for (opts.outputs.items) |o| try fmts.append(arena, @tagName(o.fmt));
         break :blk try std.fmt.allocPrint(arena, "formats {s}", .{try std.mem.join(arena, ",", fmts.items)});
     };
-    log.logInfo(null, "subscriptions {d}/{d} ok, {d} failed, {d} nodes, {s}", .{
+    log.info(null, "subscriptions {d}/{d} ok, {d} failed, {d} nodes, {s}", .{
         ok_cnt, subs.items.len, fail_cnt, nodes.len, fmt_part,
     });
     if (opts.secret == null and opts.verbose and !opts.dry_run) {
@@ -277,7 +277,7 @@ pub fn main() !void {
         for (opts.outputs.items) |o| {
             if (o.fmt == .clash or o.fmt == .singbox) need_secret = true;
         }
-        if (need_secret) log.logVerbose(null, "api secret: {s}", .{secret});
+        if (need_secret) log.verbose(null, "api secret: {s}", .{secret});
     }
     cleanupStageATmps();
     state.releaseRunLock();
@@ -297,7 +297,7 @@ fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render.Format, files: []cons
         // not race on a shared temp file (interleaved atomicWrite -> wrong bytes)
         const tmp = try std.fmt.allocPrint(arena, "/tmp/subfetch-dryrun.{d}.{s}", .{ log.getPid(), ext });
         deploy.atomicWrite(arena, tmp, f.content) catch |e| {
-            log.logWarn(null, "failed to write {s}: {s} (verification skipped for this file)", .{ tmp, @errorName(e) });
+            log.warn(null, "failed to write {s}: {s} (verification skipped for this file)", .{ tmp, @errorName(e) });
             continue;
         };
         // verified: the temp file has served its purpose, leave no debris
@@ -306,11 +306,11 @@ fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render.Format, files: []cons
         defer std.fs.cwd().deleteFile(tmp) catch {};
         const vr = deploy.verifyContent(arena, fmt, f.content, tmp);
         if (vr == .failed) {
-            log.logErr(null, "dry-run verify failed: {s}", .{f.path});
+            log.err(null, "dry-run verify failed: {s}", .{f.path});
             std.process.exit(3);
         }
     }
-    log.logInfo(null, "dry-run verify passed ({d} files)", .{files.len});
+    log.info(null, "dry-run verify passed ({d} files)", .{files.len});
 }
 
 /// Stage A temp files written so far; removed on abort so a failed run leaves
@@ -326,7 +326,7 @@ fn cleanupStageATmps() void {
 fn abort(arena: std.mem.Allocator, exit_code: u8, comptime fmt: []const u8, args: anytype) noreturn {
     _ = arena;
     cleanupStageATmps();
-    log.logErr(null, fmt, args);
+    log.err(null, fmt, args);
     std.process.exit(exit_code);
 }
 
@@ -427,18 +427,18 @@ fn installAll(
             std.fs.cwd().deleteFile(tmp) catch {};
         }
         if (installed == 0) {
-            log.logInfo(null, "config unchanged, skip install & reload: {s}", .{dir});
+            log.info(null, "config unchanged, skip install & reload: {s}", .{dir});
             return;
         }
-        log.logInfo(null, "wrote {d} files to {s} ({d} unchanged)", .{ installed, dir, files.len - installed });
+        log.info(null, "wrote {d} files to {s} ({d} unchanged)", .{ installed, dir, files.len - installed });
         if (!opts.no_reload) {
             if (reload_cmd) |cmd| {
                 switch (deploy.reloadCustom(arena, cmd)) {
-                    .custom => log.logInfo(null, "custom reload command executed", .{}),
-                    else => log.logWarn(null, "custom reload command failed (exit != 0)", .{}),
+                    .custom => log.info(null, "custom reload command executed", .{}),
+                    else => log.warn(null, "custom reload command failed (exit != 0)", .{}),
                 }
             } else {
-                log.logInfo(null, "no auto-reload for this format; restart manually (or use --reload-cmd)", .{});
+                log.info(null, "no auto-reload for this format; restart manually (or use --reload-cmd)", .{});
             }
         }
     } else {
@@ -450,14 +450,14 @@ fn installAll(
                 abort(arena, 1, "out of memory", .{});
             };
             std.fs.cwd().deleteFile(tmp) catch {};
-            log.logInfo(null, "config unchanged, skip install & reload: {s}", .{path});
+            log.info(null, "config unchanged, skip install & reload: {s}", .{path});
             return;
         }
         if (opts.no_verify) {
             deploy.atomicWrite(arena, path, f.content) catch |e| {
                 abort(arena, 1, "failed to write {s}: {s}", .{ path, @errorName(e) });
             };
-            log.logInfo(null, "installed {s}", .{path});
+            log.info(null, "installed {s}", .{path});
         } else {
             const tmp = std.fmt.allocPrint(arena, "{s}.new", .{path}) catch {
                 abort(arena, 1, "out of memory", .{});
@@ -473,14 +473,14 @@ fn installAll(
             std.fs.cwd().rename(tmp, path) catch |e| {
                 abort(arena, 1, "failed to write {s}: {s}", .{ path, @errorName(e) });
             };
-            log.logInfo(null, "installed {s} (verify passed)", .{path});
+            log.info(null, "installed {s} (verify passed)", .{path});
         }
         if (!opts.no_reload) {
             if (reload_cmd) |cmd| {
                 // custom reload command takes priority (acme.sh --reloadcmd style)
                 switch (deploy.reloadCustom(arena, cmd)) {
-                    .custom => log.logInfo(null, "custom reload command executed", .{}),
-                    else => log.logWarn(null, "custom reload command failed (exit != 0)", .{}),
+                    .custom => log.info(null, "custom reload command executed", .{}),
+                    else => log.warn(null, "custom reload command failed (exit != 0)", .{}),
                 }
             } else {
                 const rr = switch (fmt) {
@@ -489,11 +489,11 @@ fn installAll(
                     else => deploy.ReloadResult.skipped,
                 };
                 switch (rr) {
-                    .api => log.logInfo(null, "reloaded via API", .{}),
-                    .systemctl => log.logInfo(null, "restarted via systemctl", .{}),
+                    .api => log.info(null, "reloaded via API", .{}),
+                    .systemctl => log.info(null, "restarted via systemctl", .{}),
                     .custom => unreachable,
-                    .skipped => log.logInfo(null, "no auto-reload for this format; restart manually (or use --reload-cmd)", .{}),
-                    .failed => log.logWarn(null, "reload failed; restart manually", .{}),
+                    .skipped => log.info(null, "no auto-reload for this format; restart manually (or use --reload-cmd)", .{}),
+                    .failed => log.warn(null, "reload failed; restart manually", .{}),
                 }
             }
         }
@@ -517,7 +517,7 @@ fn addDirectNode(
     n: []const u8,
 ) !void {
     const parsed = uri.parseUri(arena, n, "", sep) catch |e| {
-        log.logWarn("node", "parse failed: {s} ({s})", .{ n, @errorName(e) });
+        log.warn("node", "parse failed: {s} ({s})", .{ n, @errorName(e) });
         fail_cnt.* += 1;
         return;
     };
@@ -533,12 +533,12 @@ fn addNodeFile(
     f: []const u8,
 ) !void {
     const text = std.fs.cwd().readFileAlloc(arena, f, 1 << 20) catch |e| {
-        log.logWarn(f, "read failed: {s}", .{@errorName(e)});
+        log.warn(f, "read failed: {s}", .{@errorName(e)});
         fail_cnt.* += 1;
         return;
     };
     const lines = util.splitUriLines(arena, text) catch |e| {
-        log.logWarn(f, "parse failed ({s})", .{@errorName(e)});
+        log.warn(f, "parse failed ({s})", .{@errorName(e)});
         fail_cnt.* += 1;
         return;
     };
@@ -569,12 +569,12 @@ fn processSubscription(
     // CLI --timeout is in seconds, fetchWithTimeout expects milliseconds
     const timeout_ms: ?u32 = if (opts.timeout) |t| t * 1000 else null;
     const body = fetch.fetchWithRetry(arena, s.url, ua, timeout_ms) catch |e| {
-        log.logWarn(sub_label, "fetch failed: {s}", .{@errorName(e)});
+        log.warn(sub_label, "fetch failed: {s}", .{@errorName(e)});
         fail_cnt.* += 1;
         return;
     };
     const result = parse.parseSubscription(arena, s.name orelse "", body, sep, info_keywords) catch |e| {
-        log.logWarn(sub_label, "parse failed ({s})", .{@errorName(e)});
+        log.warn(sub_label, "parse failed ({s})", .{@errorName(e)});
         fail_cnt.* += 1;
         return;
     };
@@ -597,13 +597,13 @@ fn processSubscription(
         // verbose: list filtered info (notice) nodes for debugging
         if (opts.verbose) {
             for (result.info_names) |nm| {
-                log.logVerbose(null, "  ! {s} (info node, filtered)", .{nm});
+                log.verbose(null, "  ! {s} (info node, filtered)", .{nm});
             }
         }
     }
     try extras.append(arena, try std.fmt.allocPrint(arena, "{d} bytes", .{body.len}));
     msg = try std.fmt.allocPrint(arena, "{s}, {s}", .{ msg, try std.mem.join(arena, ", ", extras.items) });
-    log.logInfo(sub_label, "{s}", .{msg});
+    log.info(sub_label, "{s}", .{msg});
     // verbose: short node list (strip the "sub-name<sep>" prefix), indented under the summary
     if (opts.verbose) {
         const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ s.name orelse "", sep });
@@ -612,7 +612,7 @@ fn processSubscription(
                 n.name()[prefix.len..]
             else
                 n.name();
-            log.logVerbose(null, "  - {s} ({s})", .{ short, n.typeName() });
+            log.verbose(null, "  - {s} ({s})", .{ short, n.typeName() });
         }
     }
 }
