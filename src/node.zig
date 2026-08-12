@@ -270,18 +270,6 @@ fn isDecorative(cp: u21) bool {
         cp == 0x200D;
 }
 
-/// case-insensitive substring search (byte-wise; non-ASCII passes through).
-fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
-    if (needle.len == 0) return true;
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        var j: usize = 0;
-        while (j < needle.len and std.ascii.toLower(haystack[i + j]) == std.ascii.toLower(needle[j])) : (j += 1) {}
-        if (j == needle.len) return true;
-    }
-    return false;
-}
-
 /// default info-node keywords (airport notice pseudo-nodes). strong words only:
 /// real node names (e.g. "unlimited traffic - HK" style) are never caught.
 /// override per-subscription-list via the `info_keywords` zon field.
@@ -295,7 +283,7 @@ pub const default_info_keywords = [_][]const u8{
 /// variants like "days until next reset remain: 21".
 pub fn isInfoNodeName(name: []const u8, keywords: []const []const u8) bool {
     for (keywords) |kw| {
-        if (containsIgnoreCase(name, kw)) return true;
+        if (std.ascii.indexOfIgnoreCase(name, kw) != null) return true;
     }
     return false;
 }
@@ -398,7 +386,6 @@ test "isInfoNodeName" {
 test "compile-check" {
     _ = &sanitizeName;
     _ = &prefixed;
-    _ = &containsIgnoreCase;
     _ = &isInfoNodeName;
     _ = &isDecorative;
     _ = &Node.name;

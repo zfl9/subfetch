@@ -81,7 +81,7 @@ pub fn parseSubscription(
                         .object => |obj| {
                             const n = jsonNodeToNode(arena, obj, sub_name, sep) catch |e| {
                                 skipped += 1;
-                                try skipped_lines.append(arena, .{ .text = jsonDisplayName(arena, obj), .reason = @errorName(e) });
+                                try skipped_lines.append(arena, .{ .text = jsonDisplayName(obj), .reason = @errorName(e) });
                                 continue;
                             };
                             try addParsedNode(arena, &nodes, n, sub_name, sep, keywords, &info, &info_names);
@@ -107,7 +107,7 @@ pub fn parseSubscription(
                     };
                     const n = singboxOutboundToNode(arena, oobj, sub_name, sep) catch |e| {
                         skipped += 1;
-                        try skipped_lines.append(arena, .{ .text = jsonDisplayName(arena, oobj), .reason = @errorName(e) });
+                        try skipped_lines.append(arena, .{ .text = jsonDisplayName(oobj), .reason = @errorName(e) });
                         continue;
                     };
                     try addParsedNode(arena, &nodes, n, sub_name, sep, keywords, &info, &info_names);
@@ -147,8 +147,7 @@ pub fn parseSubscription(
 
 /// best-effort display name for a skipped json node: v2rayN uses "ps",
 /// sing-box uses "tag", "name" is the generic fallback (empty when absent)
-fn jsonDisplayName(arena: std.mem.Allocator, obj: std.json.ObjectMap) []const u8 {
-    _ = arena;
+fn jsonDisplayName(obj: std.json.ObjectMap) []const u8 {
     for ([_][]const u8{ "ps", "tag", "name" }) |k| {
         if (obj.get(k)) |v| {
             if (v == .string) return v.string;
@@ -297,8 +296,8 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
             .port = port,
             .protocol = get(m, "protocol") orelse "udp",
             .auth_str = get(m, "auth-str") orelse get(m, "auth"),
-            .up = get(m, "up"),
-            .down = get(m, "down"),
+            .up = try mbpsNum(arena, get(m, "up")) orelse "100",
+            .down = try mbpsNum(arena, get(m, "down")) orelse "100",
             .obfs = get(m, "obfs"),
             .sni = get(m, "sni"),
             .skip_cert_verify = yBool(get(m, "skip-cert-verify")),
@@ -599,8 +598,8 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
                     const a = jsonGetStr(obj, "auth") orelse break :blk null;
                     break :blk try authB64Decode(arena, a);
                 },
-                .up = jsonGetStr(obj, "up"),
-                .down = jsonGetStr(obj, "down"),
+                .up = try mbpsNum(arena, jsonGetStr(obj, "up")) orelse "100",
+                .down = try mbpsNum(arena, jsonGetStr(obj, "down")) orelse "100",
                 .obfs = jsonGetStr(obj, "obfs"),
                 .sni = server_name,
                 .skip_cert_verify = insecure,
@@ -645,6 +644,21 @@ fn isPrintableText(s: []const u8) bool {
         if (ch < 0x20 or ch == 0x7f) return false;
     }
     return true;
+}
+
+/// normalize a sing-box hysteria up/down value ("100 Mbps" per its config
+/// contract) to the plain number used everywhere else ("100"); null and
+/// unparseable values stay null (renderers apply their own defaults).
+fn mbpsNum(arena: std.mem.Allocator, v: ?[]const u8) ParseError!?[]const u8 {
+    const s = v orelse return null;
+    // numeric prefix ("100", "100 Mbps") followed by an optional "Mbps" unit
+    var end: usize = 0;
+    while (end < s.len and std.ascii.isDigit(s[end])) : (end += 1) {}
+    if (end == 0) return null; // no digit prefix
+    if (end == s.len) return s; // plain number, use as-is
+    const unit = std.mem.trim(u8, s[end..], " \t");
+    if (!std.mem.eql(u8, unit, "Mbps")) return null;
+    return try arena.dupe(u8, s[0..end]);
 }
 
 /// v2rayN JSON node (with "add"/"ps" fields) -> Node
@@ -851,6 +865,36 @@ test "parse singbox hysteria auth base64" {
     const text2 = "{\"outbounds\": [{\"type\": \"hysteria\", \"tag\": \"hy-2\", \"server\": \"1.2.3.4\", \"server_port\": 36712, \"auth\": \"plaintext-pw\"}]}";
     const r2 = try parseSubscription(a, "sb", text2, "@", &node.default_info_keywords);
     try std.testing.expectEqualStrings("plaintext-pw", r2.nodes[0].hysteria.auth_str.?);
+}
+
+test "parse singbox hysteria up/down mbps format" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // sing-box spells bandwidth as "100 Mbps"; the parsed value must be the
+    // plain number so every renderer emits its own native spelling
+    const text =
+        \\{
+        \\  "outbounds": [
+        \\    { "type": "hysteria", "tag": "hy-1", "server": "1.2.3.4", "server_port": 36712,
+        \\      "auth": "aGVsbG8=", "up": "100 Mbps", "down": "200 Mbps" }
+        \\  ]
+        \\}
+    ;
+    const r = try parseSubscription(a, "sb", text, "@", &node.default_info_keywords);
+    try std.testing.expectEqualStrings("100", r.nodes[0].hysteria.up.?);
+    try std.testing.expectEqualStrings("200", r.nodes[0].hysteria.down.?);
+    // plain numbers pass through, missing fills the 100 Mbps default
+    const text2 =
+        \\{
+        \\  "outbounds": [
+        \\    { "type": "hysteria", "tag": "hy-2", "server": "1.2.3.4", "server_port": 36712, "up": "50" }
+        \\  ]
+        \\}
+    ;
+    const r2 = try parseSubscription(a, "sb", text2, "@", &node.default_info_keywords);
+    try std.testing.expectEqualStrings("50", r2.nodes[0].hysteria.up.?);
+    try std.testing.expectEqualStrings("100", r2.nodes[0].hysteria.down.?);
 }
 
 test "parse clash yaml alpn list" {

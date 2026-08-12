@@ -149,7 +149,7 @@ pub fn build(b: *std.Build) !void {
     smoke_step.dependOn(&last_smoke.step);
 
     // integration suites: real processes/fs/locks - cli (single-run behavior
-    // contracts: exit codes, input paths, stdout purity, reset-state), install
+    // contracts: exit codes, input paths, log stream, reset-state), install
     // path (first install -> unchanged skip -> partial rewrite), flock concurrency.
     // isolated dirs + --no-reload + isolated XDG_STATE_HOME:
     // never touches real configs, services, or state. native host only (CI's

@@ -86,7 +86,13 @@ fn sniffDepth(arena: std.mem.Allocator, text: []const u8, depth: usize) SniffErr
             if (isMostlyPrintable(dec)) {
                 if (sniffDepth(arena, dec, depth + 1)) |s| {
                     return s;
-                } else |_| {}
+                } else |e| switch (e) {
+                    // the decoded content is an anti-bot/error HTML page:
+                    // worth reporting as such instead of a silent
+                    // UnknownFormat ("I decoded it and found a web page")
+                    error.SniffHtmlPage => return e,
+                    else => {},
+                }
             }
         }
     }

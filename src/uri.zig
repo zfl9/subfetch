@@ -515,8 +515,10 @@ fn parseHysteria(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []cons
     n.auth_str = queryGet(params, "auth");
     n.sni = queryGet(params, "peer");
     n.skip_cert_verify = queryBool(params, "insecure");
-    n.up = queryGet(params, "upmbps");
-    n.down = queryGet(params, "downmbps");
+    // hysteria 1's default bandwidth is 100 Mbps on both directions; renderers
+    // (clash/sing-box) require explicit up/down values, so fill the defaults here
+    n.up = queryGet(params, "upmbps") orelse "100";
+    n.down = queryGet(params, "downmbps") orelse "100";
     n.obfs = queryGet(params, "obfs");
     n.alpn = try parseAlpn(arena, queryGet(params, "alpn"));
     return .{ .hysteria = n };

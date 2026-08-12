@@ -70,8 +70,7 @@ fn noCleanup(_: WaitCtx) void {}
 
 /// run `argv` to completion, exit code only (output discarded); null on spawn
 /// failure or timeout (the verifier is SIGKILLed so it cannot linger).
-fn runVerifier(arena: std.mem.Allocator, argv: []const []const u8) ?u8 {
-    _ = arena;
+fn runVerifier(argv: []const []const u8) ?u8 {
     return runCommandTimed(argv, verify_timeout_ms);
 }
 
@@ -151,15 +150,15 @@ pub fn verifyContent(
         .clash => blk: {
             const bin = findBin(arena, "clash") orelse findBin(arena, "mihomo") orelse break :blk null;
             const dir = std.fs.path.dirname(tmp_path) orelse ".";
-            break :blk runVerifier(arena, &.{ bin, "-t", "-d", dir, "-f", tmp_path });
+            break :blk runVerifier(&.{ bin, "-t", "-d", dir, "-f", tmp_path });
         },
         .singbox => blk: {
             const bin = findBin(arena, "sing-box") orelse break :blk null;
-            break :blk runVerifier(arena, &.{ bin, "check", "-c", tmp_path });
+            break :blk runVerifier(&.{ bin, "check", "-c", tmp_path });
         },
         .xray => blk: {
             const bin = findBin(arena, "xray") orelse break :blk null;
-            break :blk runVerifier(arena, &.{ bin, "-test", "-c", tmp_path });
+            break :blk runVerifier(&.{ bin, "-test", "-c", tmp_path });
         },
         else => null, // trojan/hysteria/ss/ssr/hysteria2/raw: no client check mode
     };
@@ -399,14 +398,11 @@ test "reloadCustom exit codes" {
 }
 
 test "runVerifier exit code and timeout kill" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const a = arena.allocator();
     // success / failure exit codes
-    try std.testing.expectEqual(@as(?u8, 0), runVerifier(a, &.{ "sh", "-c", "exit 0" }));
-    try std.testing.expectEqual(@as(?u8, 3), runVerifier(a, &.{ "sh", "-c", "exit 3" }));
+    try std.testing.expectEqual(@as(?u8, 0), runVerifier(&.{ "sh", "-c", "exit 0" }));
+    try std.testing.expectEqual(@as(?u8, 3), runVerifier(&.{ "sh", "-c", "exit 3" }));
     // missing binary -> null
-    try std.testing.expectEqual(@as(?u8, null), runVerifier(a, &.{"definitely-not-a-command-xyz"}));
+    try std.testing.expectEqual(@as(?u8, null), runVerifier(&.{"definitely-not-a-command-xyz"}));
     // hung verifier: killed on timeout, runVerifier returns null promptly
     const t0 = std.time.milliTimestamp();
     try std.testing.expectEqual(@as(?u8, null), runCommandTimed(&.{ "sleep", "300" }, 1000));

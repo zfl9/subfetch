@@ -38,39 +38,39 @@ fn nodeToJson(arena: std.mem.Allocator, n: node.Node) error{OutOfMemory}!JsonVal
             try o.put("password", .{ .string = v.password });
             try o.put("protocol", .{ .string = v.protocol });
             try o.put("obfs", .{ .string = v.obfs });
-            try putOpt(arena, &o, "obfs-param", v.obfs_param);
-            try putOpt(arena, &o, "protocol-param", v.protocol_param);
+            try putOpt(&o, "obfs-param", v.obfs_param);
+            try putOpt(&o, "protocol-param", v.protocol_param);
         },
         .vmess => |v| {
             try o.put("uuid", .{ .string = v.uuid });
             try o.put("alterId", .{ .integer = v.alter_id });
             try o.put("network", .{ .string = @tagName(v.network) });
             if (v.tls) try o.put("tls", .{ .bool = true });
-            try putOpt(arena, &o, "servername", v.servername);
-            try putOpt(arena, &o, "client-fingerprint", v.fingerprint);
+            try putOpt(&o, "servername", v.servername);
+            try putOpt(&o, "client-fingerprint", v.fingerprint);
             try putWsGrpc(arena, &o, v.network, v.ws, v.grpc);
         },
         .vless => |v| {
             try o.put("uuid", .{ .string = v.uuid });
             try o.put("network", .{ .string = @tagName(v.network) });
             if (v.tls) try o.put("tls", .{ .bool = true });
-            try putOpt(arena, &o, "flow", v.flow);
-            try putOpt(arena, &o, "servername", v.servername);
-            try putOpt(arena, &o, "client-fingerprint", v.fingerprint);
+            try putOpt(&o, "flow", v.flow);
+            try putOpt(&o, "servername", v.servername);
+            try putOpt(&o, "client-fingerprint", v.fingerprint);
             if (v.skip_cert_verify) try o.put("skip-cert-verify", .{ .bool = true });
             try putAlpn(arena, &o, v.alpn);
             if (v.reality) |r| {
                 var ro = ObjectMap.init(arena);
                 try ro.put("public-key", .{ .string = r.public_key });
-                try putOpt(arena, &ro, "short-id", r.short_id);
-                try putOpt(arena, &ro, "spider-x", r.spider_x);
+                try putOpt(&ro, "short-id", r.short_id);
+                try putOpt(&ro, "spider-x", r.spider_x);
                 try o.put("reality-opts", .{ .object = ro });
             }
             try putWsGrpc(arena, &o, v.network, v.ws, v.grpc);
         },
         .trojan => |v| {
             try o.put("password", .{ .string = v.password });
-            try putOpt(arena, &o, "servername", v.servername);
+            try putOpt(&o, "servername", v.servername);
             if (v.skip_cert_verify) try o.put("skip-cert-verify", .{ .bool = true });
             try putAlpn(arena, &o, v.alpn);
             if (v.network != .tcp) try o.put("network", .{ .string = @tagName(v.network) });
@@ -78,29 +78,29 @@ fn nodeToJson(arena: std.mem.Allocator, n: node.Node) error{OutOfMemory}!JsonVal
         },
         .hysteria => |v| {
             try o.put("protocol", .{ .string = v.protocol });
-            try putOpt(arena, &o, "auth_str", v.auth_str);
-            try putOpt(arena, &o, "up", v.up);
-            try putOpt(arena, &o, "down", v.down);
-            try putOpt(arena, &o, "obfs", v.obfs);
-            try putOpt(arena, &o, "sni", v.sni);
+            try putOpt(&o, "auth_str", v.auth_str);
+            try putOpt(&o, "up", v.up);
+            try putOpt(&o, "down", v.down);
+            try putOpt(&o, "obfs", v.obfs);
+            try putOpt(&o, "sni", v.sni);
             if (v.skip_cert_verify) try o.put("skip-cert-verify", .{ .bool = true });
             try putAlpn(arena, &o, v.alpn);
         },
         .hysteria2 => |v| {
             try o.put("password", .{ .string = v.password });
-            try putOpt(arena, &o, "servername", v.servername);
+            try putOpt(&o, "servername", v.servername);
             if (v.skip_cert_verify) try o.put("skip-cert-verify", .{ .bool = true });
-            try putOpt(arena, &o, "obfs", v.obfs);
-            try putOpt(arena, &o, "obfs-password", v.obfs_password);
+            try putOpt(&o, "obfs", v.obfs);
+            try putOpt(&o, "obfs-password", v.obfs_password);
             try putAlpn(arena, &o, v.alpn);
         },
         .tuic => |v| {
             try o.put("uuid", .{ .string = v.uuid });
             try o.put("password", .{ .string = v.password });
-            try putOpt(arena, &o, "servername", v.servername);
+            try putOpt(&o, "servername", v.servername);
             if (v.skip_cert_verify) try o.put("skip-cert-verify", .{ .bool = true });
-            try putOpt(arena, &o, "congestion-controller", v.congestion_controller);
-            try putOpt(arena, &o, "udp-relay-mode", v.udp_relay_mode);
+            try putOpt(&o, "congestion-controller", v.congestion_controller);
+            try putOpt(&o, "udp-relay-mode", v.udp_relay_mode);
             try putAlpn(arena, &o, v.alpn);
         },
     }
@@ -123,8 +123,8 @@ fn putSsPlugin(arena: std.mem.Allocator, o: *ObjectMap, plugin: ?node.SsPlugin) 
             var opts = ObjectMap.init(arena);
             try opts.put("mode", .{ .string = pl.mode });
             if (pl.tls) try opts.put("tls", .{ .bool = true });
-            try putOpt(arena, &opts, "host", pl.host);
-            try putOpt(arena, &opts, "path", pl.path);
+            try putOpt(&opts, "host", pl.host);
+            try putOpt(&opts, "path", pl.path);
             try o.put("plugin-opts", .{ .object = opts });
         },
         .shadow_tls => |pl| {
@@ -174,8 +174,7 @@ fn putAlpn(arena: std.mem.Allocator, o: *ObjectMap, alpn: ?[]const []const u8) e
 }
 
 /// optional string: emitted only when non-empty
-fn putOpt(arena: std.mem.Allocator, o: *ObjectMap, key: []const u8, v: ?[]const u8) error{OutOfMemory}!void {
-    _ = arena;
+fn putOpt(o: *ObjectMap, key: []const u8, v: ?[]const u8) error{OutOfMemory}!void {
     const val = v orelse return;
     if (val.len == 0) return;
     try o.put(key, .{ .string = val });

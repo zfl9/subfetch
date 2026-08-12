@@ -54,6 +54,25 @@
       "tls": { "enabled": true, "server_name": "kr1.example.com" },
       "obfs": { "type": "salamander", "password": "obfs-pass" }
     },
+    {
+      "type": "hysteria",
+      "tag": "tw-hy1",
+      "server": "tw1.example.com",
+      "server_port": 36712,
+      "auth": "aHkxLXBhc3N3b3Jk",
+      "up": "100 Mbps",
+      "down": "200 Mbps",
+      "tls": { "enabled": true, "server_name": "tw1.example.com" }
+    },
+    {
+      "type": "vless",
+      "tag": "kr-http",
+      "server": "kr1.example.com",
+      "server_port": 443,
+      "uuid": "09ac0a61-777e-4048-ba72-84f1d30e3a82",
+      "tls": { "enabled": true, "server_name": "kr1.example.com" },
+      "transport": { "type": "http", "path": "/http", "host": ["kr1.example.com"] }
+    },
     { "type": "direct", "tag": "bad-direct" },
     { "type": "block", "tag": "bad-block" }
   ]
