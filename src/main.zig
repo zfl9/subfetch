@@ -238,10 +238,11 @@ fn run() !ExitCode {
         try rendered.append(arena, .{ .out = o, .files = files });
     }
 
-    // dry-run: verify all outputs, write nothing (same checks as install)
+    // dry-run: verify all outputs, write nothing (same checks as install:
+    // same per-output verify=false / --no-verify switch)
     if (opts.dry_run) {
         for (rendered.items) |r| {
-            const code = verifyDryRunFiles(arena, r.out.fmt, r.files, !(r.out.verify orelse true));
+            const code = verifyDryRunFiles(arena, r.out.fmt, r.files, !(r.out.verify orelse !opts.no_verify));
             if (code != .ok) return code;
         }
     } else {

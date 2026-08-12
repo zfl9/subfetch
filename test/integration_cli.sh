@@ -73,6 +73,15 @@ expect_exit 1 "unwritable output path" "$EXE" -c fixtures/config.zon -o "raw=$TM
 printf 'proxies: []\nbad: [unclosed\n' > "$TMP/badtpl.yaml"
 expect_exit 3 "no-verify syntax check" "$EXE" -c fixtures/config.zon -o "clash:$TMP/badtpl.yaml=$TMP/out.yaml" --no-verify --no-reload
 
+# --dry-run honors --no-verify too (same per-output/--no-verify switch as the
+# install path: syntax layer still enforced, client command skipped, zero
+# side effects)
+expect_exit 3 "dry-run no-verify syntax" "$EXE" -c fixtures/config.zon --dry-run -o "clash:$TMP/badtpl.yaml=$TMP/drnv.yaml" --no-verify
+[ ! -f "$TMP/drnv.yaml" ] || { echo "FAIL: dry-run must not write"; exit 1; }
+expect_exit 0 "dry-run no-verify ok" "$EXE" -c fixtures/config.zon --dry-run -o "clash=$TMP/drnv2.yaml" --no-verify
+[ ! -f "$TMP/drnv2.yaml" ] || { echo "FAIL: dry-run must not write"; exit 1; }
+echo "ok: dry-run honors --no-verify"
+
 # 3: template read failure (missing template file)
 expect_exit 3 "template read failure" "$EXE" -c fixtures/config.zon -o "clash:$TMP/no.tmpl=$TMP/out.yaml" --no-reload
 

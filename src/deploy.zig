@@ -80,8 +80,16 @@ fn runCommandTimed(argv: []const []const u8, timeout_ms: u32) ?u8 {
     child.stdin_behavior = .Ignore;
     child.stdout_behavior = .Ignore;
     child.stderr_behavior = .Ignore;
-    child.spawn() catch return null;
+    // allocate the ctx first: a ctx allocation failure must not orphan the
+    // spawned child (nobody would wait()/kill() it -> zombie until process
+    // exit). spawn() only fails before fork() (std guarantees: after fork it
+    // cannot error), so the spawn-catch never leaves a child behind.
+    // the ctx copy must stay AFTER spawn: spawn() sets child.pid.
     const ctx = std.heap.page_allocator.create(WaitCtx) catch return null;
+    child.spawn() catch {
+        std.heap.page_allocator.destroy(ctx);
+        return null;
+    };
     ctx.* = .{ .base = .{}, .child = child };
     util.runWithTimeout(WaitCtx, waitWorker, ctx, timeout_ms) catch |e| switch (e) {
         // timed out: kill the verifier (the worker wakes up from wait() and
@@ -92,8 +100,13 @@ fn runCommandTimed(argv: []const []const u8, timeout_ms: u32) ?u8 {
             std.posix.kill(child.id, std.posix.SIG.KILL) catch {};
             return null;
         },
-        // the worker never started: we own the ctx
+        // the worker never started (thread spawn failed): we own the ctx, and
+        // the spawned child has no one to wait()/kill() it -> kill it now
+        // (it may be a hung verifier; a brief zombie until process exit beats
+        // an unsupervised running child; D-state children survive, get reaped
+        // by init when this process exits)
         error.OutOfMemory, error.ThreadFailed => {
+            std.posix.kill(child.id, std.posix.SIG.KILL) catch {};
             std.heap.page_allocator.destroy(ctx);
             return null;
         },
@@ -286,13 +299,13 @@ fn reloadApi(
 /// systemctl restart fallback. check availability first: OpenWrt and other
 /// non-systemd distros lack systemctl; skip (skipped) instead of failing,
 /// telling the user to restart manually or use --reload-cmd.
+/// same timeout policy as the verifier/reload commands: a hung systemd
+/// (NFS-mounted units etc.) must not stall the cron run — or, through the
+/// run lock, the next instance waiting on it.
 fn reloadFallback(arena: std.mem.Allocator, service: []const u8) ReloadResult {
     const sysctl = findBin(arena, "systemctl") orelse return .skipped;
-    const r = std.process.Child.run(.{
-        .allocator = arena,
-        .argv = &.{ sysctl, "restart", service },
-    }) catch return .failed;
-    return if (r.term == .Exited and r.term.Exited == 0) .systemctl else .failed;
+    const code = runCommandTimed(&.{ sysctl, "restart", service }, reload_cmd_timeout_ms);
+    return if (code != null and code.? == 0) .systemctl else .failed;
 }
 
 // ---------------- tests ----------------
