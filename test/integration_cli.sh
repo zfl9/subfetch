@@ -9,9 +9,10 @@ set -eu
 echo "=== integration-cli ==="
 
 EXE=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
-# absolute: the no -c case cd's into a subdir and $TMP must stay valid there
+# absolute: the no -c case cd's into a subdir and $TMP must stay valid there.
+# mkdir BEFORE the cd: the dir does not exist on a fresh checkout
+mkdir -p "$2"
 WORK=$(cd "$2" && pwd)
-mkdir -p "$WORK"
 TMP=$(mktemp -d "$WORK/cli.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 export XDG_STATE_HOME="$TMP/state"
