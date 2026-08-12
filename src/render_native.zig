@@ -229,6 +229,18 @@ fn xrayJson(arena: std.mem.Allocator, v: node.Vless, opts: Options) error{OutOfM
             if (v.grpc) |g| try gs.put("serviceName", str(g.service_name));
             try stream.put("grpcSettings", .{ .object = gs });
         },
+        .http => {
+            var hs = ObjectMap.init(arena);
+            if (v.ws) |w| {
+                try hs.put("path", str(w.path));
+                if (w.host) |h| {
+                    var arr = std.json.Array.init(arena);
+                    try arr.append(str(h));
+                    try hs.put("host", .{ .array = arr });
+                }
+            }
+            try stream.put("httpSettings", .{ .object = hs });
+        },
         else => {},
     }
     try out.put("streamSettings", .{ .object = stream });
@@ -601,6 +613,27 @@ test "no supported nodes" {
         .password = "p",
     } }};
     try std.testing.expectError(error.NoSupportedNodes, renderTrojan(arena.allocator(), &nodes, .{}));
+}
+
+test "render xray http transport" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const nodes = [_]node.Node{.{ .vless = .{
+        .name = "KR-HTTP",
+        .server = "kr1.example.com",
+        .port = 443,
+        .uuid = "11111111-2222-3333-4444-555555555555",
+        .network = .http,
+        .ws = .{ .path = "/http", .host = "kr1.example.com" },
+    } }};
+    const files = try renderXray(a, &nodes, .{});
+    const v = try std.json.parseFromSliceLeaky(JsonValue, a, files[0].content, .{});
+    const stream = v.object.get("outbounds").?.array.items[0].object.get("streamSettings").?.object;
+    try std.testing.expectEqualStrings("http", stream.get("network").?.string);
+    const hs = stream.get("httpSettings").?.object;
+    try std.testing.expectEqualStrings("/http", hs.get("path").?.string);
+    try std.testing.expectEqualStrings("kr1.example.com", hs.get("host").?.array.items[0].string);
 }
 
 test "compile-check" {

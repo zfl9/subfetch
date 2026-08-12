@@ -6,6 +6,7 @@ const std = @import("std");
 const node = @import("node.zig");
 const uri = @import("uri.zig");
 const sniff = @import("sniff.zig");
+const util = @import("util.zig");
 const yaml = @import("yaml.zig");
 
 pub const ParseError = uri.ParseError || sniff.SniffError || error{
@@ -586,18 +587,26 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
         } };
     }
     if (std.mem.eql(u8, ob_type, "hysteria")) {
-        return .{ .hysteria = .{
-            .name = name,
-            .server = server,
-            .port = port,
-            .auth_str = jsonGetStr(obj, "auth_str") orelse jsonGetStr(obj, "auth"),
-            .up = jsonGetStr(obj, "up"),
-            .down = jsonGetStr(obj, "down"),
-            .obfs = jsonGetStr(obj, "obfs"),
-            .sni = server_name,
-            .skip_cert_verify = insecure,
-            .alpn = alpn,
-        } };
+        return .{
+            .hysteria = .{
+                .name = name,
+                .server = server,
+                .port = port,
+                .auth_str = jsonGetStr(obj, "auth_str") orelse blk: {
+                    // sing-box spells the field "auth" and expects the password
+                    // base64-encoded; decode it back to plaintext (unparseable
+                    // input stays as-is: some subscriptions put plaintext there)
+                    const a = jsonGetStr(obj, "auth") orelse break :blk null;
+                    break :blk try authB64Decode(arena, a);
+                },
+                .up = jsonGetStr(obj, "up"),
+                .down = jsonGetStr(obj, "down"),
+                .obfs = jsonGetStr(obj, "obfs"),
+                .sni = server_name,
+                .skip_cert_verify = insecure,
+                .alpn = alpn,
+            },
+        };
     }
     if (std.mem.eql(u8, ob_type, "tuic")) {
         return .{ .tuic = .{
@@ -615,6 +624,27 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
     }
     // non-node outbounds (direct/block/selector/dns/...)
     return error.ParseUnsupportedType;
+}
+
+/// decode a sing-box hysteria "auth" value (base64 per its config contract)
+/// back to the plaintext password; unparseable input is returned as-is
+/// (some subscriptions put plaintext there anyway). base64 decoding is
+/// lenient: an arbitrary ASCII string like "plaintext-pw" is also valid
+/// base64 (padding fills the remainder) - but its decode is non-UTF-8
+/// garbage, while a genuinely encoded password decodes to printable text.
+fn authB64Decode(arena: std.mem.Allocator, s: []const u8) ParseError![]const u8 {
+    const dec = try util.b64Decode(arena, s);
+    if (dec) |d| {
+        if (d.len > 0 and std.unicode.utf8ValidateSlice(d) and isPrintableText(d)) return d;
+    }
+    return s;
+}
+
+fn isPrintableText(s: []const u8) bool {
+    for (s) |ch| {
+        if (ch < 0x20 or ch == 0x7f) return false;
+    }
+    return true;
 }
 
 /// v2rayN JSON node (with "add"/"ps" fields) -> Node
@@ -801,6 +831,26 @@ test "parse singbox shadowsocks plugin" {
     const plugin = r.nodes[0].ss.plugin.?;
     try std.testing.expectEqualStrings("http", plugin.obfs_local.mode);
     try std.testing.expectEqualStrings("www.bing.com", plugin.obfs_local.host);
+}
+
+test "parse singbox hysteria auth base64" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // sing-box hysteria auth is base64-encoded (its config contract); the
+    // parsed auth_str must be the decoded plaintext password
+    const plain = "hy1-password";
+    const enc = std.base64.standard.Encoder;
+    const auth_b64 = try a.alloc(u8, enc.calcSize(plain.len));
+    _ = enc.encode(auth_b64, plain);
+    const text = try std.fmt.allocPrint(a, "{{\"outbounds\": [{{\"type\": \"hysteria\", \"tag\": \"hy-1\", \"server\": \"1.2.3.4\", \"server_port\": 36712, \"auth\": \"{s}\"}}]}}", .{auth_b64});
+    const r = try parseSubscription(a, "sb", text, "@", &node.default_info_keywords);
+    try std.testing.expectEqual(@as(usize, 1), r.nodes.len);
+    try std.testing.expectEqualStrings(plain, r.nodes[0].hysteria.auth_str.?);
+    // unparseable auth stays as-is (plaintext in the wild)
+    const text2 = "{\"outbounds\": [{\"type\": \"hysteria\", \"tag\": \"hy-2\", \"server\": \"1.2.3.4\", \"server_port\": 36712, \"auth\": \"plaintext-pw\"}]}";
+    const r2 = try parseSubscription(a, "sb", text2, "@", &node.default_info_keywords);
+    try std.testing.expectEqualStrings("plaintext-pw", r2.nodes[0].hysteria.auth_str.?);
 }
 
 test "parse clash yaml alpn list" {

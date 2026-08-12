@@ -306,6 +306,14 @@ fn putTransport(
         .http => {
             var t = ObjectMap.init(arena);
             try t.put("type", .{ .string = "http" });
+            if (ws) |w| {
+                try t.put("path", .{ .string = w.path });
+                if (w.host) |h| {
+                    var host_arr = std.json.Array.init(arena);
+                    try host_arr.append(.{ .string = h });
+                    try t.put("host", .{ .array = host_arr });
+                }
+            }
             try o.put("transport", .{ .object = t });
         },
     }
@@ -426,6 +434,28 @@ test "mbps format" {
     try std.testing.expectEqualStrings("100 Mbps", try mbps(arena.allocator(), "100"));
     try std.testing.expectEqualStrings("0 Mbps", try mbps(arena.allocator(), null));
     try std.testing.expectEqualStrings("0 Mbps", try mbps(arena.allocator(), "abc"));
+}
+
+test "singbox http transport path/host" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const nodes = [_]node.Node{.{ .vless = .{
+        .name = "KR-HTTP",
+        .server = "kr1.example.com",
+        .port = 443,
+        .uuid = "11111111-2222-3333-4444-555555555555",
+        .network = .http,
+        .ws = .{ .path = "/http", .host = "kr1.example.com" },
+    } }};
+    const text = (try renderSingbox(a, &nodes, .{}, null))[0].content;
+    const v = try std.json.parseFromSliceLeaky(JsonValue, a, text, .{});
+    const outbounds = v.object.get("outbounds").?.array;
+    // direct + block + selector + 1 node
+    const tr = outbounds.items[3].object.get("transport").?.object;
+    try std.testing.expectEqualStrings("http", tr.get("type").?.string);
+    try std.testing.expectEqualStrings("/http", tr.get("path").?.string);
+    try std.testing.expectEqualStrings("kr1.example.com", tr.get("host").?.array.items[0].string);
 }
 
 test "compile-check" {

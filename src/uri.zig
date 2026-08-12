@@ -178,7 +178,8 @@ fn applyWsGrpc(
     params: []const QueryParam,
 ) void {
     switch (network) {
-        .ws => {
+        .ws, .http => {
+            // http transport reuses the ws slot as the path/host carrier
             ws.* = .{ .path = queryGet(params, "path") orelse "/", .host = queryGet(params, "host") };
         },
         .grpc => {
@@ -815,6 +816,17 @@ test "parse errors" {
     try std.testing.expectError(error.UriMalformed, parseUri(std.testing.allocator, "notaurl", "", "@"));
     try std.testing.expectError(error.UriUnsupportedScheme, parseUri(std.testing.allocator, "http://x.com/", "", "@"));
     try std.testing.expectError(error.UriUnsupportedScheme, parseUri(std.testing.allocator, "socks5://1.2.3.4:1080", "", "@"));
+}
+
+test "parse vless http transport" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const link = "vless://11111111-2222-3333-4444-555555555555@kr1.example.com:443?type=http&path=%2Fhttp&host=kr1.example.com#KR-HTTP";
+    const n = try parseUri(arena.allocator(), link, "", "@");
+    const v = n.vless;
+    try std.testing.expectEqual(node.Network.http, v.network);
+    try std.testing.expectEqualStrings("/http", v.ws.?.path);
+    try std.testing.expectEqualStrings("kr1.example.com", v.ws.?.host.?);
 }
 
 fn b64(allocator: std.mem.Allocator, s: []const u8) error{OutOfMemory}![]const u8 {
