@@ -569,7 +569,7 @@ fn reloadAfterInstall(
     reload_cmd: ?[]const u8,
 ) void {
     if (reload_cmd) |cmd| {
-        switch (deploy.reloadCustom(arena, cmd)) {
+        switch (deploy.reloadCustom(cmd)) {
             .custom => log.info("custom reload command executed", .{}),
             else => log.warn("custom reload command failed (exit != 0)", .{}),
         }

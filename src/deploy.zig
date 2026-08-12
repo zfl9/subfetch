@@ -223,8 +223,7 @@ const reload_cmd_timeout_ms = 15_000;
 
 /// run a user-defined reload command (acme.sh --reloadcmd style): /bin/sh -c <cmd>,
 /// 15s timeout + SIGKILL (see runCommandTimed)
-pub fn reloadCustom(arena: std.mem.Allocator, cmd: []const u8) ReloadResult {
-    _ = arena;
+pub fn reloadCustom(cmd: []const u8) ReloadResult {
     const code = runCommandTimed(&.{ "/bin/sh", "-c", cmd }, reload_cmd_timeout_ms);
     return if (code != null and code.? == 0) .custom else .failed;
 }
@@ -388,13 +387,11 @@ test "contentDiffers missing/same/different" {
 }
 
 test "reloadCustom exit codes" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
     // success / failure exit codes (the hung-command timeout path is the
     // same runCommandTimed code covered by the runVerifier timeout test)
-    try std.testing.expectEqual(ReloadResult.custom, reloadCustom(arena.allocator(), "true"));
-    try std.testing.expectEqual(ReloadResult.failed, reloadCustom(arena.allocator(), "false"));
-    try std.testing.expectEqual(ReloadResult.failed, reloadCustom(arena.allocator(), "definitely-not-a-command-xyz"));
+    try std.testing.expectEqual(ReloadResult.custom, reloadCustom("true"));
+    try std.testing.expectEqual(ReloadResult.failed, reloadCustom("false"));
+    try std.testing.expectEqual(ReloadResult.failed, reloadCustom("definitely-not-a-command-xyz"));
 }
 
 test "runVerifier exit code and timeout kill" {

@@ -214,7 +214,7 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
             .port = port,
             .cipher = get(m, "cipher") orelse return error.ParseMissingField,
             .password = get(m, "password") orelse return error.ParseMissingField,
-            .plugin = try ssPluginFromYaml(arena, m),
+            .plugin = try ssPluginFromYaml(m),
         } };
     }
     if (std.mem.eql(u8, type_str, "ssr")) {
@@ -335,8 +335,7 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
 }
 
 /// clash YAML ss plugin: plugin + plugin-opts (obfs-local / v2ray-plugin / shadow-tls)
-fn ssPluginFromYaml(arena: std.mem.Allocator, m: []const yaml.MappingEntry) ParseError!?node.SsPlugin {
-    _ = arena;
+fn ssPluginFromYaml(m: []const yaml.MappingEntry) ParseError!?node.SsPlugin {
     const get = yaml.mappingGetScalar;
     const plugin = get(m, "plugin") orelse return null;
     const opts = yaml.mappingGet(m, "plugin-opts");

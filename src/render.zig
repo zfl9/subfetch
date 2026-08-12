@@ -96,7 +96,10 @@ pub fn supports(fmt: Format, n: Node) bool {
         .trojan => n == .trojan,
         .hysteria => n == .hysteria,
         .hysteria2 => n == .hysteria2,
-        .xray => n == .vless,
+        // xray removed HTTP transport (v25+, migrated to XHTTP): http nodes
+        // cannot be rendered, they are skipped (same sub-type filter policy
+        // as sing-box's v2ray-plugin ss nodes)
+        .xray => n == .vless and n.vless.network != .http,
         .ss => n == .ss,
         .ssr => n == .ssr,
     };
@@ -236,6 +239,13 @@ test "supports filter" {
         .port = 443,
         .uuid = "11111111-2222-3333-4444-555555555555",
     } };
+    const vl_http = node.Node{ .vless = .{
+        .name = "vh",
+        .server = "s",
+        .port = 443,
+        .uuid = "11111111-2222-3333-4444-555555555555",
+        .network = .http,
+    } };
 
     try std.testing.expect(supports(.clash, tro));
     try std.testing.expect(supports(.clash, ssr));
@@ -246,6 +256,9 @@ test "supports filter" {
     try std.testing.expect(supports(.trojan, tro));
     try std.testing.expect(supports(.xray, vl));
     try std.testing.expect(!supports(.xray, tro));
+    // xray removed HTTP transport: http-transport vless nodes are unsupported
+    try std.testing.expect(!supports(.xray, vl_http));
+    try std.testing.expect(supports(.clash, vl_http));
 }
 
 test "compile-check" {
