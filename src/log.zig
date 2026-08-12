@@ -81,7 +81,7 @@ fn colorizeKeywords(file: std.fs.File, text: []const u8) void {
     }
 }
 
-pub fn log(level: LogLevel, source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
+pub fn log(level: LogLevel, comptime fmt: []const u8, args: anytype) void {
     // silent under zig build test: unit tests assert on return values, not
     // on stderr noise (same pattern as config.zig diagnostics)
     if (builtin.is_test) return;
@@ -93,8 +93,9 @@ pub fn log(level: LogLevel, source: ?[]const u8, comptime fmt: []const u8, args:
     const color = file.isTty() and std.posix.getenv("NO_COLOR") == null;
     const lc = levelColor(level);
 
-    // prefix: <time> (pid) L [source] - time/pid/level share the level color
-    // so the prefix stays uniform; pid tells overlapping runs apart (flock)
+    // prefix: <time> (pid) L - time/pid/level share the level color
+    // so the prefix stays uniform; pid tells overlapping runs apart (flock).
+    // message bodies carry their own context ("[node] ...", "[{s}] ...")
     var tbuf: [32]u8 = undefined;
     writeColored(file, color, lc, localTimestamp(&tbuf));
     file.writeAll(" ") catch {};
@@ -103,10 +104,6 @@ pub fn log(level: LogLevel, source: ?[]const u8, comptime fmt: []const u8, args:
     file.writeAll(" ") catch {};
     writeColored(file, color, lc, &.{levelChar(level)});
     file.writeAll(" ") catch {};
-    if (source) |s| {
-        var hbuf: [256]u8 = undefined;
-        writeColored(file, color, "\x1b[1m", std.fmt.bufPrint(&hbuf, "[{s}] ", .{s}) catch s);
-    }
     if (color) {
         colorizeKeywords(file, text);
     } else {
@@ -129,20 +126,20 @@ pub fn getPid() u32 {
     return @intCast(std.c.getpid());
 }
 
-pub fn info(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
-    log(.info, source, fmt, args);
+pub fn info(comptime fmt: []const u8, args: anytype) void {
+    log(.info, fmt, args);
 }
 
-pub fn warn(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
-    log(.warn, source, fmt, args);
+pub fn warn(comptime fmt: []const u8, args: anytype) void {
+    log(.warn, fmt, args);
 }
 
-pub fn err(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
-    log(.err, source, fmt, args);
+pub fn err(comptime fmt: []const u8, args: anytype) void {
+    log(.err, fmt, args);
 }
 
-pub fn verbose(source: ?[]const u8, comptime fmt: []const u8, args: anytype) void {
-    log(.verbose, source, fmt, args);
+pub fn verbose(comptime fmt: []const u8, args: anytype) void {
+    log(.verbose, fmt, args);
 }
 
 /// plain output for generated content (dry-run config text, usage) - no log prefix

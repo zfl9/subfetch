@@ -50,16 +50,21 @@ pub const Options = struct {
 };
 
 pub const CliError = error{ CliBadArg, OutOfMemory };
-pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!void {
+
+/// parse outcome: .run continues; .help/.version already printed their
+/// output and the caller exits 0 (parsing never exits on its own)
+pub const Action = enum { run, help, version };
+
+pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!Action {
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const a = args[i];
         if (std.mem.eql(u8, a, "-h") or std.mem.eql(u8, a, "--help")) {
             printUsage();
-            std.process.exit(0);
+            return .help;
         } else if (std.mem.eql(u8, a, "-V") or std.mem.eql(u8, a, "--version")) {
             log.outPrint("subfetch {f}\n", .{version});
-            std.process.exit(0);
+            return .version;
         } else if (std.mem.eql(u8, a, "--dry-run")) {
             opts.dry_run = true;
         } else if (std.mem.eql(u8, a, "--reset-state")) {
@@ -85,7 +90,7 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             opts.config = v;
         } else if (try takeRequired(&i, args, a, "--output", "-o")) |v| {
             const out = parseOutput(v) catch {
-                log.err(null, "invalid output target: {s} (fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw)", .{v});
+                log.err("invalid output target: {s} (fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw)", .{v});
                 return error.CliBadArg;
             };
             try opts.outputs.append(arena, out);
@@ -104,22 +109,22 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             opts.listen = v;
         } else if (takeValue(&i, args, a, "--port", null)) |v| {
             opts.port = std.fmt.parseInt(u16, v, 10) catch {
-                log.err(null, "invalid number for {s}: {s}", .{ a, v });
+                log.err("invalid number for {s}: {s}", .{ a, v });
                 return error.CliBadArg;
             };
         } else if (try takeRequired(&i, args, a, "--log-level", null)) |v| {
             opts.log_level = std.meta.stringToEnum(render.LogLevel, v) orelse {
-                log.err(null, "invalid log level: {s} (debug|info|warn|err)", .{v});
+                log.err("invalid log level: {s} (debug|info|warn|err)", .{v});
                 return error.CliBadArg;
             };
         } else if (takeValue(&i, args, a, "--tproxy-port", null)) |v| {
             opts.tproxy_port = std.fmt.parseInt(u16, v, 10) catch {
-                log.err(null, "invalid number for {s}: {s}", .{ a, v });
+                log.err("invalid number for {s}: {s}", .{ a, v });
                 return error.CliBadArg;
             };
         } else if (takeValue(&i, args, a, "--mixed-port", null)) |v| {
             opts.mixed_port = std.fmt.parseInt(u16, v, 10) catch {
-                log.err(null, "invalid number for {s}: {s}", .{ a, v });
+                log.err("invalid number for {s}: {s}", .{ a, v });
                 return error.CliBadArg;
             };
         } else if (try takeRequired(&i, args, a, "--controller", null)) |v| {
@@ -127,10 +132,11 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
         } else if (try takeRequired(&i, args, a, "--secret", null)) |v| {
             opts.secret = v;
         } else {
-            log.err(null, "unknown option: {s}", .{a});
+            log.err("unknown option: {s}", .{a});
             return error.CliBadArg;
         }
     }
+    return .run;
 }
 
 /// parse a --url argument: optional [name=] prefix -> subscription name,
@@ -172,7 +178,7 @@ fn takeRequired(
 ) CliError!?[]const u8 {
     const v = takeValue(i, args, a, long, short) orelse return null;
     if (v.len == 0) {
-        log.err(null, "missing value for {s}", .{a});
+        log.err("missing value for {s}", .{a});
         return error.CliBadArg;
     }
     return v;

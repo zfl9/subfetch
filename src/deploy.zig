@@ -5,7 +5,15 @@ const render = @import("render.zig");
 const yaml = @import("yaml.zig");
 const Format = render.Format;
 
-pub const VerifyResult = enum { ok, failed };
+/// verification failure: syntax layer (yaml/json) or client command
+pub const VerifyError = error{
+    /// yaml syntax invalid (clash/hysteria2)
+    VerifyYamlInvalid,
+    /// json syntax invalid (singbox/trojan/hysteria/ss/ssr/xray)
+    VerifyJsonInvalid,
+    /// client verifier command exited non-zero (clash -t / sing-box check / xray -test)
+    VerifyClientRejected,
+};
 
 pub const ReloadResult = enum { api, systemctl, custom, skipped, failed };
 
@@ -102,17 +110,15 @@ fn runCommandTimed(argv: []const []const u8, timeout_ms: u32) ?u8 {
 /// client. always runs, even with --no-verify / per-output verify=false (it is
 /// millisecond work; skipping it would save nothing). clash/hysteria2 are yaml,
 /// singbox/trojan/hysteria/ss/ssr/xray are json; raw is trivially fine.
-pub fn syntaxCheck(arena: std.mem.Allocator, fmt: Format, content: []const u8) VerifyResult {
+pub fn syntaxCheck(arena: std.mem.Allocator, fmt: Format, content: []const u8) VerifyError!void {
     return switch (fmt) {
-        .clash, .hysteria2 => blk: {
-            _ = yaml.parse(arena, content) catch break :blk .failed;
-            break :blk .ok;
+        .clash, .hysteria2 => {
+            _ = yaml.parse(arena, content) catch return error.VerifyYamlInvalid;
         },
-        .singbox, .trojan, .hysteria, .ss, .ssr, .xray => blk: {
-            _ = std.json.parseFromSlice(std.json.Value, arena, content, .{}) catch break :blk .failed;
-            break :blk .ok;
+        .singbox, .trojan, .hysteria, .ss, .ssr, .xray => {
+            _ = std.json.parseFromSlice(std.json.Value, arena, content, .{}) catch return error.VerifyJsonInvalid;
         },
-        .raw => .ok,
+        .raw => {},
     };
 }
 
@@ -124,7 +130,7 @@ pub fn verifyContent(
     fmt: Format,
     content: []const u8,
     tmp_path: []const u8,
-) VerifyResult {
+) VerifyError!void {
     // client-command layer first (skippable via --no-verify): when a bin is
     // available it is the authoritative check; without a bin we fall through
     // to the mandatory syntax layer below
@@ -145,7 +151,8 @@ pub fn verifyContent(
         else => null, // trojan/hysteria/ss/ssr/hysteria2/raw: no client check mode
     };
     if (cmd) |code| {
-        return if (code == 0) .ok else .failed;
+        if (code != 0) return error.VerifyClientRejected;
+        return;
     }
     // mandatory syntax layer (also runs standalone under --no-verify)
     return syntaxCheck(arena, fmt, content);
@@ -311,28 +318,25 @@ test "syntaxCheck validates per-format syntax" {
     defer arena.deinit();
     const a = arena.allocator();
     // clash / hysteria2: yaml syntax
-    try std.testing.expectEqual(VerifyResult.ok, syntaxCheck(a, .clash, "proxies: []\n"));
-    try std.testing.expectEqual(VerifyResult.failed, syntaxCheck(a, .clash, "a: \"unclosed\n"));
-    try std.testing.expectEqual(VerifyResult.ok, syntaxCheck(a, .hysteria2, "listen: 0.0.0.0:1080\n"));
-    try std.testing.expectEqual(VerifyResult.failed, syntaxCheck(a, .hysteria2, "a: \"unclosed\n"));
+    try syntaxCheck(a, .clash, "proxies: []\n");
+    try std.testing.expectError(error.VerifyYamlInvalid, syntaxCheck(a, .clash, "a: \"unclosed\n"));
+    try syntaxCheck(a, .hysteria2, "listen: 0.0.0.0:1080\n");
+    try std.testing.expectError(error.VerifyYamlInvalid, syntaxCheck(a, .hysteria2, "a: \"unclosed\n"));
     // singbox / trojan / hysteria / ss / ssr / xray: json syntax
-    try std.testing.expectEqual(VerifyResult.ok, syntaxCheck(a, .singbox, "{\"log\": {}}"));
-    try std.testing.expectEqual(VerifyResult.failed, syntaxCheck(a, .singbox, "{bad"));
-    try std.testing.expectEqual(VerifyResult.ok, syntaxCheck(a, .ss, "{\"server\":\"h\"}"));
-    try std.testing.expectEqual(VerifyResult.failed, syntaxCheck(a, .xray, "not json"));
+    try syntaxCheck(a, .singbox, "{\"log\": {}}");
+    try std.testing.expectError(error.VerifyJsonInvalid, syntaxCheck(a, .singbox, "{bad"));
+    try syntaxCheck(a, .ss, "{\"server\":\"h\"}");
+    try std.testing.expectError(error.VerifyJsonInvalid, syntaxCheck(a, .xray, "not json"));
     // raw: trivially fine
-    try std.testing.expectEqual(VerifyResult.ok, syntaxCheck(a, .raw, "anything at all"));
+    try syntaxCheck(a, .raw, "anything at all");
 }
 
 test "verifyContent trojan json" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    try std.testing.expectEqual(
-        VerifyResult.ok,
-        verifyContent(arena.allocator(), .trojan, "{\"run_type\":\"client\",\"remote_port\":443}", "/tmp/x.json"),
-    );
-    try std.testing.expectEqual(
-        VerifyResult.failed,
+    try verifyContent(arena.allocator(), .trojan, "{\"run_type\":\"client\",\"remote_port\":443}", "/tmp/x.json");
+    try std.testing.expectError(
+        error.VerifyJsonInvalid,
         verifyContent(arena.allocator(), .trojan, "{invalid json", "/tmp/x.json"),
     );
 }
@@ -340,12 +344,9 @@ test "verifyContent trojan json" {
 test "verifyContent hysteria2 yaml" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    try std.testing.expectEqual(
-        VerifyResult.ok,
-        verifyContent(arena.allocator(), .hysteria2, "server: h:443\nauth: p\n", "/tmp/x.yaml"),
-    );
-    try std.testing.expectEqual(
-        VerifyResult.failed,
+    try verifyContent(arena.allocator(), .hysteria2, "server: h:443\nauth: p\n", "/tmp/x.yaml");
+    try std.testing.expectError(
+        error.VerifyYamlInvalid,
         verifyContent(arena.allocator(), .hysteria2, "a: [unclosed\n", "/tmp/x.yaml"),
     );
 }

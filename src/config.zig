@@ -107,10 +107,14 @@ pub const ParseError = error{
 /// parse the config .zon file.
 /// type-safe: unknown/missing fields and type errors are reported by std.zon.parse at parse time.
 /// returned slices are allocated with the given allocator (arena recommended).
-pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) ParseError!Config {
+/// the source is duped into a NUL-terminated buffer here: std.zon requires
+/// [:0]const u8, but callers should not have to care about that detail.
+pub fn parse(allocator: std.mem.Allocator, source: []const u8) ParseError!Config {
     var diag: std.zon.parse.Diagnostics = .{};
     defer diag.deinit(allocator);
-    var cfg = std.zon.parse.fromSlice(Config, allocator, source, &diag, .{}) catch |e| {
+    const src = try allocator.dupeZ(u8, source);
+    defer allocator.free(src); // intermediate buffer; no-op under an arena
+    var cfg = std.zon.parse.fromSlice(Config, allocator, src, &diag, .{}) catch |e| {
         // OOM passes through (the arena is page-backed, so this is a degenerate
         // state anyway; folding it into ConfigParseZon would misreport the cause)
         if (e == error.OutOfMemory) return error.OutOfMemory;

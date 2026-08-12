@@ -48,7 +48,7 @@ fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
     if (readPersistedSecret(arena, path)) |s| return s;
     const s = try genSecret(arena);
     writeStateSecret(arena, path, s) catch |e| {
-        log.warn(null, "failed to persist api secret to {s}: {s}", .{ path, @errorName(e) });
+        log.warn("failed to persist api secret to {s}: {s}", .{ path, @errorName(e) });
     };
     return s;
 }
@@ -101,7 +101,7 @@ pub fn acquireRunLock(arena: std.mem.Allocator) void {
     };
     const f = std.fs.cwd().createFile(path, flags) catch |e| switch (e) {
         error.WouldBlock => blk: {
-            log.warn(null, "another subfetch instance is running, waiting...", .{});
+            log.warn("another subfetch instance is running, waiting...", .{});
             flags.lock_nonblocking = false;
             break :blk std.fs.cwd().createFile(path, flags) catch return;
         },
@@ -125,22 +125,22 @@ pub fn releaseRunLock() void {
 /// fresh one. only the secret file is removed; the flock lock file is kept
 /// (unlinking it would break the lock held on the old inode by a running
 /// instance, opening a concurrency window).
-pub fn resetStateSecret(arena: std.mem.Allocator) void {
-    const path = stateSecretPath(arena) catch {
-        log.err(null, "no state dir, nothing to reset", .{});
-        std.process.exit(1);
+/// returns an error instead of exiting: the caller (main) owns all exits.
+/// a missing secret file is NOT an error (nothing to reset); a missing state
+/// dir folds into NoStateDir (no HOME etc.), other fs errors pass through.
+pub fn resetStateSecret(arena: std.mem.Allocator) !void {
+    const path = stateSecretPath(arena) catch |e| switch (e) {
+        error.NoHome => return error.NoStateDir,
+        else => return e, // OutOfMemory
     };
     std.fs.cwd().deleteFile(path) catch |e| switch (e) {
         error.FileNotFound => {
-            log.info(null, "no persisted secret, nothing to reset ({s})", .{path});
+            log.info("no persisted secret, nothing to reset ({s})", .{path});
             return;
         },
-        else => {
-            log.err(null, "failed to delete {s}: {s}", .{ path, @errorName(e) });
-            std.process.exit(1);
-        },
+        else => return e,
     };
-    log.info(null, "reset api secret (next run generates a fresh one): {s}", .{path});
+    log.info("reset api secret (next run generates a fresh one): {s}", .{path});
 }
 
 test "secret persistence: create + reuse" {

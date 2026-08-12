@@ -18,21 +18,38 @@ const version = build_options.version;
 /// one -o/--output target: format[:template][=path] (shared with .zon outputs)
 const Output = config.Output;
 
-pub fn main() !void {
+pub fn main() u8 {
+    // single exit: run() returns an ExitCode for every outcome, and errors
+    // no call site handled (OOM in helpers, stdio) are mapped to the runtime
+    // code here; the runtime turns the returned u8 into the exit status.
+    // the only direct exit() in this file is oom(): a degenerate state with
+    // no return path (see below).
+    const code = run() catch |e| abort(.runtime_err, "fatal: {s}", .{@errorName(e)});
+    return code.value();
+}
+
+/// the real program. returns the exit code for every outcome: .ok on
+/// success, the failing stage's code via return abort(), and partial
+/// success (some sources failed) as .partial_ok. errors no call site
+/// handled (OOM in helpers, stdio) propagate to main().
+fn run() !ExitCode {
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
     const args = try std.process.argsAlloc(arena);
     var opts = cli.Options{};
-    cli.parseArgs(arena, args, &opts) catch |e| {
+    const action = cli.parseArgs(arena, args, &opts) catch |e| {
         // BadArg already logged its specific reason inside parseArgs
-        // (unknown option / invalid value / missing value ...)
-        if (e == error.OutOfMemory) log.err(null, "out of memory", .{});
+        // (unknown option / invalid value / missing value ...); the usage text
+        // below is the last word, so abort logs nothing further
+        if (e == error.OutOfMemory) log.err("out of memory", .{});
         log.outPrint("\n", .{});
         cli.printUsage();
-        std.process.exit(2);
+        return abort(.usage_err, "", .{});
     };
+    // --help/--version already printed by cli
+    if (action != .run) return .ok;
 
     // serialize concurrent runs (cron overlaps); dry-run is read-only, no lock
     if (!opts.dry_run) runstate.acquireRunLock(arena);
@@ -40,15 +57,16 @@ pub fn main() !void {
     // --dry-run promises zero side effects; reset-state deletes the persisted
     // secret, so the combination is a contradiction (reject it as a usage error)
     if (opts.reset_state and opts.dry_run) {
-        log.err(null, "--dry-run cannot be combined with --reset-state", .{});
-        std.process.exit(2);
+        return abort(.usage_err, "--dry-run cannot be combined with --reset-state", .{});
     }
 
     // --reset-state: drop the persisted secret and stop (nothing else to do)
     if (opts.reset_state) {
-        runstate.resetStateSecret(arena);
+        runstate.resetStateSecret(arena) catch |e| {
+            return abort(.runtime_err, "failed to reset state: {s}", .{@errorName(e)});
+        };
         runstate.releaseRunLock();
-        return;
+        return .ok;
     }
 
     // read config (optional): missing default config.zon -> pure CLI usage with
@@ -58,24 +76,21 @@ pub fn main() !void {
             switch (e) {
                 error.FileNotFound => {
                     if (std.mem.eql(u8, opts.config, "config.zon")) {
-                        log.info(null, "config: none, using defaults", .{});
+                        log.info("config: none, using defaults", .{});
                         break :blk config.Config{};
                     }
-                    log.err(null, "failed to read config {s}: FileNotFound", .{opts.config});
-                    std.process.exit(3);
+                    // an explicitly passed -c path that does not exist is a user error
+                    return abort(.config_err, "failed to read config {s}: {s}", .{ opts.config, @errorName(e) });
                 },
                 else => {
-                    log.err(null, "failed to read config {s}: {s}", .{ opts.config, @errorName(e) });
-                    std.process.exit(3);
+                    return abort(.config_err, "failed to read config {s}: {s}", .{ opts.config, @errorName(e) });
                 },
             }
         };
-        const cfg_src = arena.dupeZ(u8, text) catch oom();
-        const parsed = config.parse(arena, cfg_src) catch |e| {
-            log.err(null, "failed to parse config {s}: {s}", .{ opts.config, @errorName(e) });
-            std.process.exit(3);
+        const parsed = config.parse(arena, text) catch |e| {
+            return abort(.config_err, "failed to parse config {s}: {s}", .{ opts.config, @errorName(e) });
         };
-        log.info(null, "config: {s}", .{opts.config});
+        log.info("config: {s}", .{opts.config});
         break :blk parsed;
     };
 
@@ -129,12 +144,10 @@ pub fn main() !void {
     var subs: std.ArrayListUnmanaged(config.Subscription) = .empty;
     for (opts.urls.items) |arg| {
         const p = cli.parseUrlArg(arg) catch {
-            log.err(null, "invalid --url: {s}", .{arg});
-            std.process.exit(2);
+            return abort(.usage_err, "invalid --url: {s}", .{arg});
         };
         if (p.url.len == 0) {
-            log.err(null, "invalid --url: missing url ({s})", .{arg});
-            std.process.exit(2);
+            return abort(.usage_err, "invalid --url: missing url ({s})", .{arg});
         }
         try subs.append(arena, .{ .name = p.name, .url = p.url });
     }
@@ -144,8 +157,7 @@ pub fn main() !void {
     for (subs.items) |s| {
         const n = s.name orelse continue;
         if (used_names.contains(n)) {
-            log.err(null, "duplicate subscription name: {s}", .{n});
-            std.process.exit(3);
+            return abort(.config_err, "duplicate subscription name: {s}", .{n});
         }
         try used_names.put(arena, n, {});
     }
@@ -155,11 +167,9 @@ pub fn main() !void {
 
     if (all_nodes.items.len == 0) {
         if (fail_cnt > 0) {
-            log.err(null, "no usable nodes, aborting ({d} source(s) failed)", .{fail_cnt});
-            std.process.exit(4);
+            return abort(.partial_ok, "no usable nodes, aborting ({d} source(s) failed)", .{fail_cnt});
         }
-        log.err(null, "no usable nodes, aborting", .{});
-        std.process.exit(3);
+        return abort(.config_err, "no usable nodes, aborting", .{});
     }
     // node-name dedupe + reserved-name protection now lives inside render()
     // (renderer layer); raw keeps original names. count unsupported protocols
@@ -167,10 +177,7 @@ pub fn main() !void {
     const nodes = all_nodes.items;
 
     // render options (dry-run: read-only secret, state dir untouched)
-    const secret = if (opts.dry_run)
-        try runstate.resolveSecret(arena, opts.secret, false)
-    else
-        try runstate.resolveSecret(arena, opts.secret, true);
+    const secret = try runstate.resolveSecret(arena, opts.secret, !opts.dry_run);
     const ropts: render.Options = .{
         .listen = listen,
         .port = port,
@@ -197,24 +204,22 @@ pub fn main() !void {
             for (nodes) |n| {
                 if (!render.supports(o.fmt, n)) {
                     unsupported += 1;
-                    log.verbose(null, "  ! {s} (unsupported protocol)", .{n.name()});
+                    log.verbose("  ! {s} (unsupported protocol)", .{n.name()});
                 }
             }
             if (unsupported > 0) {
-                log.verbose(null, "[{s}] {d} node(s) skipped (unsupported protocol)", .{ @tagName(o.fmt), unsupported });
+                log.verbose("[{s}] {d} node(s) skipped (unsupported protocol)", .{ @tagName(o.fmt), unsupported });
             }
         }
         // load user template (clash/singbox only)
         var tpl_text: ?[]const u8 = null;
         if (o.tmpl) |tp| {
             tpl_text = std.fs.cwd().readFileAlloc(arena, tp, 1 << 20) catch |e| {
-                log.err(null, "failed to read template {s}: {s}", .{ tp, @errorName(e) });
-                std.process.exit(3);
+                return abort(.config_err, "failed to read template {s}: {s}", .{ tp, @errorName(e) });
             };
         }
         const files = render.render(arena, o.fmt, nodes, ropts, tpl_text) catch |e| {
-            log.err(null, "render {s} failed: {s}", .{ @tagName(o.fmt), @errorName(e) });
-            std.process.exit(3);
+            return abort(.config_err, "render {s} failed: {s}", .{ @tagName(o.fmt), @errorName(e) });
         };
         try rendered.append(arena, .{ .out = o, .files = files });
     }
@@ -227,24 +232,26 @@ pub fn main() !void {
                     for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
                 }
             }
-            try verifyDryRunFiles(arena, r.out.fmt, r.files, !(r.out.verify orelse true));
+            const code = verifyDryRunFiles(arena, r.out.fmt, r.files, !(r.out.verify orelse true));
+            if (code != .ok) return code;
         }
     } else {
         // real mode: verify all first (atomic), then install all
         for (rendered.items) |r| {
             if (r.out.path) |p| {
                 if (std.mem.eql(u8, p, "-")) continue; // stdout: nothing to install
-                verifyAll(arena, r.out.fmt, r.files, p, !(r.out.verify orelse !opts.no_verify));
+                const code = verifyAll(arena, r.out.fmt, r.files, p, !(r.out.verify orelse !opts.no_verify));
+                if (code != .ok) return code;
             }
         }
         // any source failure -> keep the last good configs: installing a
         // "slimmed" set would delete the failed subscription's nodes from the
         // running configs (a temporarily down subscription is not a deletion).
-        // verify still ran above (healthy sources must stay sound); the Stage A
+        // verify still ran above (healthy sources must stay sound); the verify
         // temps are dropped, nothing is installed, exit 4 tells cron to retry.
         if (fail_cnt > 0) {
-            cleanupStageATmps();
-            log.warn(null, "{d} source(s) failed, skip install (configs unchanged)", .{fail_cnt});
+            cleanupVerifyTmps();
+            log.warn("{d} source(s) failed, skip install (configs unchanged)", .{fail_cnt});
         } else {
             for (rendered.items) |r| {
                 if (r.out.path) |p| {
@@ -252,11 +259,11 @@ pub fn main() !void {
                         // stdout output
                         for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
                     } else {
-                        installAll(arena, r.out.fmt, r.files, p, ropts, r.out.verify orelse !opts.no_verify, r.out.reload orelse !opts.no_reload, opts.reload_cmd orelse r.out.reload_cmd orelse cfg.reload_cmd);
+                        const code = installAll(arena, r.out.fmt, r.files, p, ropts, r.out.verify orelse !opts.no_verify, r.out.reload orelse !opts.no_reload, opts.reload_cmd orelse r.out.reload_cmd orelse cfg.reload_cmd);
+                        if (code != .ok) return code;
                     }
                 } else {
-                    log.err(null, "output path required for {s} (use -o {s}=<path> or --dry-run)", .{ @tagName(r.out.fmt), @tagName(r.out.fmt) });
-                    std.process.exit(2);
+                    return abort(.usage_err, "output path required for {s} (use -o {s}=<path> or --dry-run)", .{ @tagName(r.out.fmt), @tagName(r.out.fmt) });
                 }
             }
         }
@@ -269,7 +276,7 @@ pub fn main() !void {
         for (opts.outputs.items) |o| try fmts.append(arena, @tagName(o.fmt));
         break :blk try std.fmt.allocPrint(arena, "formats {s}", .{try std.mem.join(arena, ",", fmts.items)});
     };
-    log.info(null, "subscriptions {d}/{d} ok, {d} failed, {d} nodes, {s}", .{
+    log.info("subscriptions {d}/{d} ok, {d} failed, {d} nodes, {s}", .{
         ok_cnt, subs.items.len, fail_cnt, nodes.len, fmt_part,
     });
     if (opts.secret == null and opts.verbose and !opts.dry_run) {
@@ -277,24 +284,30 @@ pub fn main() !void {
         for (opts.outputs.items) |o| {
             if (o.fmt == .clash or o.fmt == .singbox) need_secret = true;
         }
-        if (need_secret) log.verbose(null, "api secret: {s}", .{secret});
+        if (need_secret) log.verbose("api secret: {s}", .{secret});
     }
-    cleanupStageATmps();
+    cleanupVerifyTmps();
     runstate.releaseRunLock();
-    // source failures must not look like success to cron: any failed
-    // subscription makes the whole run exit 4 (configs already
-    // generated and installed from the healthy sources are kept)
-    if (fail_cnt > 0) std.process.exit(4);
+    // partial success: the run itself completed (healthy sources verified,
+    // nothing installed), but some source(s) failed. return 4 so cron
+    // retries the failed subscriptions. every failure was already warned at
+    // its source; this is a non-ok outcome, not an error.
+    if (fail_cnt > 0) return .partial_ok;
+    return .ok;
 }
 
-fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render.Format, files: []const render.File, no_verify: bool) !void {
+/// dry-run verification: same checks as the install path but against a
+/// throwaway /tmp file, and failure returns the exit code (honest:
+/// "verify passed" is never printed after a failed check or temp write).
+/// internal failures go through return abort() like everywhere else; OOM
+/// (allocPrint()) is fatal (see oom()).
+fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render.Format, files: []const render.File, no_verify: bool) ExitCode {
     for (files) |f| {
         // --no-verify / verify=false: mandatory syntax layer only, no temp file
         if (no_verify) {
-            if (deploy.syntaxCheck(arena, fmt, f.content) == .failed) {
-                log.err(null, "dry-run syntax check failed: {s}", .{f.path});
-                std.process.exit(3);
-            }
+            deploy.syntaxCheck(arena, fmt, f.content) catch |e| {
+                return abort(.config_err, "dry-run syntax check failed ({s}): {s}", .{ @errorName(e), f.path });
+            };
             continue;
         }
         const ext = switch (fmt) {
@@ -303,115 +316,166 @@ fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render.Format, files: []cons
         };
         // pid in the name: dry-run takes no run lock, concurrent dry-runs must
         // not race on a shared temp file (interleaved atomicWrite -> wrong bytes)
-        const tmp = try std.fmt.allocPrint(arena, "/tmp/subfetch-dryrun.{d}.{s}", .{ log.getPid(), ext });
+        const tmp = allocPrint(arena, "/tmp/subfetch-dryrun.{d}.{s}", .{ log.getPid(), ext });
         // a write failure here must not silently degrade into "verify passed":
-        // same abort as the install path (verifyAll), honest over pretending
+        // same abort as the install path (verifyAll), honest over pretending.
+        // the temp is not registered in verify_tmps yet, so remove it first
+        // (abort cleans only the verify list; no debris, dry-run promises
+        // zero side effects)
         deploy.atomicWrite(arena, tmp, f.content) catch |e| {
-            abort(1, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
+            std.fs.cwd().deleteFile(tmp) catch {};
+            return abort(.runtime_err, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
         };
         // verified: the temp file has served its purpose, leave no debris
         // (dry-run promises zero side effects; /tmp is cleaned by the system,
         // but the pid-suffixed names would otherwise pile up per run)
         defer std.fs.cwd().deleteFile(tmp) catch {};
-        const vr = deploy.verifyContent(arena, fmt, f.content, tmp);
-        if (vr == .failed) {
-            log.err(null, "dry-run verify failed: {s}", .{f.path});
-            std.process.exit(3);
-        }
+        deploy.verifyContent(arena, fmt, f.content, tmp) catch |e| {
+            return abort(.config_err, "dry-run verify failed ({s}): {s}", .{ @errorName(e), f.path });
+        };
     }
     const fnoun = if (files.len == 1) "file" else "files";
-    log.info(null, "dry-run verify passed ({d} {s})", .{ files.len, fnoun });
+    log.info("dry-run verify passed ({d} {s})", .{ files.len, fnoun });
+    return .ok;
 }
 
-/// Stage A temp files written so far; removed on abort so a failed run leaves
-/// no .new/.new.json debris (covers all targets and both stages)
-var stage_a_tmps: std.ArrayListUnmanaged([]const u8) = .empty;
+/// verify-created temp files (.new/.new.json), written during the verify
+/// phase; removed on abort or normal end so a failed run leaves no debris
+var verify_tmps: std.ArrayListUnmanaged([]const u8) = .empty;
 
-fn cleanupStageATmps() void {
-    for (stage_a_tmps.items) |t| std.fs.cwd().deleteFile(t) catch {};
-    stage_a_tmps.clearRetainingCapacity();
+fn cleanupVerifyTmps() void {
+    for (verify_tmps.items) |t| std.fs.cwd().deleteFile(t) catch {};
+    verify_tmps.clearRetainingCapacity();
 }
 
-/// unified failure exit: clean up Stage A temps, log, and exit(1)
-fn abort(exit_code: u8, comptime fmt: []const u8, args: anytype) noreturn {
-    cleanupStageATmps();
-    log.err(null, fmt, args);
-    std.process.exit(exit_code);
+/// process exit codes (the public contract; semantics are fixed, do not
+/// reuse a value for a new meaning). run() returns these and main() maps
+/// the final code to the process exit status; the only direct exit() in
+/// this file is oom(), a degenerate state with no return path.
+const ExitCode = enum(u8) {
+    /// success — the run completed as requested
+    ok = 0,
+    /// runtime failure: oom, io, stdio — the process could not complete
+    runtime_err = 1,
+    /// usage error: bad arguments, invalid --url, missing output path
+    usage_err = 2,
+    /// config/template/render/verify/syntax failure — the local config
+    /// pipeline (reading, generating, validating) could not complete
+    config_err = 3,
+    /// partial success — the run completed (healthy sources processed,
+    /// nothing installed), but some source(s) failed; cron treats the run
+    /// as failed and retries. also used when all sources failed
+    /// (no usable nodes): same retry semantics.
+    partial_ok = 4,
+
+    /// raw exit status value for std.process.exit
+    fn value(self: ExitCode) u8 {
+        return @intFromEnum(self);
+    }
+};
+
+/// unified failure path: clean up verify temps, optionally log an error
+/// message, then return the exit code (every caller returns it up the
+/// chain; main() turns the final code into the exit status). an empty
+/// message is allowed for paths that already reported the problem (cli
+/// usage errors print the specific reason plus the usage text before
+/// aborting).
+fn abort(exit_code: ExitCode, comptime fmt: []const u8, args: anytype) ExitCode {
+    cleanupVerifyTmps();
+    if (fmt.len > 0) log.err(fmt, args);
+    return exit_code;
 }
 
 /// allocation-failure shorthand: the arena is page-backed, so OOM is a
-/// degenerate state; failing fast beats threading an error union through
+/// degenerate state; failing fast beats threading an error union through.
+/// noreturn so it works in expression position (catch oom()); OOM is the
+/// one path that exits directly instead of returning a code — at that point
+/// even building an error message may fail and no return path exists.
 fn oom() noreturn {
-    abort(1, "out of memory", .{});
+    cleanupVerifyTmps();
+    log.err("out of memory", .{});
+    std.process.exit(ExitCode.runtime_err.value());
 }
 
 /// ".new"/".new.json" sibling path for a target (json suffix for dir
 /// formats: xray -test infers the format from the file extension)
 fn tmpName(arena: std.mem.Allocator, target: []const u8, is_dir: bool) []const u8 {
     return if (is_dir)
-        std.fmt.allocPrint(arena, "{s}.new.json", .{target}) catch oom()
+        allocPrint(arena, "{s}.new.json", .{target})
     else
-        std.fmt.allocPrint(arena, "{s}.new", .{target}) catch oom();
+        allocPrint(arena, "{s}.new", .{target});
 }
 
-fn joinPath(arena: std.mem.Allocator, parts: []const []const u8) []const u8 {
+/// allocPrint that treats OOM as fatal (the arena is page-backed, so OOM is
+/// a degenerate state with no return path, see oom()): std.fmt.allocPrint
+/// with the catch oom() noise folded in, build.zig b.fmt style.
+fn allocPrint(arena: std.mem.Allocator, comptime f: []const u8, args: anytype) []const u8 {
+    return std.fmt.allocPrint(arena, f, args) catch oom();
+}
+
+/// path join that treats OOM as fatal (build.zig style: b.pathJoin)
+fn pathJoin(arena: std.mem.Allocator, parts: []const []const u8) []const u8 {
     return std.fs.path.join(arena, parts) catch oom();
 }
 
 /// install a verified temp file into place: back up the existing config
 /// (acme.sh style) then rename
-fn installVerified(arena: std.mem.Allocator, target: []const u8, tmp: []const u8) void {
+fn installVerified(arena: std.mem.Allocator, target: []const u8, tmp: []const u8) ExitCode {
     if (deploy.fileExists(target)) {
-        const bak = std.fmt.allocPrint(arena, "{s}.bak", .{target}) catch oom();
+        const bak = allocPrint(arena, "{s}.bak", .{target});
         std.fs.cwd().copyFile(target, std.fs.cwd(), bak, .{}) catch |e| {
-            abort(1, "failed to backup {s}: {s}", .{ target, @errorName(e) });
+            return abort(.runtime_err, "failed to backup {s}: {s}", .{ target, @errorName(e) });
         };
     }
     std.fs.cwd().rename(tmp, target) catch |e| {
-        abort(1, "failed to write {s}: {s}", .{ target, @errorName(e) });
+        return abort(.runtime_err, "failed to write {s}: {s}", .{ target, @errorName(e) });
     };
+    return .ok;
 }
 
-/// Stage A: verify all files of all targets before anything is installed.
+/// verify phase: verify all files of all targets before anything is installed.
 /// writes .new temp files next to targets and verifies them; on failure
 /// all temp files are removed and nothing is installed (atomic across targets).
-/// no-op when --no-verify (install stage writes directly).
-fn verifyAll(arena: std.mem.Allocator, fmt: render.Format, files: []const render.File, path: []const u8, no_verify: bool) void {
+/// no-op when --no-verify (install phase writes directly).
+fn verifyAll(arena: std.mem.Allocator, fmt: render.Format, files: []const render.File, path: []const u8, no_verify: bool) ExitCode {
     if (no_verify) {
         // syntax self-check always runs: it guards the generator/template
         // output (millisecond work), while only the client command is skipped
         for (files) |f| {
-            if (deploy.syntaxCheck(arena, fmt, f.content) == .failed) {
-                abort(3, "syntax check failed, aborting: {s} (nothing installed)", .{path});
-            }
+            deploy.syntaxCheck(arena, fmt, f.content) catch |e| {
+                return abort(.config_err, "syntax check failed ({s}), aborting: {s} (nothing installed)", .{ @errorName(e), path });
+            };
         }
-        return;
+        return .ok;
     }
     if (isDirFormat(fmt)) {
         std.fs.cwd().makePath(path) catch |e| {
-            abort(1, "failed to create directory {s}: {s}", .{ path, @errorName(e) });
+            return abort(.runtime_err, "failed to create directory {s}: {s}", .{ path, @errorName(e) });
         };
     }
     for (files) |f| {
-        const target = if (isDirFormat(fmt)) joinPath(arena, &.{ path, f.path }) else path;
+        const target = if (isDirFormat(fmt)) pathJoin(arena, &.{ path, f.path }) else path;
         // note: xray -test infers format from extension, tmp must end with .json
         const tmp = tmpName(arena, target, isDirFormat(fmt));
         deploy.atomicWrite(arena, tmp, f.content) catch |e| {
-            abort(1, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
+            // not registered in verify_tmps yet: remove it explicitly so an
+            // abort leaves no .new debris (the registration below is skipped)
+            std.fs.cwd().deleteFile(tmp) catch {};
+            return abort(.runtime_err, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
         };
         // OOM is unlikely (arena over page_allocator), but if the path cannot be
         // recorded the file must still not survive an abort: delete it right away
-        stage_a_tmps.append(arena, tmp) catch {
+        verify_tmps.append(arena, tmp) catch {
             std.fs.cwd().deleteFile(tmp) catch {};
         };
-        const vr = deploy.verifyContent(arena, fmt, f.content, tmp);
-        if (vr == .failed) {
-            abort(3, "verify failed, aborting: {s} (nothing installed)", .{target});
-        }
+        deploy.verifyContent(arena, fmt, f.content, tmp) catch |e| {
+            return abort(.config_err, "verify failed ({s}), aborting: {s} (nothing installed)", .{ @errorName(e), target });
+        };
     }
+    return .ok;
 }
 
-/// Stage B: install all files (rename verified .new files into place, then reload).
+/// install phase: install all files (rename verified .new files into place, then reload).
 /// called only after verifyAll passed (or --no-verify).
 fn installAll(
     arena: std.mem.Allocator,
@@ -422,30 +486,31 @@ fn installAll(
     verify: bool,
     reload: bool,
     reload_cmd: ?[]const u8,
-) void {
+) ExitCode {
     if (isDirFormat(fmt)) {
         const dir = path;
         std.fs.cwd().makePath(dir) catch |e| {
-            abort(1, "failed to create directory {s}: {s}", .{ dir, @errorName(e) });
+            return abort(.runtime_err, "failed to create directory {s}: {s}", .{ dir, @errorName(e) });
         };
         // change detection: install only files whose content actually changed;
         // every file unchanged -> skip install & reload entirely
         var installed: usize = 0;
         for (files) |f| {
-            const fpath = joinPath(arena, &.{ dir, f.path });
+            const fpath = pathJoin(arena, &.{ dir, f.path });
             if (!deploy.contentDiffers(arena, fpath, f.content)) continue;
             installed += 1;
             if (!verify) {
                 deploy.atomicWrite(arena, fpath, f.content) catch |e| {
-                    abort(1, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
+                    return abort(.runtime_err, "failed to write {s}: {s}", .{ fpath, @errorName(e) });
                 };
             } else {
-                // stage A wrote tmpName(...) already; rename it into place with
+                // verify wrote tmpName(...) already; rename it into place with
                 // a backup of the existing config (acme.sh style)
-                installVerified(arena, fpath, tmpName(arena, fpath, true));
+                const code = installVerified(arena, fpath, tmpName(arena, fpath, true));
+                if (code != .ok) return code;
             }
         }
-        // drop the Stage A .new.json artifacts that were not renamed into place
+        // drop the verify .new.json artifacts that were not renamed into place
         // (renamed ones are already gone; deleteFile is a no-op for them)
         for (files) |f| {
             const fpath = std.fs.path.join(arena, &.{ dir, f.path }) catch continue;
@@ -453,32 +518,35 @@ fn installAll(
             std.fs.cwd().deleteFile(tmp) catch {};
         }
         if (installed == 0) {
-            log.info(null, "config unchanged, skip install & reload: {s}", .{dir});
-            return;
+            log.info("config unchanged, skip install & reload: {s}", .{dir});
+            return .ok;
         }
         const fnoun = if (installed == 1) "file" else "files";
-        log.info(null, "wrote {d} {s} to {s} ({d} unchanged)", .{ installed, fnoun, dir, files.len - installed });
+        log.info("wrote {d} {s} to {s} ({d} unchanged)", .{ installed, fnoun, dir, files.len - installed });
         if (reload) reloadAfterInstall(arena, fmt, ropts, path, reload_cmd);
+        return .ok;
     } else {
         // single-file format
         const f = files[0];
         if (!deploy.contentDiffers(arena, path, f.content)) {
-            // drop the Stage A .new temp; nothing installed, nothing reloaded
+            // drop the verify .new temp; nothing installed, nothing reloaded
             std.fs.cwd().deleteFile(tmpName(arena, path, false)) catch {};
-            log.info(null, "config unchanged, skip install & reload: {s}", .{path});
-            return;
+            log.info("config unchanged, skip install & reload: {s}", .{path});
+            return .ok;
         }
         if (!verify) {
             deploy.atomicWrite(arena, path, f.content) catch |e| {
-                abort(1, "failed to write {s}: {s}", .{ path, @errorName(e) });
+                return abort(.runtime_err, "failed to write {s}: {s}", .{ path, @errorName(e) });
             };
-            log.info(null, "installed {s}", .{path});
+            log.info("installed {s}", .{path});
         } else {
-            installVerified(arena, path, tmpName(arena, path, false));
-            log.info(null, "installed {s} (verify passed)", .{path});
+            const code = installVerified(arena, path, tmpName(arena, path, false));
+            if (code != .ok) return code;
+            log.info("installed {s} (verify passed)", .{path});
         }
         if (reload) reloadAfterInstall(arena, fmt, ropts, path, reload_cmd);
     }
+    return .ok;
 }
 
 /// reload after install: custom reload command takes priority (acme.sh
@@ -493,8 +561,8 @@ fn reloadAfterInstall(
 ) void {
     if (reload_cmd) |cmd| {
         switch (deploy.reloadCustom(arena, cmd)) {
-            .custom => log.info(null, "custom reload command executed", .{}),
-            else => log.warn(null, "custom reload command failed (exit != 0)", .{}),
+            .custom => log.info("custom reload command executed", .{}),
+            else => log.warn("custom reload command failed (exit != 0)", .{}),
         }
         return;
     }
@@ -504,11 +572,11 @@ fn reloadAfterInstall(
         else => deploy.ReloadResult.skipped,
     };
     switch (rr) {
-        .api => log.info(null, "reloaded via API", .{}),
-        .systemctl => log.info(null, "restarted via systemctl", .{}),
+        .api => log.info("reloaded via API", .{}),
+        .systemctl => log.info("restarted via systemctl", .{}),
         .custom => unreachable,
-        .skipped => log.info(null, "no auto-reload for this format; restart manually (or use --reload-cmd)", .{}),
-        .failed => log.warn(null, "reload failed; restart manually", .{}),
+        .skipped => log.info("no auto-reload for this format; restart manually (or use --reload-cmd)", .{}),
+        .failed => log.warn("reload failed; restart manually", .{}),
     }
 }
 
@@ -531,7 +599,7 @@ fn addDirectNode(
     n: []const u8,
 ) !void {
     const parsed = uri.parseUri(arena, n, "", sep) catch |e| {
-        log.warn("node", "parse failed: {s} ({s})", .{ n, @errorName(e) });
+        log.warn("[node] parse failed: {s} ({s})", .{ n, @errorName(e) });
         fail_cnt.* += 1;
         return;
     };
@@ -560,12 +628,12 @@ fn processSubscription(
     const sub_label = if (s.name) |n| n else "anonymous";
     const ua = s.ua orelse cfg.ua orelse opts.ua;
     const body = fetch.fetchWithRetry(arena, s.url, ua) catch |e| {
-        log.warn(sub_label, "fetch failed: {s}", .{@errorName(e)});
+        log.warn("[{s}] fetch failed: {s}", .{ sub_label, @errorName(e) });
         fail_cnt.* += 1;
         return;
     };
     const result = parse.parseSubscription(arena, s.name orelse "", body, sep, info_keywords) catch |e| {
-        log.warn(sub_label, "parse failed ({s})", .{@errorName(e)});
+        log.warn("[{s}] parse failed ({s})", .{ sub_label, @errorName(e) });
         fail_cnt.* += 1;
         return;
     };
@@ -588,9 +656,9 @@ fn processSubscription(
         for (result.skipped_lines) |l| {
             if (l.text.len == 0) continue;
             if (l.reason.len == 0) {
-                log.warn(null, "  ! {s} (parse failed)", .{l.text});
+                log.warn("  ! {s} (parse failed)", .{l.text});
             } else {
-                log.warn(null, "  ! {s} (parse failed: {s})", .{ l.text, l.reason });
+                log.warn("  ! {s} (parse failed: {s})", .{ l.text, l.reason });
             }
         }
     }
@@ -599,13 +667,13 @@ fn processSubscription(
         // verbose: list filtered info (notice) nodes for debugging
         if (opts.verbose) {
             for (result.info_names) |nm| {
-                log.verbose(null, "  ! {s} (info node, filtered)", .{nm});
+                log.verbose("  ! {s} (info node, filtered)", .{nm});
             }
         }
     }
     try extras.append(arena, try std.fmt.allocPrint(arena, "{d} bytes", .{body.len}));
     msg = try std.fmt.allocPrint(arena, "{s}, {s}", .{ msg, try std.mem.join(arena, ", ", extras.items) });
-    log.info(sub_label, "{s}", .{msg});
+    log.info("[{s}] {s}", .{ sub_label, msg });
     // verbose: short node list (strip the "sub-name<sep>" prefix), indented under the summary
     if (opts.verbose) {
         const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ s.name orelse "", sep });
@@ -614,7 +682,7 @@ fn processSubscription(
                 n.name()[prefix.len..]
             else
                 n.name();
-            log.verbose(null, "  - {s} ({s})", .{ short, n.typeName() });
+            log.verbose("  - {s} ({s})", .{ short, n.typeName() });
         }
     }
 }
