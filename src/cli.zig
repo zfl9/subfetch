@@ -249,7 +249,7 @@ const usage_sections = [_]Section{
             "path: output file or directory (required for real runs)",
         } },
     } },
-    .{ .title = "Client parameters (built-in templates only)", .options = &.{
+    .{ .title = "Built-in template parameters", .options = &.{
         .{ .opt = "--listen <addr>", .desc = &.{"socks5 listen address (default 127.0.0.1)"} },
         .{ .opt = "--port <n>", .desc = &.{"socks5 listen port (default 1080)"} },
         .{ .opt = "--mixed-port <n>", .desc = &.{"clash mixed-port (default 65500)"} },

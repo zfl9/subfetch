@@ -145,7 +145,7 @@ Output:
                           tmpl: 自定义模板文件（clash/singbox）
                           path: 输出文件或目录（真实运行必填）
 
-Client parameters（仅内置模板生效）:
+内置模板参数:
     --listen <addr>      socks5 监听地址（默认 127.0.0.1）
     --port <n>           socks5 监听端口（默认 1080）
     --mixed-port <n>     clash mixed-port（默认 65500）
