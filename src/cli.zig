@@ -21,7 +21,6 @@ pub const Options = struct {
     /// -v/--verbose: node list + api secret (no deeper levels)
     verbose: bool = false,
     nodes: std.ArrayListUnmanaged([]const u8) = .empty,
-    node_files: std.ArrayListUnmanaged([]const u8) = .empty,
     /// CLI subscriptions (--url [name=]url), same semantics as .zon subscriptions
     urls: std.ArrayListUnmanaged([]const u8) = .empty,
     /// info-node keyword overrides (--info-keyword, repeatable; "" clears);
@@ -50,7 +49,7 @@ pub const Options = struct {
     reload_cmd: ?[]const u8 = null,
 };
 
-pub const CliError = error{ BadArg, OutOfMemory };
+pub const CliError = error{ CliBadArg, OutOfMemory };
 pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliError!void {
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -87,13 +86,11 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
         } else if (try takeRequired(&i, args, a, "--output", "-o")) |v| {
             const out = parseOutput(v) catch {
                 log.err(null, "invalid output target: {s} (fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw)", .{v});
-                return error.BadArg;
+                return error.CliBadArg;
             };
             try opts.outputs.append(arena, out);
         } else if (try takeRequired(&i, args, a, "--node", null)) |v| {
             try opts.nodes.append(arena, v);
-        } else if (try takeRequired(&i, args, a, "--node-file", null)) |v| {
-            try opts.node_files.append(arena, v);
         } else if (try takeRequired(&i, args, a, "--url", null)) |v| {
             try opts.urls.append(arena, v);
         } else if (takeValue(&i, args, a, "--info-keyword", null)) |v| {
@@ -108,22 +105,22 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
         } else if (takeValue(&i, args, a, "--port", null)) |v| {
             opts.port = std.fmt.parseInt(u16, v, 10) catch {
                 log.err(null, "invalid number for {s}: {s}", .{ a, v });
-                return error.BadArg;
+                return error.CliBadArg;
             };
         } else if (try takeRequired(&i, args, a, "--log-level", null)) |v| {
             opts.log_level = std.meta.stringToEnum(render.LogLevel, v) orelse {
                 log.err(null, "invalid log level: {s} (debug|info|warn|err)", .{v});
-                return error.BadArg;
+                return error.CliBadArg;
             };
         } else if (takeValue(&i, args, a, "--tproxy-port", null)) |v| {
             opts.tproxy_port = std.fmt.parseInt(u16, v, 10) catch {
                 log.err(null, "invalid number for {s}: {s}", .{ a, v });
-                return error.BadArg;
+                return error.CliBadArg;
             };
         } else if (takeValue(&i, args, a, "--mixed-port", null)) |v| {
             opts.mixed_port = std.fmt.parseInt(u16, v, 10) catch {
                 log.err(null, "invalid number for {s}: {s}", .{ a, v });
-                return error.BadArg;
+                return error.CliBadArg;
             };
         } else if (try takeRequired(&i, args, a, "--controller", null)) |v| {
             opts.controller = v;
@@ -131,7 +128,7 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             opts.secret = v;
         } else {
             log.err(null, "unknown option: {s}", .{a});
-            return error.BadArg;
+            return error.CliBadArg;
         }
     }
 }
@@ -159,7 +156,7 @@ pub fn parseOutput(v: []const u8) !Output {
         template = rest[colon + 1 ..];
         rest = rest[0..colon];
     }
-    const fmt = render.Format.parse(rest) orelse return error.BadArg;
+    const fmt = render.Format.parse(rest) orelse return error.CliBadArg;
     return .{ .fmt = fmt, .tmpl = template, .path = path };
 }
 
@@ -176,7 +173,7 @@ fn takeRequired(
     const v = takeValue(i, args, a, long, short) orelse return null;
     if (v.len == 0) {
         log.err(null, "missing value for {s}", .{a});
-        return error.BadArg;
+        return error.CliBadArg;
     }
     return v;
 }
@@ -223,9 +220,9 @@ const usage_sections = [_]Section{
     .{ .title = "Input", .options = &.{
         .{ .opt = "--url <[name=]url>", .desc = &.{
             "subscription url (repeatable; omit [name=] for anonymous)",
+            "local file paths and file:// urls are read as files",
         } },
         .{ .opt = "--node <uri>", .desc = &.{"directly pasted node URI (repeatable)"} },
-        .{ .opt = "--node-file <path>", .desc = &.{"node list file (one URI per line)"} },
     } },
     .{ .title = "Output", .options = &.{
         .{ .opt = "-o, --output <fmt>[:<tmpl>][=<path>]", .desc = &.{
@@ -322,8 +319,8 @@ test "parseOutput grammar" {
     try std.testing.expectEqual(render.Format.raw, o5.fmt);
     try std.testing.expectEqualStrings("-", o5.path.?);
     // unknown format errors
-    try std.testing.expectError(error.BadArg, parseOutput("bogus"));
-    try std.testing.expectError(error.BadArg, parseOutput(""));
+    try std.testing.expectError(error.CliBadArg, parseOutput("bogus"));
+    try std.testing.expectError(error.CliBadArg, parseOutput(""));
     // extra '=' belongs to the path (first '=' splits path, then ':' splits template)
     const o6 = try parseOutput("clash:tmpl=path=extra");
     try std.testing.expectEqualStrings("tmpl", o6.tmpl.?);
@@ -353,12 +350,12 @@ test "takeRequired rejects missing and empty values" {
     // "--ua" at end of argv -> missing value
     var args1 = [_][:0]u8{ try a.dupeZ(u8, "subfetch"), try a.dupeZ(u8, "--ua") };
     var idx1: usize = 1;
-    try std.testing.expectError(error.BadArg, takeRequired(&idx1, &args1, args1[1], "--ua", null));
+    try std.testing.expectError(error.CliBadArg, takeRequired(&idx1, &args1, args1[1], "--ua", null));
 
     // "--ua ''" -> empty value rejected
     var args2 = [_][:0]u8{ try a.dupeZ(u8, "subfetch"), try a.dupeZ(u8, "--ua"), try a.dupeZ(u8, "") };
     var idx2: usize = 1;
-    try std.testing.expectError(error.BadArg, takeRequired(&idx2, &args2, args2[1], "--ua", null));
+    try std.testing.expectError(error.CliBadArg, takeRequired(&idx2, &args2, args2[1], "--ua", null));
 
     // "--ua foo" -> value taken, index advanced
     var args3 = [_][:0]u8{ try a.dupeZ(u8, "subfetch"), try a.dupeZ(u8, "--ua"), try a.dupeZ(u8, "foo") };

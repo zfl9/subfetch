@@ -5,14 +5,14 @@ const Node = node.Node;
 
 pub const ParseError = error{
     OutOfMemory,
-    InvalidUri,
-    UnsupportedScheme,
-    BadBase64,
-    MissingField,
-    InvalidPort,
-    UnsupportedPlugin,
-    InvalidJson,
-    UnsupportedNetwork,
+    UriMalformed,
+    UriUnsupportedScheme,
+    UriBadBase64,
+    UriMissingField,
+    UriInvalidPort,
+    UriUnsupportedPlugin,
+    UriInvalidJson,
+    UriUnsupportedNetwork,
 };
 
 // ---------------- manual URI parsing ----------------
@@ -30,8 +30,8 @@ const ManualUri = struct {
     body: []const u8, // full authority (without query/fragment)
 };
 
-fn parseUriManual(url: []const u8) ?ManualUri {
-    const scheme_end = std.mem.indexOf(u8, url, "://") orelse return null;
+fn parseUriManual(url: []const u8) ParseError!ManualUri {
+    const scheme_end = std.mem.indexOf(u8, url, "://") orelse return error.UriMalformed;
     const scheme = url[0..scheme_end];
     var rest = url[scheme_end + 3 ..];
 
@@ -61,20 +61,22 @@ fn parseUriManual(url: []const u8) ?ManualUri {
         if (std.mem.indexOfScalar(u8, hostport, ']')) |close| {
             host = hostport[1..close];
             if (close + 1 < hostport.len and hostport[close + 1] == ':') {
-                port = parsePort(hostport[close + 2 ..]) catch null;
+                // an explicitly written port must be valid; a bad one (out of
+                // range / not numeric) is a user typo, do not silently fall back
+                port = try parsePort(hostport[close + 2 ..]);
             }
         }
     } else if (std.mem.lastIndexOfScalar(u8, hostport, ':')) |i| {
         host = hostport[0..i];
-        port = parsePort(hostport[i + 1 ..]) catch null;
+        port = try parsePort(hostport[i + 1 ..]);
     }
 
     return .{ .scheme = scheme, .userinfo = userinfo, .host = host, .port = port, .query = query, .fragment = fragment, .body = body };
 }
 
 pub fn parsePort(s: []const u8) !u16 {
-    if (s.len == 0 or s.len > 5) return error.InvalidPort;
-    return std.fmt.parseInt(u16, s, 10) catch error.InvalidPort;
+    if (s.len == 0 or s.len > 5) return error.UriInvalidPort;
+    return std.fmt.parseInt(u16, s, 10) catch error.UriInvalidPort;
 }
 
 // ---------------- basic helpers ----------------
@@ -122,7 +124,7 @@ fn queryBool(params: []const QueryParam, key: []const u8) bool {
 
 pub fn parseNetwork(s: ?[]const u8) ParseError!node.Network {
     const v = s orelse return .tcp;
-    return std.meta.stringToEnum(node.Network, v) orelse error.UnsupportedNetwork;
+    return std.meta.stringToEnum(node.Network, v) orelse error.UriUnsupportedNetwork;
 }
 
 pub fn parseAlpn(allocator: std.mem.Allocator, v: ?[]const u8) ParseError!?[]const []const u8 {
@@ -196,7 +198,7 @@ const CommonParts = struct {
 };
 
 fn parseCommon(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, sep: []const u8) ParseError!CommonParts {
-    if (p.host.len == 0) return error.MissingField;
+    if (p.host.len == 0) return error.UriMissingField;
     // port omitted defaults to 443 (parsePortOrDefault behavior in community implementations)
     const port = p.port orelse 443;
     const server = try urlDecode(arena, p.host);
@@ -214,7 +216,7 @@ pub fn parseSsPlugin(allocator: std.mem.Allocator, plugin: []const u8) ParseErro
     const PluginKV = struct { key: []const u8, value: ?[]const u8 };
     var kv: std.ArrayListUnmanaged(PluginKV) = .empty;
     var parts = std.mem.splitScalar(u8, decoded, ';');
-    const name = parts.next() orelse return error.UnsupportedPlugin;
+    const name = parts.next() orelse return error.UriUnsupportedPlugin;
     while (parts.next()) |part| {
         const t = std.mem.trim(u8, part, " \t");
         if (t.len == 0) continue;
@@ -259,19 +261,19 @@ pub fn parseSsPlugin(allocator: std.mem.Allocator, plugin: []const u8) ParseErro
             .version = version,
         } };
     }
-    return error.UnsupportedPlugin;
+    return error.UriUnsupportedPlugin;
 }
 
 fn parseSs(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, sep: []const u8) ParseError!Node {
     if (p.userinfo) |ui| {
         // SIP002: base64(method:password)@host:port?plugin=...
         const user = try urlDecode(arena, ui);
-        const decoded = (try b64Decode(arena, user)) orelse return error.BadBase64;
-        const colon = std.mem.indexOfScalar(u8, decoded, ':') orelse return error.MissingField;
+        const decoded = (try b64Decode(arena, user)) orelse return error.UriBadBase64;
+        const colon = std.mem.indexOfScalar(u8, decoded, ':') orelse return error.UriMissingField;
         const cipher = try arena.dupe(u8, decoded[0..colon]);
         const password = try arena.dupe(u8, decoded[colon + 1 ..]);
-        if (p.host.len == 0) return error.MissingField;
-        const port = p.port orelse return error.InvalidPort;
+        if (p.host.len == 0) return error.UriMissingField;
+        const port = p.port orelse return error.UriInvalidPort;
         const name = try urlDecode(arena, p.fragment);
         var n: node.SS = .{
             .name = try makeName(arena, name, sub_name, sep, p.host, port),
@@ -287,16 +289,16 @@ fn parseSs(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, 
         return .{ .ss = n };
     }
     // legacy: base64(method:password@host:port)
-    const decoded = (try b64Decode(arena, p.body)) orelse return error.BadBase64;
+    const decoded = (try b64Decode(arena, p.body)) orelse return error.UriBadBase64;
     if (std.mem.lastIndexOfScalar(u8, decoded, '@')) |at| {
         const mp = decoded[0..at];
         const hp = decoded[at + 1 ..];
-        const colon = std.mem.indexOfScalar(u8, mp, ':') orelse return error.MissingField;
+        const colon = std.mem.indexOfScalar(u8, mp, ':') orelse return error.UriMissingField;
         const cipher = try arena.dupe(u8, mp[0..colon]);
         const password = try arena.dupe(u8, mp[colon + 1 ..]);
         const host = hp[0 .. std.mem.lastIndexOfScalar(u8, hp, ':') orelse hp.len];
-        const port = if (std.mem.lastIndexOfScalar(u8, hp, ':')) |i| try parsePort(hp[i + 1 ..]) else return error.InvalidPort;
-        if (host.len == 0) return error.MissingField;
+        const port = if (std.mem.lastIndexOfScalar(u8, hp, ':')) |i| try parsePort(hp[i + 1 ..]) else return error.UriInvalidPort;
+        if (host.len == 0) return error.UriMissingField;
         const name = try urlDecode(arena, p.fragment);
         return .{ .ss = .{
             .name = try makeName(arena, name, sub_name, sep, host, port),
@@ -306,13 +308,13 @@ fn parseSs(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, 
             .password = password,
         } };
     }
-    return error.MissingField;
+    return error.UriMissingField;
 }
 
 // ---------------- ssr ----------------
 
 fn parseSsr(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, sep: []const u8) ParseError!Node {
-    const decoded = (try b64Decode(arena, p.body)) orelse return error.BadBase64;
+    const decoded = (try b64Decode(arena, p.body)) orelse return error.UriBadBase64;
     const text = decoded;
     var main = text;
     var params_text: []const u8 = "";
@@ -321,12 +323,12 @@ fn parseSsr(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8,
         params_text = text[i + 1 ..];
     }
     var parts = std.mem.splitScalar(u8, main, ':');
-    const host = parts.next() orelse return error.MissingField;
-    const port = try parsePort(parts.next() orelse return error.MissingField);
-    const protocol = parts.next() orelse return error.MissingField;
-    const cipher = parts.next() orelse return error.MissingField;
-    const obfs = parts.next() orelse return error.MissingField;
-    const b64pass = parts.next() orelse return error.MissingField;
+    const host = parts.next() orelse return error.UriMissingField;
+    const port = try parsePort(parts.next() orelse return error.UriMissingField);
+    const protocol = parts.next() orelse return error.UriMissingField;
+    const cipher = parts.next() orelse return error.UriMissingField;
+    const obfs = parts.next() orelse return error.UriMissingField;
+    const b64pass = parts.next() orelse return error.UriMissingField;
     // use the raw password when base64 decoding fails
     const password = (try b64Decode(arena, b64pass)) orelse try arena.dupe(u8, b64pass);
 
@@ -364,10 +366,10 @@ fn b64Str(allocator: std.mem.Allocator, s: []const u8) ParseError![]const u8 {
 // ---------------- vmess / vless ----------------
 
 fn vmessFromJson(arena: std.mem.Allocator, json_text: []const u8, sub_name: []const u8, sep: []const u8) ParseError!Node {
-    const value = std.json.parseFromSliceLeaky(std.json.Value, arena, json_text, .{}) catch return error.InvalidJson;
+    const value = std.json.parseFromSliceLeaky(std.json.Value, arena, json_text, .{}) catch return error.UriInvalidJson;
     const obj = switch (value) {
         .object => |o| o,
-        else => return error.InvalidJson,
+        else => return error.UriInvalidJson,
     };
     const getStr = struct {
         // real v2rayn JSON has numeric port/aid; accept string or integer
@@ -381,9 +383,9 @@ fn vmessFromJson(arena: std.mem.Allocator, json_text: []const u8, sub_name: []co
         }
     }.get;
 
-    const server = getStr(arena, obj, "add") orelse return error.MissingField;
-    const port = try parsePort(getStr(arena, obj, "port") orelse return error.MissingField);
-    const uuid = getStr(arena, obj, "id") orelse return error.MissingField;
+    const server = getStr(arena, obj, "add") orelse return error.UriMissingField;
+    const port = try parsePort(getStr(arena, obj, "port") orelse return error.UriMissingField);
+    const uuid = getStr(arena, obj, "id") orelse return error.UriMissingField;
     const raw_name = getStr(arena, obj, "ps") orelse "";
     const name = try makeName(arena, raw_name, sub_name, sep, server, port);
 
@@ -416,13 +418,13 @@ fn vmessFromJson(arena: std.mem.Allocator, json_text: []const u8, sub_name: []co
 }
 
 fn parseXurl(arena: std.mem.Allocator, p: *const ManualUri, typ: enum { vmess, vless }, sub_name: []const u8, sep: []const u8) ParseError!Node {
-    const uuid = try urlDecode(arena, p.userinfo orelse return error.MissingField);
-    if (uuid.len == 0) return error.MissingField;
-    if (p.host.len == 0) return error.MissingField;
-    const port = p.port orelse return error.InvalidPort;
+    const uuid = try urlDecode(arena, p.userinfo orelse return error.UriMissingField);
+    if (uuid.len == 0) return error.UriMissingField;
+    if (p.host.len == 0) return error.UriMissingField;
+    const port = p.port orelse return error.UriInvalidPort;
     const server = try urlDecode(arena, p.host);
     const params = try parseQuery(arena, p.query);
-    const network = parseNetwork(queryGet(params, "type")) catch return error.UnsupportedNetwork;
+    const network = parseNetwork(queryGet(params, "type")) catch return error.UriUnsupportedNetwork;
     const security = queryGet(params, "security") orelse "none";
     const name = try makeName(arena, try urlDecode(arena, p.fragment), sub_name, sep, server, port);
 
@@ -453,7 +455,7 @@ fn parseXurl(arena: std.mem.Allocator, p: *const ManualUri, typ: enum { vmess, v
     } else if (std.mem.eql(u8, security, "reality")) {
         n.tls = true;
         n.reality = .{
-            .public_key = try normalizeRealityKey(arena, queryGet(params, "pbk") orelse return error.MissingField),
+            .public_key = try normalizeRealityKey(arena, queryGet(params, "pbk") orelse return error.UriMissingField),
             .short_id = queryGet(params, "sid"),
             .spider_x = queryGet(params, "spx"),
         };
@@ -470,15 +472,15 @@ fn parseXurl(arena: std.mem.Allocator, p: *const ManualUri, typ: enum { vmess, v
 fn parseVmess(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, sep: []const u8) ParseError!Node {
     if (p.userinfo != null) return parseXurl(arena, p, .vmess, sub_name, sep);
     // legacy: base64(JSON)
-    const decoded = (try b64Decode(arena, p.body)) orelse return error.BadBase64;
+    const decoded = (try b64Decode(arena, p.body)) orelse return error.UriBadBase64;
     return vmessFromJson(arena, decoded, sub_name, sep);
 }
 
 // ---------------- trojan / hysteria / hysteria2 / tuic ----------------
 
 fn parseTrojan(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, sep: []const u8) ParseError!Node {
-    const password = try urlDecode(arena, p.userinfo orelse return error.MissingField);
-    if (password.len == 0) return error.MissingField;
+    const password = try urlDecode(arena, p.userinfo orelse return error.UriMissingField);
+    if (password.len == 0) return error.UriMissingField;
     const c = try parseCommon(arena, p, sub_name, sep);
 
     var n: node.Trojan = .{
@@ -498,7 +500,7 @@ fn parseTrojan(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const 
 }
 
 fn parseHysteria(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, sep: []const u8) ParseError!Node {
-    if (p.host.len == 0) return error.MissingField;
+    if (p.host.len == 0) return error.UriMissingField;
     const port = p.port orelse 443;
     const server = try urlDecode(arena, p.host);
     const params = try parseQuery(arena, p.query);
@@ -520,7 +522,7 @@ fn parseHysteria(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []cons
 }
 
 fn parseHy2(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, sep: []const u8) ParseError!Node {
-    const password = try urlDecode(arena, p.userinfo orelse return error.MissingField);
+    const password = try urlDecode(arena, p.userinfo orelse return error.UriMissingField);
     const c = try parseCommon(arena, p, sub_name, sep);
 
     var n: node.Hysteria2 = .{
@@ -541,8 +543,8 @@ fn parseHy2(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8,
 }
 
 fn parseTuic(arena: std.mem.Allocator, p: *const ManualUri, sub_name: []const u8, sep: []const u8) ParseError!Node {
-    const ui = try urlDecode(arena, p.userinfo orelse return error.MissingField);
-    const colon = std.mem.indexOfScalar(u8, ui, ':') orelse return error.MissingField;
+    const ui = try urlDecode(arena, p.userinfo orelse return error.UriMissingField);
+    const colon = std.mem.indexOfScalar(u8, ui, ':') orelse return error.UriMissingField;
     const uuid = ui[0..colon];
     const password = ui[colon + 1 ..];
     const c = try parseCommon(arena, p, sub_name, sep);
@@ -574,7 +576,7 @@ pub fn parseUri(
     sub_name: []const u8,
     sep: []const u8,
 ) ParseError!Node {
-    const p = parseUriManual(url) orelse return error.InvalidUri;
+    const p = try parseUriManual(url);
     if (std.mem.eql(u8, p.scheme, "ss")) return parseSs(arena, &p, sub_name, sep);
     if (std.mem.eql(u8, p.scheme, "ssr")) return parseSsr(arena, &p, sub_name, sep);
     if (std.mem.eql(u8, p.scheme, "vmess")) return parseVmess(arena, &p, sub_name, sep);
@@ -583,7 +585,7 @@ pub fn parseUri(
     if (std.mem.eql(u8, p.scheme, "hysteria")) return parseHysteria(arena, &p, sub_name, sep);
     if (std.mem.eql(u8, p.scheme, "hysteria2") or std.mem.eql(u8, p.scheme, "hy2")) return parseHy2(arena, &p, sub_name, sep);
     if (std.mem.eql(u8, p.scheme, "tuic")) return parseTuic(arena, &p, sub_name, sep);
-    return error.UnsupportedScheme;
+    return error.UriUnsupportedScheme;
 }
 
 // ---------------- tests ----------------
@@ -726,6 +728,19 @@ test "parse trojan" {
     try std.testing.expect(t.skip_cert_verify);
 }
 
+test "reject out-of-range port" {
+    // an explicitly written port must be valid: 99999 is a typo, not a
+    // silent fallback to the default port
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    try std.testing.expectError(error.UriInvalidPort, parseUri(arena.allocator(), "trojan://pass@h3:99999#x", "", "@"));
+    try std.testing.expectError(error.UriInvalidPort, parseUri(arena.allocator(), "ss://YWVzLTI1Ni1nY206cGFzcw==@h:65536#x", "", "@"));
+    try std.testing.expectError(error.UriInvalidPort, parseUri(arena.allocator(), "trojan://pass@[::1]:abc#x", "", "@"));
+    // default port still works when omitted
+    const n = try parseUri(arena.allocator(), "trojan://pass@h3#x", "", "@");
+    try std.testing.expectEqual(@as(?u16, 443), n.trojan.port);
+}
+
 test "parse hysteria2" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -797,9 +812,9 @@ test "parse hysteria2 peer alias and obfs none" {
 }
 
 test "parse errors" {
-    try std.testing.expectError(error.InvalidUri, parseUri(std.testing.allocator, "notaurl", "", "@"));
-    try std.testing.expectError(error.UnsupportedScheme, parseUri(std.testing.allocator, "http://x.com/", "", "@"));
-    try std.testing.expectError(error.UnsupportedScheme, parseUri(std.testing.allocator, "socks5://1.2.3.4:1080", "", "@"));
+    try std.testing.expectError(error.UriMalformed, parseUri(std.testing.allocator, "notaurl", "", "@"));
+    try std.testing.expectError(error.UriUnsupportedScheme, parseUri(std.testing.allocator, "http://x.com/", "", "@"));
+    try std.testing.expectError(error.UriUnsupportedScheme, parseUri(std.testing.allocator, "socks5://1.2.3.4:1080", "", "@"));
 }
 
 fn b64(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {

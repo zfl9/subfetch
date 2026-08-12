@@ -469,9 +469,9 @@ test "clash with user template" {
     try std.testing.expect(std.mem.indexOf(u8, yaml_text, "- name: PROXY") != null);
     try std.testing.expect(std.mem.indexOf(u8, yaml_text, "- MATCH,PROXY") != null);
     // missing fill point -> error
-    try std.testing.expectError(error.MissingFillPoint, renderClash(a, &test_nodes, .{}, "a: 1\n"));
+    try std.testing.expectError(error.TemplateMissingFillPoint, renderClash(a, &test_nodes, .{}, "a: 1\n"));
     // non-empty fill point -> error
-    try std.testing.expectError(error.NonEmptyList, renderClash(a, &test_nodes, .{}, "proxies:\n  - x\n"));
+    try std.testing.expectError(error.TemplateFillPointNotEmpty, renderClash(a, &test_nodes, .{}, "proxies:\n  - x\n"));
 }
 
 test "clash user groups/rules kept" {
@@ -535,7 +535,7 @@ test "clash anchor edge cases" {
     try std.testing.expectEqual(@as(usize, 4), yaml.sequenceOf(yaml.mappingGet(auto_group, "proxies").?).?.len);
 
     // misplaced anchor propagates as error
-    try std.testing.expectError(error.MisplacedAnchor, renderClash(a, &test_nodes, .{}, "proxies: []\nproxy-groups:\n  - name: G\n    proxies: [__NODES__]\n"));
+    try std.testing.expectError(error.TemplateMisplacedAnchor, renderClash(a, &test_nodes, .{}, "proxies: []\nproxy-groups:\n  - name: G\n    proxies: [__NODES__]\n"));
 }
 
 test "compile-check" {

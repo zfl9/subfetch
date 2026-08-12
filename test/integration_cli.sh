@@ -3,7 +3,7 @@
 # isolated: XDG_STATE_HOME points into the build cache dir.
 #
 # exit codes: 0 success / 1 runtime (io, install) / 2 usage / 3 config & data
-# / 4 any subscription/node-file source failed (cron must not see success).
+# / 4 any subscription source failed (cron must not see success).
 set -eu
 
 echo "=== integration-cli ==="
@@ -42,8 +42,9 @@ echo "$OUT" | grep -q '"type": "trojan"' || { echo "FAIL: raw=- stdout missing n
 echo "$OUT" | grep -q "2026-" && { echo "FAIL: log line leaked into stdout"; exit 1; }
 echo "ok: raw=- stdout is data-only"
 
-# --node-file input path (one URI per line)
-expect_exit 0 "node-file input" "$EXE" --node-file fixtures/plain_uris.txt --dry-run
+# --url accepts local file paths directly (no file:// needed): a plain
+# URI list file is sniffed as a uri-list subscription, like node files used to
+expect_exit 0 "url local file input" "$EXE" --url fixtures/plain_uris.txt --dry-run
 
 # 2: CLI usage errors
 expect_exit 2 "unknown option" "$EXE" -x

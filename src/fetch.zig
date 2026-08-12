@@ -6,12 +6,12 @@ const util = @import("util.zig");
 
 pub const FetchError = error{
     OutOfMemory,
-    InvalidUrl,
-    FileNotFound,
-    TooLarge,
-    HttpError,
-    NetworkError,
-    Timeout,
+    FetchInvalidUrl,
+    FetchFileNotFound,
+    FetchBodyTooLarge,
+    FetchHttpError,
+    FetchNetworkError,
+    FetchTimeout,
 };
 
 /// subscription content is plain text (URI lists / yaml / json); even full
@@ -33,19 +33,17 @@ pub fn fetch(
     if (std.mem.startsWith(u8, url, "http://") or std.mem.startsWith(u8, url, "https://")) {
         return fetchHttp(allocator, url, ua);
     }
-    // local file path
-    return readFile(allocator, url) catch |e| switch (e) {
-        error.FileNotFound => error.InvalidUrl,
-        else => e,
-    };
+    // local file path: direct read, same error semantics as file:// (a missing
+    // file is FetchFileNotFound, not "invalid url")
+    return readFile(allocator, url);
 }
 
 fn readFile(allocator: std.mem.Allocator, path: []const u8) FetchError![]const u8 {
     return std.fs.cwd().readFileAlloc(allocator, path, max_sub_size) catch |e| switch (e) {
         error.OutOfMemory => error.OutOfMemory,
-        error.FileTooBig => error.TooLarge,
-        error.FileNotFound => error.FileNotFound,
-        else => error.NetworkError,
+        error.FileTooBig => error.FetchBodyTooLarge,
+        error.FileNotFound => error.FetchFileNotFound,
+        else => error.FetchNetworkError,
     };
 }
 
@@ -69,11 +67,11 @@ fn fetchHttp(
         .response_writer = &body_writer.writer,
     }) catch |e| switch (e) {
         error.OutOfMemory => return error.OutOfMemory,
-        else => return error.NetworkError,
+        else => return error.FetchNetworkError,
     };
 
-    if (result.status != .ok) return error.HttpError;
-    if (body_writer.exceeded) return error.TooLarge;
+    if (result.status != .ok) return error.FetchHttpError;
+    if (body_writer.exceeded) return error.FetchBodyTooLarge;
     return allocator.dupe(u8, body_writer.toSlice()) catch error.OutOfMemory;
 }
 
@@ -121,18 +119,18 @@ pub fn fetchWithTimeout(
     // exceed 8MB (verified: 512KB/1MB/8MB all segfault on https + timeout).
     util.runWithTimeout(ThreadCtx, worker, ctx, timeout_ms.?) catch |e| switch (e) {
         // timeout: the worker owns the ctx from now on (see util.timeoutDone)
-        error.Timeout => return error.Timeout,
+        error.Timeout => return error.FetchTimeout,
         // the worker never started: we own the ctx
         error.OutOfMemory, error.ThreadFailed => {
             std.heap.page_allocator.destroy(ctx);
-            return error.NetworkError;
+            return error.FetchNetworkError;
         },
     };
     const err = ctx.err;
     const body = ctx.result;
     std.heap.page_allocator.destroy(ctx);
     if (err) |e| return e;
-    const b = body orelse return error.NetworkError;
+    const b = body orelse return error.FetchNetworkError;
     defer std.heap.page_allocator.free(b);
     return allocator.dupe(u8, b) catch error.OutOfMemory;
 }
@@ -152,7 +150,7 @@ pub fn fetchWithRetry(
     ua: ?[]const u8,
 ) FetchError![]const u8 {
     return fetchWithTimeout(allocator, url, ua, fetch_timeout_ms) catch |e| switch (e) {
-        error.HttpError, error.NetworkError, error.Timeout => fetchWithTimeout(allocator, url, ua, fetch_timeout_ms),
+        error.FetchHttpError, error.FetchNetworkError, error.FetchTimeout => fetchWithTimeout(allocator, url, ua, fetch_timeout_ms),
         else => e,
     };
 }
@@ -179,13 +177,13 @@ test "fetch file:// and local path" {
 
 test "fetch missing file" {
     try std.testing.expectError(
-        error.InvalidUrl,
+        error.FetchFileNotFound,
         fetch(std.testing.allocator, "/nonexistent/xyz/sub.txt", null),
     );
 }
 
 test "fetch rejects oversized body" {
-    // local server sends > max_sub_size; must return error.TooLarge while
+    // local server sends > max_sub_size; must return error.FetchBodyTooLarge while
     // the writer kept memory bounded (drops past the limit)
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -219,7 +217,7 @@ test "fetch rejects oversized body" {
     defer server_thread.join();
 
     const url = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}/big", .{port});
-    try std.testing.expectError(error.TooLarge, fetch(a, url, null));
+    try std.testing.expectError(error.FetchBodyTooLarge, fetch(a, url, null));
 }
 
 test "fetchWithTimeout times out on slow server" {
@@ -245,7 +243,7 @@ test "fetchWithTimeout times out on slow server" {
 
     const url = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}/slow", .{port});
     // 500ms timeout: worker hits the dead server, main thread times out
-    try std.testing.expectError(error.Timeout, fetchWithTimeout(a, url, null, 500));
+    try std.testing.expectError(error.FetchTimeout, fetchWithTimeout(a, url, null, 500));
     // normal path (file) still works
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -292,7 +290,7 @@ test "fetchWithRetry retries once on http error" {
 test "fetchWithRetry no retry on missing file" {
     // non-transient: missing local file fails immediately (no retry attempt)
     try std.testing.expectError(
-        error.InvalidUrl,
+        error.FetchFileNotFound,
         fetchWithRetry(std.testing.allocator, "/nonexistent/xyz/retry.txt", null),
     );
 }

@@ -122,12 +122,10 @@ pub fn main() !void {
     for (opts.nodes.items) |n| try addDirectNode(arena, &all_nodes, &fail_cnt, sep, n);
     for (cfg.nodes) |n| try addDirectNode(arena, &all_nodes, &fail_cnt, sep, n);
 
-    // 2. node list files: --node-file, then .zon .node_files
-    for (opts.node_files.items) |f| try addNodeFile(arena, &all_nodes, &fail_cnt, sep, f);
-    for (cfg.node_files) |f| try addNodeFile(arena, &all_nodes, &fail_cnt, sep, f);
-
-    // 3. subscriptions: --url first, then .zon subscriptions (full pipeline:
-    //    sniff + info filtering + "name@" prefix; anonymous = no prefix)
+    // 2. subscriptions: --url first, then .zon subscriptions (full pipeline:
+    //    sniff + info filtering + "name@" prefix; anonymous = no prefix). local
+    //    file paths and file:// urls are read as files by fetch (node list
+    //    files were folded into this: --url /path/to/nodes.txt works).
     var subs: std.ArrayListUnmanaged(config.Subscription) = .empty;
     for (opts.urls.items) |arg| {
         const p = cli.parseUrlArg(arg) catch {
@@ -197,7 +195,10 @@ pub fn main() !void {
         if (opts.verbose) {
             var unsupported: usize = 0;
             for (nodes) |n| {
-                if (!render.supports(o.fmt, n)) unsupported += 1;
+                if (!render.supports(o.fmt, n)) {
+                    unsupported += 1;
+                    log.verbose(null, "  ! {s} (unsupported protocol)", .{n.name()});
+                }
             }
             if (unsupported > 0) {
                 log.verbose(null, "[{s}] {d} node(s) skipped (unsupported protocol)", .{ @tagName(o.fmt), unsupported });
@@ -281,7 +282,7 @@ pub fn main() !void {
     cleanupStageATmps();
     runstate.releaseRunLock();
     // source failures must not look like success to cron: any failed
-    // subscription/node-file makes the whole run exit 4 (configs already
+    // subscription makes the whole run exit 4 (configs already
     // generated and installed from the healthy sources are kept)
     if (fail_cnt > 0) std.process.exit(4);
 }
@@ -303,9 +304,10 @@ fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render.Format, files: []cons
         // pid in the name: dry-run takes no run lock, concurrent dry-runs must
         // not race on a shared temp file (interleaved atomicWrite -> wrong bytes)
         const tmp = try std.fmt.allocPrint(arena, "/tmp/subfetch-dryrun.{d}.{s}", .{ log.getPid(), ext });
+        // a write failure here must not silently degrade into "verify passed":
+        // same abort as the install path (verifyAll), honest over pretending
         deploy.atomicWrite(arena, tmp, f.content) catch |e| {
-            log.warn(null, "failed to write {s}: {s} (verification skipped for this file)", .{ tmp, @errorName(e) });
-            continue;
+            abort(1, "failed to write {s}: {s}", .{ tmp, @errorName(e) });
         };
         // verified: the temp file has served its purpose, leave no debris
         // (dry-run promises zero side effects; /tmp is cleaned by the system,
@@ -317,7 +319,8 @@ fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render.Format, files: []cons
             std.process.exit(3);
         }
     }
-    log.info(null, "dry-run verify passed ({d} files)", .{files.len});
+    const fnoun = if (files.len == 1) "file" else "files";
+    log.info(null, "dry-run verify passed ({d} {s})", .{ files.len, fnoun });
 }
 
 /// Stage A temp files written so far; removed on abort so a failed run leaves
@@ -453,7 +456,8 @@ fn installAll(
             log.info(null, "config unchanged, skip install & reload: {s}", .{dir});
             return;
         }
-        log.info(null, "wrote {d} files to {s} ({d} unchanged)", .{ installed, dir, files.len - installed });
+        const fnoun = if (installed == 1) "file" else "files";
+        log.info(null, "wrote {d} {s} to {s} ({d} unchanged)", .{ installed, fnoun, dir, files.len - installed });
         if (reload) reloadAfterInstall(arena, fmt, ropts, path, reload_cmd);
     } else {
         // single-file format
@@ -517,6 +521,8 @@ fn isDirFormat(fmt: render.Format) bool {
 }
 
 /// generate UUID v4 as API secret
+/// add a direct node URI (--node / .zon .nodes): no sniff, no info filtering,
+/// no subscription-name prefix; parse failure counts as a failed source.
 fn addDirectNode(
     arena: std.mem.Allocator,
     all_nodes: *std.ArrayListUnmanaged(node.Node),
@@ -530,27 +536,6 @@ fn addDirectNode(
         return;
     };
     try all_nodes.append(arena, parsed);
-}
-
-/// add a node list file (--node-file / .zon .node_files): shared line splitting
-fn addNodeFile(
-    arena: std.mem.Allocator,
-    all_nodes: *std.ArrayListUnmanaged(node.Node),
-    fail_cnt: *usize,
-    sep: []const u8,
-    f: []const u8,
-) !void {
-    const text = std.fs.cwd().readFileAlloc(arena, f, 1 << 20) catch |e| {
-        log.warn(f, "read failed: {s}", .{@errorName(e)});
-        fail_cnt.* += 1;
-        return;
-    };
-    const lines = util.splitUriLines(arena, text) catch |e| {
-        log.warn(f, "parse failed ({s})", .{@errorName(e)});
-        fail_cnt.* += 1;
-        return;
-    };
-    for (lines) |l| try addDirectNode(arena, all_nodes, fail_cnt, sep, l);
 }
 
 /// subscription-internal sort key: display name (byte order, deterministic across runs)
@@ -597,6 +582,17 @@ fn processSubscription(
     var extras: std.ArrayListUnmanaged([]const u8) = .empty;
     if (result.skipped > 0) {
         try extras.append(arena, try std.fmt.allocPrint(arena, "{d} skipped", .{result.skipped}));
+        // warn: skipped entries with their failure reason. a subscription
+        // containing bad lines is a data problem worth seeing by default;
+        // the summary line below still gives the total count.
+        for (result.skipped_lines) |l| {
+            if (l.text.len == 0) continue;
+            if (l.reason.len == 0) {
+                log.warn(null, "  ! {s} (parse failed)", .{l.text});
+            } else {
+                log.warn(null, "  ! {s} (parse failed: {s})", .{ l.text, l.reason });
+            }
+        }
     }
     if (result.info > 0) {
         try extras.append(arena, try std.fmt.allocPrint(arena, "{d} info", .{result.info}));
@@ -626,7 +622,6 @@ fn processSubscription(
 test "compile-check" {
     _ = &main;
     _ = &addDirectNode;
-    _ = &addNodeFile;
     _ = &processSubscription;
     _ = &verifyDryRunFiles;
     _ = &verifyAll;

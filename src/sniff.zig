@@ -2,12 +2,11 @@ const std = @import("std");
 const util = @import("util.zig");
 const yaml = @import("yaml.zig");
 
-pub const SniffError = error{
-    OutOfMemory,
-    EmptyContent,
-    HtmlContent,
-    UnknownFormat,
-    TooDeep,
+pub const SniffError = yaml.ParseError || error{
+    SniffEmptyContent,
+    SniffHtmlPage,
+    SniffUnknownFormat,
+    SniffNestingTooDeep,
 };
 
 pub const Sniffed = union(enum) {
@@ -32,9 +31,9 @@ pub fn sniff(arena: std.mem.Allocator, text: []const u8) SniffError!Sniffed {
 }
 
 fn sniffDepth(arena: std.mem.Allocator, text: []const u8, depth: usize) SniffError!Sniffed {
-    if (depth > max_depth) return error.TooDeep;
+    if (depth > max_depth) return error.SniffNestingTooDeep;
     const t = std.mem.trimLeft(u8, text, "\u{feff} \t\r\n");
-    if (t.len == 0) return error.EmptyContent;
+    if (t.len == 0) return error.SniffEmptyContent;
 
     const head_len = @min(t.len, 2048);
     const head = t[0..head_len];
@@ -42,15 +41,18 @@ fn sniffDepth(arena: std.mem.Allocator, text: []const u8, depth: usize) SniffErr
         std.ascii.indexOfIgnoreCase(head, "<!doctype") != null or
         std.ascii.indexOfIgnoreCase(head, "<head") != null)
     {
-        return error.HtmlContent;
+        return error.SniffHtmlPage;
     }
 
-    // clash YAML: top level has a proxies key
+    // clash YAML: top level has a proxies key. yaml parse errors pass through
+    // (YamlParseFailed etc.): the top-level check already proved this looks
+    // like clash, so a parse failure is a broken YAML document, not "unknown
+    // format". the structural checks below stay SniffUnknownFormat.
     if (hasTopLevelProxies(t)) {
-        const root = yaml.parse(arena, t) catch return error.UnknownFormat;
-        const m = yaml.mappingOf(root) orelse return error.UnknownFormat;
-        const pv = yaml.mappingGet(m, "proxies") orelse return error.UnknownFormat;
-        if (yaml.sequenceOf(pv) == null) return error.UnknownFormat;
+        const root = try yaml.parse(arena, t);
+        const m = yaml.mappingOf(root) orelse return error.SniffUnknownFormat;
+        const pv = yaml.mappingGet(m, "proxies") orelse return error.SniffUnknownFormat;
+        if (yaml.sequenceOf(pv) == null) return error.SniffUnknownFormat;
         return .{ .clash = root };
     }
 
@@ -61,17 +63,20 @@ fn sniffDepth(arena: std.mem.Allocator, text: []const u8, depth: usize) SniffErr
         } else |_| {}
     }
 
-    // plain-text URI line list
-    // shared line splitting: trim, skip empty lines and '#' comments (same as --node-file)
+    // plain-text URI line list: at least one line must look like a URI (weak
+    // sniff). non-URI lines are skipped per-line in parse with a warn, so a
+    // hand-written node file with one bad line pinpoints the culprit instead
+    // of failing the whole sniff; a file with no URI line at all still gets a
+    // clean UnknownFormat instead of a wall of per-line warnings.
     const lines = try util.splitUriLines(arena, t);
-    var all_uris = true;
+    var any_uri = false;
     for (lines) |line| {
-        if (!looksLikeUri(line)) {
-            all_uris = false;
+        if (looksLikeUri(line)) {
+            any_uri = true;
             break;
         }
     }
-    if (all_uris and lines.len > 0) {
+    if (any_uri) {
         return .{ .uris = lines };
     }
 
@@ -85,7 +90,7 @@ fn sniffDepth(arena: std.mem.Allocator, text: []const u8, depth: usize) SniffErr
             }
         }
     }
-    return error.UnknownFormat;
+    return error.SniffUnknownFormat;
 }
 
 fn hasTopLevelProxies(t: []const u8) bool {
@@ -152,14 +157,14 @@ test "sniff base64 uris" {
 
 test "sniff rejects html" {
     try std.testing.expectError(
-        error.HtmlContent,
+        error.SniffHtmlPage,
         sniff(std.testing.allocator, "<!DOCTYPE html><html><body>502</body></html>"),
     );
 }
 
 test "sniff rejects empty" {
     try std.testing.expectError(
-        error.EmptyContent,
+        error.SniffEmptyContent,
         sniff(std.testing.allocator, "  \n\t "),
     );
 }
@@ -169,7 +174,7 @@ test "sniff rejects garbage" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     try std.testing.expectError(
-        error.UnknownFormat,
+        error.SniffUnknownFormat,
         sniff(arena.allocator(), "just some random text without structure"),
     );
 }
@@ -220,7 +225,7 @@ test "sniff nested base64 too deep" {
         _ = enc.encode(out, cur);
         cur = out;
     }
-    try std.testing.expectError(error.UnknownFormat, sniff(a, cur));
+    try std.testing.expectError(error.SniffUnknownFormat, sniff(a, cur));
 }
 
 test "compile-check" {

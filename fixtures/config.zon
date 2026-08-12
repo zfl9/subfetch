@@ -15,7 +15,7 @@
         // BOM-prefixed subscription: exercises the BOM stripping path
         .{ .name = "bom", .url = "fixtures/bom_uris.txt" },
     },
-    // inline node URIs / node files (same semantics as --node / --node-file)
+    // inline node URIs (same semantics as --node); node list files are
+    // folded into subscriptions: .subscriptions = .{ .{ .url = "path" } }
     .nodes = .{ "trojan://pass@cli1.example.com:443#inline-node" },
-    .node_files = .{ "fixtures/plain_uris.txt" },
 }

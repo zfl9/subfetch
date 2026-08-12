@@ -33,8 +33,6 @@ pub const Config = struct {
     subscriptions: []const Subscription = &.{},
     /// inline node URIs (same semantics as --node)
     nodes: []const []const u8 = &.{},
-    /// inline node list files (same semantics as --node-file)
-    node_files: []const []const u8 = &.{},
     /// node name separator between subscription name and node name (overrides default "@")
     sep: ?[]const u8 = null,
     /// clash / sing-box API secret (overrides auto-generated UUID; CLI --secret wins)
@@ -79,8 +77,6 @@ pub const Config = struct {
         allocator.free(cfg.subscriptions);
         for (cfg.nodes) |n| allocator.free(n);
         allocator.free(cfg.nodes);
-        for (cfg.node_files) |f| allocator.free(f);
-        allocator.free(cfg.node_files);
         if (cfg.ua) |u| allocator.free(u);
         if (cfg.sep) |s| allocator.free(s);
         if (cfg.secret) |s| allocator.free(s);
@@ -101,11 +97,11 @@ pub const Config = struct {
 
 pub const ParseError = error{
     OutOfMemory,
-    ParseZon,
-    InvalidSubscriptionName,
-    EmptySubscriptionName,
-    DuplicateSubscriptionName,
-    MissingUrl,
+    ConfigParseZon,
+    ConfigInvalidSubscriptionName,
+    ConfigEmptySubscriptionName,
+    ConfigDuplicateSubscriptionName,
+    ConfigMissingSubscriptionUrl,
 };
 
 /// parse the config .zon file.
@@ -115,33 +111,37 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) ParseError!Conf
     var diag: std.zon.parse.Diagnostics = .{};
     defer diag.deinit(allocator);
     var cfg = std.zon.parse.fromSlice(Config, allocator, source, &diag, .{}) catch |e| {
+        // OOM passes through (the arena is page-backed, so this is a degenerate
+        // state anyway; folding it into ConfigParseZon would misreport the cause)
+        if (e == error.OutOfMemory) return error.OutOfMemory;
         // detailed diagnostics (position, message, notes) go to stderr, then the error name;
         // skipped under zig build test: unit tests deliberately feed broken input and must
-        // not touch stdio
+        // not touch stdio. the specific std.zon error (ParseZon & friends) is folded into
+        // ConfigParseZon: the diag block above already carries the exact position/message.
         if (!builtin.is_test) {
             var buf: [8192]u8 = undefined;
             var w = std.fs.File.stderr().writer(&buf);
             diag.format(&w.interface) catch {};
             w.interface.flush() catch {};
         }
-        return e;
+        return error.ConfigParseZon;
     };
     errdefer cfg.deinit(allocator);
 
     for (cfg.subscriptions) |s| {
         // null name = anonymous; explicit "" is rejected (omit the field instead)
         if (s.name) |n| {
-            if (n.len == 0) return error.EmptySubscriptionName;
-            if (!isValidName(n)) return error.InvalidSubscriptionName;
+            if (n.len == 0) return error.ConfigEmptySubscriptionName;
+            if (!isValidName(n)) return error.ConfigInvalidSubscriptionName;
         }
-        if (s.url.len == 0) return error.MissingUrl;
+        if (s.url.len == 0) return error.ConfigMissingSubscriptionUrl;
     }
     // duplicate subscription name check (anonymous subscriptions may repeat)
     for (cfg.subscriptions, 0..) |s, i| {
         const sn = s.name orelse continue;
         for (cfg.subscriptions[i + 1 ..]) |t| {
             if (t.name) |tn| {
-                if (std.mem.eql(u8, sn, tn)) return error.DuplicateSubscriptionName;
+                if (std.mem.eql(u8, sn, tn)) return error.ConfigDuplicateSubscriptionName;
             }
         }
     }
@@ -213,7 +213,7 @@ test "anonymous subscription (omitted name)" {
 test "reject explicit empty name" {
     const source = ".{ .subscriptions = .{ .{ .name = \"\", .url = \"x\" } } }";
     try std.testing.expectError(
-        error.EmptySubscriptionName,
+        error.ConfigEmptySubscriptionName,
         parse(std.testing.allocator, source),
     );
 }
@@ -302,14 +302,12 @@ test "parse sep and secret config fields" {
     try std.testing.expectEqualStrings("my-secret", cfg.secret.?);
     // omitted fields stay null
     try std.testing.expect(cfg.nodes.len == 0);
-    try std.testing.expect(cfg.node_files.len == 0);
 }
 
-test "parse inline nodes and node_files" {
+test "parse inline nodes" {
     const source =
         \\.{
         \\    .nodes = .{ "trojan://a@h1:443#hk", "ss://YQ@h2:8388" },
-        \\    .node_files = .{ "/tmp/nodes.txt" },
         \\    .subscriptions = .{ .{ .name = "airport", .url = "https://x/sub" } },
         \\}
     ;
@@ -318,8 +316,6 @@ test "parse inline nodes and node_files" {
     const cfg = try parse(arena.allocator(), source);
     try std.testing.expectEqual(@as(usize, 2), cfg.nodes.len);
     try std.testing.expectEqualStrings("trojan://a@h1:443#hk", cfg.nodes[0]);
-    try std.testing.expectEqual(@as(usize, 1), cfg.node_files.len);
-    try std.testing.expectEqualStrings("/tmp/nodes.txt", cfg.node_files[0]);
     try std.testing.expectEqual(@as(usize, 1), cfg.subscriptions.len);
     try std.testing.expectEqualStrings("airport", cfg.subscriptions[0].name.?);
 }
@@ -327,7 +323,7 @@ test "parse inline nodes and node_files" {
 test "reject duplicate name" {
     const source = ".{ .subscriptions = .{ .{ .name = \"a\", .url = \"x\" }, .{ .name = \"a\", .url = \"y\" } } }";
     try std.testing.expectError(
-        error.DuplicateSubscriptionName,
+        error.ConfigDuplicateSubscriptionName,
         parse(std.testing.allocator, source),
     );
 }
@@ -335,7 +331,7 @@ test "reject duplicate name" {
 test "reject invalid name" {
     const source = ".{ .subscriptions = .{ .{ .name = \"a:b\", .url = \"x\" } } }";
     try std.testing.expectError(
-        error.InvalidSubscriptionName,
+        error.ConfigInvalidSubscriptionName,
         parse(std.testing.allocator, source),
     );
     // anonymous via omitted name is valid
@@ -349,7 +345,7 @@ test "reject invalid name" {
 test "reject empty url" {
     const source = ".{ .subscriptions = .{ .{ .name = \"a\", .url = \"\" } } }";
     try std.testing.expectError(
-        error.MissingUrl,
+        error.ConfigMissingSubscriptionUrl,
         parse(std.testing.allocator, source),
     );
 }
@@ -360,7 +356,7 @@ test "reject unknown field" {
     defer arena.deinit();
     const source = ".{ .subscriptions = .{ .{ .name = \"a\", .url = \"x\", .urll = \"y\" } } }";
     try std.testing.expectError(
-        error.ParseZon,
+        error.ConfigParseZon,
         parse(arena.allocator(), source),
     );
 }
@@ -370,7 +366,7 @@ test "reject missing url field" {
     defer arena.deinit();
     const source = ".{ .subscriptions = .{ .{ .name = \"a\" } } }";
     try std.testing.expectError(
-        error.ParseZon,
+        error.ConfigParseZon,
         parse(arena.allocator(), source),
     );
 }

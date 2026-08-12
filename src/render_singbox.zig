@@ -417,7 +417,7 @@ test "singbox with user template" {
     // direct + block + selector + 3 supported nodes (ssr skipped)
     try std.testing.expectEqual(@as(usize, 6), outbounds.items.len);
     // missing fill point -> error
-    try std.testing.expectError(error.MissingFillPoint, renderSingbox(a, &test_nodes, .{}, "{\n  \"log\": {}\n}\n"));
+    try std.testing.expectError(error.TemplateMissingFillPoint, renderSingbox(a, &test_nodes, .{}, "{\n  \"log\": {}\n}\n"));
 }
 
 test "mbps format" {

@@ -48,7 +48,7 @@ fn matchFillLine(line: []const u8, key: []const u8) bool {
     return i == line.len;
 }
 
-pub const FillError = error{ MissingFillPoint, NonEmptyList };
+pub const FillError = error{ TemplateMissingFillPoint, TemplateFillPointNotEmpty };
 
 /// outermost key line (smallest indent); nested same-name keys (e.g. a
 /// clash group's inner `proxies:`) are ignored.
@@ -90,8 +90,8 @@ pub fn fillList(
 
     // pass 1: locate the outermost key line (nested keys with the same
     // name, e.g. a clash group's inner `proxies:`, are ignored)
-    const tline = findOutermostKey(src, key) orelse return error.MissingFillPoint;
-    if (!matchFillLine(tline, key)) return error.NonEmptyList;
+    const tline = findOutermostKey(src, key) orelse return error.TemplateMissingFillPoint;
+    if (!matchFillLine(tline, key)) return error.TemplateFillPointNotEmpty;
 
     // pass 2: rebuild, replacing the target line
     var out: std.ArrayListUnmanaged(u8) = .empty;
@@ -186,7 +186,7 @@ pub fn expandAnchor(
                 try out.append(arena, '\n');
             }
         } else if (std.mem.indexOf(u8, line, anchor) != null) {
-            return error.MisplacedAnchor;
+            return error.TemplateMisplacedAnchor;
         } else {
             try out.appendSlice(arena, line);
             try out.append(arena, '\n');
@@ -271,11 +271,11 @@ test "fillList errors" {
     const a = arena.allocator();
 
     // missing key
-    try std.testing.expectError(error.MissingFillPoint, fillList(a, "a: 1\n", "proxies", "- x"));
+    try std.testing.expectError(error.TemplateMissingFillPoint, fillList(a, "a: 1\n", "proxies", "- x"));
     // key exists but non-empty (single-line)
-    try std.testing.expectError(error.NonEmptyList, fillList(a, "proxies: [1, 2]\n", "proxies", "- y"));
+    try std.testing.expectError(error.TemplateFillPointNotEmpty, fillList(a, "proxies: [1, 2]\n", "proxies", "- y"));
     // key exists but non-empty (multi-line)
-    try std.testing.expectError(error.NonEmptyList, fillList(a, "proxies:\n  - name: x\n", "proxies", "- y"));
+    try std.testing.expectError(error.TemplateFillPointNotEmpty, fillList(a, "proxies:\n  - name: x\n", "proxies", "- y"));
 }
 
 test "fillState and appendBlock" {
@@ -307,8 +307,8 @@ test "expandAnchor" {
     const plain = try expandAnchor(a, "a: 1\n- x\n", nodes_anchor, "- n1\n");
     try std.testing.expectEqualStrings("a: 1\n- x\n", plain);
     // inline anchor (not a standalone list item) is an error
-    try std.testing.expectError(error.MisplacedAnchor, expandAnchor(a, "proxies: [__NODES__]\n", nodes_anchor, "- n1\n"));
-    try std.testing.expectError(error.MisplacedAnchor, expandAnchor(a, "- __NODES__,extra\n", nodes_anchor, "- n1\n"));
+    try std.testing.expectError(error.TemplateMisplacedAnchor, expandAnchor(a, "proxies: [__NODES__]\n", nodes_anchor, "- n1\n"));
+    try std.testing.expectError(error.TemplateMisplacedAnchor, expandAnchor(a, "- __NODES__,extra\n", nodes_anchor, "- n1\n"));
 }
 
 test "expandAnchor multiple anchors and indent alignment" {
@@ -327,7 +327,7 @@ test "expandAnchor multiple anchors and indent alignment" {
     const out2 = try expandAnchor(a, "- __NODES__\n", nodes_anchor, "- x\n- y\n");
     try std.testing.expectEqualStrings("- x\n- y\n", out2);
     // bare anchor word (not a list item) is misplaced
-    try std.testing.expectError(error.MisplacedAnchor, expandAnchor(a, "__NODES__\n", nodes_anchor, "- a\n"));
+    try std.testing.expectError(error.TemplateMisplacedAnchor, expandAnchor(a, "__NODES__\n", nodes_anchor, "- a\n"));
     const out4 = try expandAnchor(a, "- __NODES__\n", nodes_anchor, "- a\n");
     try std.testing.expectEqualStrings("- a\n", out4);
 }

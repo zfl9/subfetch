@@ -34,7 +34,7 @@ CNT=$(echo "$OUT" | grep -c "config unchanged, skip install" || true)
 NODE=$(ls "$DIR/ss" | head -1)
 echo '{"touched":true}' > "$DIR/ss/$NODE"
 OUT=$(run)
-echo "$OUT" | grep -q "wrote 1 files" || { echo "FAIL: expected 1 file rewrite"; exit 1; }
+echo "$OUT" | grep -q "wrote 1 file" || { echo "FAIL: expected 1 file rewrite"; exit 1; }
 
 # 4. no .new / .new.json debris anywhere
 DEBRIS=$(find "$DIR" \( -name '*.new' -o -name '*.new.json' \) || true)

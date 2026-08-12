@@ -8,24 +8,31 @@ const uri = @import("uri.zig");
 const sniff = @import("sniff.zig");
 const yaml = @import("yaml.zig");
 
-pub const ParseError = error{
-    OutOfMemory,
-    SniffError,
-    MissingField,
-    InvalidPort,
-    UnsupportedType,
-    UnsupportedNetwork,
-    UnsupportedScheme,
-    InvalidUri,
-    BadBase64,
-    InvalidJson,
-    UnsupportedPlugin,
-    UnknownFormat,
+pub const ParseError = uri.ParseError || sniff.SniffError || error{
+    ParseMissingField,
+    ParseInvalidPort,
+    ParseUnsupportedType,
+    ParseUnsupportedPlugin,
+    ParseMissingOutbounds,
+    ParseOutboundsNotArray,
+    ParseBadJsonRoot,
+    ParseMissingProxies,
+    ParseProxiesNotSequence,
+};
+
+pub const SkippedLine = struct {
+    /// display text: raw URI line (uri-list), or node name (json/yaml entries)
+    text: []const u8,
+    /// parse error name (comptime string, no allocation; empty when no error
+    /// object was available, e.g. a non-mapping clash proxy entry)
+    reason: []const u8 = "",
 };
 
 pub const ParseResult = struct {
     nodes: []const node.Node,
     skipped: usize,
+    /// skipped entries (display text + failure reason), for verbose diagnostics
+    skipped_lines: []const SkippedLine = &.{},
     /// info (notice) nodes filtered out: airport pseudo-nodes (expiry/remain-traffic notices)
     info: usize,
     /// names of the filtered info nodes (for verbose display)
@@ -40,17 +47,19 @@ pub fn parseSubscription(
     sep: []const u8,
     keywords: []const []const u8,
 ) ParseError!ParseResult {
-    const s = sniff.sniff(arena, text) catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else error.SniffError;
+    const s = try sniff.sniff(arena, text);
     var nodes: std.ArrayListUnmanaged(node.Node) = .empty;
     var skipped: usize = 0;
+    var skipped_lines: std.ArrayListUnmanaged(SkippedLine) = .empty;
     var info: usize = 0;
     var info_names: std.ArrayListUnmanaged([]const u8) = .empty;
 
     switch (s) {
         .uris => |lines| {
             for (lines) |line| {
-                const n = uri.parseUri(arena, line, sub_name, sep) catch {
+                const n = uri.parseUri(arena, line, sub_name, sep) catch |e| {
                     skipped += 1;
+                    try skipped_lines.append(arena, .{ .text = line, .reason = @errorName(e) });
                     continue;
                 };
                 try addParsedNode(arena, &nodes, n, sub_name, sep, keywords, &info, &info_names);
@@ -61,15 +70,17 @@ pub fn parseSubscription(
                 for (arr.items) |item| {
                     switch (item) {
                         .string => |str| {
-                            const n = uri.parseUri(arena, str, sub_name, sep) catch {
+                            const n = uri.parseUri(arena, str, sub_name, sep) catch |e| {
                                 skipped += 1;
+                                try skipped_lines.append(arena, .{ .text = str, .reason = @errorName(e) });
                                 continue;
                             };
                             try addParsedNode(arena, &nodes, n, sub_name, sep, keywords, &info, &info_names);
                         },
                         .object => |obj| {
-                            const n = jsonNodeToNode(arena, obj, sub_name, sep) catch {
+                            const n = jsonNodeToNode(arena, obj, sub_name, sep) catch |e| {
                                 skipped += 1;
+                                try skipped_lines.append(arena, .{ .text = jsonDisplayName(arena, obj), .reason = @errorName(e) });
                                 continue;
                             };
                             try addParsedNode(arena, &nodes, n, sub_name, sep, keywords, &info, &info_names);
@@ -80,10 +91,10 @@ pub fn parseSubscription(
             },
             // sing-box subscription: {"outbounds": [...]}
             .object => |obj| {
-                const ob = obj.get("outbounds") orelse return error.UnknownFormat;
+                const ob = obj.get("outbounds") orelse return error.ParseMissingOutbounds;
                 const arr = switch (ob) {
                     .array => |a| a,
-                    else => return error.UnknownFormat,
+                    else => return error.ParseOutboundsNotArray,
                 };
                 for (arr.items) |item| {
                     const oobj = switch (item) {
@@ -93,26 +104,31 @@ pub fn parseSubscription(
                             continue;
                         },
                     };
-                    const n = singboxOutboundToNode(arena, oobj, sub_name, sep) catch {
+                    const n = singboxOutboundToNode(arena, oobj, sub_name, sep) catch |e| {
                         skipped += 1;
+                        try skipped_lines.append(arena, .{ .text = jsonDisplayName(arena, oobj), .reason = @errorName(e) });
                         continue;
                     };
                     try addParsedNode(arena, &nodes, n, sub_name, sep, keywords, &info, &info_names);
                 }
             },
-            else => return error.UnknownFormat,
+            else => return error.ParseBadJsonRoot,
         },
         .clash => |root| {
-            const m = yaml.mappingOf(root) orelse return error.UnknownFormat;
-            const pv = yaml.mappingGet(m, "proxies") orelse return error.UnknownFormat;
-            const proxies = yaml.sequenceOf(pv) orelse return error.UnknownFormat;
+            const m = yaml.mappingOf(root) orelse return error.ParseMissingProxies;
+            const pv = yaml.mappingGet(m, "proxies") orelse return error.ParseMissingProxies;
+            const proxies = yaml.sequenceOf(pv) orelse return error.ParseProxiesNotSequence;
             for (proxies) |item| {
                 const pm = yaml.mappingOf(item) orelse {
                     skipped += 1;
                     continue;
                 };
-                const n = clashYamlToNode(arena, pm, sub_name, sep) catch {
+                const n = clashYamlToNode(arena, pm, sub_name, sep) catch |e| {
                     skipped += 1;
+                    if (yaml.mappingGet(pm, "name")) |nv| switch (nv) {
+                        .scalar => |nm| try skipped_lines.append(arena, .{ .text = nm, .reason = @errorName(e) }),
+                        else => {},
+                    };
                     continue;
                 };
                 try addParsedNode(arena, &nodes, n, sub_name, sep, keywords, &info, &info_names);
@@ -122,9 +138,22 @@ pub fn parseSubscription(
     return .{
         .nodes = try nodes.toOwnedSlice(arena),
         .skipped = skipped,
+        .skipped_lines = try skipped_lines.toOwnedSlice(arena),
         .info = info,
         .info_names = try info_names.toOwnedSlice(arena),
     };
+}
+
+/// best-effort display name for a skipped json node: v2rayN uses "ps",
+/// sing-box uses "tag", "name" is the generic fallback (empty when absent)
+fn jsonDisplayName(arena: std.mem.Allocator, obj: std.json.ObjectMap) []const u8 {
+    _ = arena;
+    for ([_][]const u8{ "ps", "tag", "name" }) |k| {
+        if (obj.get(k)) |v| {
+            if (v == .string) return v.string;
+        }
+    }
+    return "";
 }
 
 /// info-filter one successfully parsed node + append it: info (notice) nodes are
@@ -172,9 +201,9 @@ fn yBool(v: ?[]const u8) bool {
 /// clash YAML node (yaml tree mapping) -> Node
 fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_name: []const u8, sep: []const u8) ParseError!node.Node {
     const get = yaml.mappingGetScalar;
-    const type_str = get(m, "type") orelse return error.UnsupportedType;
-    const server = get(m, "server") orelse return error.MissingField;
-    const port = try uri.parsePort(get(m, "port") orelse return error.MissingField);
+    const type_str = get(m, "type") orelse return error.ParseUnsupportedType;
+    const server = get(m, "server") orelse return error.ParseMissingField;
+    const port = try uri.parsePort(get(m, "port") orelse return error.ParseMissingField);
     const raw_name = get(m, "name") orelse "";
     const name = try uri.makeName(arena, raw_name, sub_name, sep, server, port);
 
@@ -183,8 +212,8 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
             .name = name,
             .server = server,
             .port = port,
-            .cipher = get(m, "cipher") orelse return error.MissingField,
-            .password = get(m, "password") orelse return error.MissingField,
+            .cipher = get(m, "cipher") orelse return error.ParseMissingField,
+            .password = get(m, "password") orelse return error.ParseMissingField,
             .plugin = try ssPluginFromYaml(arena, m),
         } };
     }
@@ -193,8 +222,8 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
             .name = name,
             .server = server,
             .port = port,
-            .cipher = get(m, "cipher") orelse return error.MissingField,
-            .password = get(m, "password") orelse return error.MissingField,
+            .cipher = get(m, "cipher") orelse return error.ParseMissingField,
+            .password = get(m, "password") orelse return error.ParseMissingField,
             .protocol = get(m, "protocol") orelse "origin",
             .obfs = get(m, "obfs") orelse "plain",
             .obfs_param = get(m, "obfs-param"),
@@ -207,7 +236,7 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
             .name = name,
             .server = server,
             .port = port,
-            .uuid = get(m, "uuid") orelse return error.MissingField,
+            .uuid = get(m, "uuid") orelse return error.ParseMissingField,
             .alter_id = if (get(m, "alterId")) |v| std.fmt.parseInt(u16, v, 10) catch 0 else 0,
             .network = net,
             .tls = yBool(get(m, "tls")),
@@ -221,9 +250,9 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
         const net = uri.parseNetwork(get(m, "network")) catch .tcp;
         const reality_v = yaml.mappingGet(m, "reality-opts");
         const reality = if (reality_v) |rv| blk: {
-            const rm = yaml.mappingOf(rv) orelse return error.MissingField;
+            const rm = yaml.mappingOf(rv) orelse return error.ParseMissingField;
             break :blk node.RealityOpts{
-                .public_key = get(rm, "public-key") orelse return error.MissingField,
+                .public_key = get(rm, "public-key") orelse return error.ParseMissingField,
                 .short_id = get(rm, "short-id"),
                 .spider_x = get(rm, "spider-x"),
             };
@@ -232,7 +261,7 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
             .name = name,
             .server = server,
             .port = port,
-            .uuid = get(m, "uuid") orelse return error.MissingField,
+            .uuid = get(m, "uuid") orelse return error.ParseMissingField,
             .network = net,
             .tls = yBool(get(m, "tls")),
             .reality = reality,
@@ -251,7 +280,7 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
             .name = name,
             .server = server,
             .port = port,
-            .password = get(m, "password") orelse return error.MissingField,
+            .password = get(m, "password") orelse return error.ParseMissingField,
             .servername = get(m, "servername") orelse get(m, "sni"),
             .skip_cert_verify = yBool(get(m, "skip-cert-verify")),
             .alpn = try yamlAlpn(arena, yaml.mappingGet(m, "alpn")),
@@ -280,7 +309,7 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
             .name = name,
             .server = server,
             .port = port,
-            .password = get(m, "password") orelse return error.MissingField,
+            .password = get(m, "password") orelse return error.ParseMissingField,
             .servername = get(m, "servername") orelse get(m, "sni"),
             .skip_cert_verify = yBool(get(m, "skip-cert-verify")),
             .obfs = get(m, "obfs"),
@@ -293,8 +322,8 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
             .name = name,
             .server = server,
             .port = port,
-            .uuid = get(m, "uuid") orelse return error.MissingField,
-            .password = get(m, "password") orelse return error.MissingField,
+            .uuid = get(m, "uuid") orelse return error.ParseMissingField,
+            .password = get(m, "password") orelse return error.ParseMissingField,
             .servername = get(m, "servername") orelse get(m, "sni"),
             .skip_cert_verify = yBool(get(m, "skip-cert-verify")),
             .congestion_controller = get(m, "congestion-controller"),
@@ -302,7 +331,7 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
             .alpn = try yamlAlpn(arena, yaml.mappingGet(m, "alpn")),
         } };
     }
-    return error.UnsupportedType;
+    return error.ParseUnsupportedType;
 }
 
 /// clash YAML ss plugin: plugin + plugin-opts (obfs-local / v2ray-plugin / shadow-tls)
@@ -311,7 +340,7 @@ fn ssPluginFromYaml(arena: std.mem.Allocator, m: []const yaml.MappingEntry) Pars
     const get = yaml.mappingGetScalar;
     const plugin = get(m, "plugin") orelse return null;
     const opts = yaml.mappingGet(m, "plugin-opts");
-    const om = if (opts) |o| yaml.mappingOf(o) orelse return error.MissingField else null;
+    const om = if (opts) |o| yaml.mappingOf(o) orelse return error.ParseMissingField else null;
 
     if (std.mem.eql(u8, plugin, "obfs-local")) {
         return .{
@@ -342,7 +371,7 @@ fn ssPluginFromYaml(arena: std.mem.Allocator, m: []const yaml.MappingEntry) Pars
             .version = version,
         } };
     }
-    return error.UnsupportedPlugin;
+    return error.ParseUnsupportedPlugin;
 }
 
 /// clash YAML alpn (yaml sequence) -> []const []const u8
@@ -381,11 +410,11 @@ fn jsonGetBool(o: std.json.ObjectMap, key: []const u8) bool {
 }
 
 fn jsonGetPort(o: std.json.ObjectMap, key: []const u8) ParseError!u16 {
-    const v = o.get(key) orelse return error.MissingField;
+    const v = o.get(key) orelse return error.ParseMissingField;
     return switch (v) {
-        .integer => |i| if (i >= 0 and i <= 65535) @intCast(i) else error.InvalidPort,
-        .string => |s| std.fmt.parseInt(u16, s, 10) catch error.InvalidPort,
-        else => error.InvalidPort,
+        .integer => |i| if (i >= 0 and i <= 65535) @intCast(i) else error.ParseInvalidPort,
+        .string => |s| std.fmt.parseInt(u16, s, 10) catch error.ParseInvalidPort,
+        else => error.ParseInvalidPort,
     };
 }
 
@@ -400,7 +429,7 @@ fn jsonGetObj(o: std.json.ObjectMap, key: []const u8) ?std.json.ObjectMap {
 /// sing-box outbound object (subscription format: {"outbounds": [...]}) -> Node.
 /// field layout differs from v2rayN: type/tag/server/server_port, tls{}, transport{}.
 fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_name: []const u8, sep: []const u8) ParseError!node.Node {
-    const server = jsonGetStr(obj, "server") orelse return error.MissingField;
+    const server = jsonGetStr(obj, "server") orelse return error.ParseMissingField;
     const port = try jsonGetPort(obj, "server_port");
     const raw_name = jsonGetStr(obj, "tag") orelse "";
     const name = try uri.makeName(arena, raw_name, sub_name, sep, server, port);
@@ -448,14 +477,14 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
         else => {},
     };
 
-    const ob_type = jsonGetStr(obj, "type") orelse return error.MissingField;
+    const ob_type = jsonGetStr(obj, "type") orelse return error.ParseMissingField;
     if (std.mem.eql(u8, ob_type, "vless")) {
         var reality: ?node.RealityOpts = null;
         if (tls) |t| {
             if (jsonGetObj(t, "reality")) |r| {
                 if (jsonGetBool(r, "enabled")) {
                     reality = .{
-                        .public_key = jsonGetStr(r, "public_key") orelse return error.MissingField,
+                        .public_key = jsonGetStr(r, "public_key") orelse return error.ParseMissingField,
                         .short_id = jsonGetStr(r, "short_id"),
                     };
                 }
@@ -465,7 +494,7 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
             .name = name,
             .server = server,
             .port = port,
-            .uuid = jsonGetStr(obj, "uuid") orelse return error.MissingField,
+            .uuid = jsonGetStr(obj, "uuid") orelse return error.ParseMissingField,
             .network = network,
             .tls = tls_enabled,
             .reality = reality,
@@ -489,7 +518,7 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
             .name = name,
             .server = server,
             .port = port,
-            .uuid = jsonGetStr(obj, "uuid") orelse return error.MissingField,
+            .uuid = jsonGetStr(obj, "uuid") orelse return error.ParseMissingField,
             .alter_id = alter_id,
             .network = network,
             .tls = tls_enabled,
@@ -504,7 +533,7 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
             .name = name,
             .server = server,
             .port = port,
-            .password = jsonGetStr(obj, "password") orelse return error.MissingField,
+            .password = jsonGetStr(obj, "password") orelse return error.ParseMissingField,
             .servername = server_name,
             .skip_cert_verify = insecure,
             .alpn = alpn,
@@ -518,8 +547,8 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
             .name = name,
             .server = server,
             .port = port,
-            .cipher = jsonGetStr(obj, "method") orelse return error.MissingField,
-            .password = jsonGetStr(obj, "password") orelse return error.MissingField,
+            .cipher = jsonGetStr(obj, "method") orelse return error.ParseMissingField,
+            .password = jsonGetStr(obj, "password") orelse return error.ParseMissingField,
         };
         // sing-box plugin + plugin_opts (TOR_PT style, same as ss:// plugin param)
         if (jsonGetStr(obj, "plugin")) |p| {
@@ -530,7 +559,7 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
                 p;
             n.plugin = uri.parseSsPlugin(arena, full) catch |e| switch (e) {
                 error.OutOfMemory => return error.OutOfMemory,
-                else => return error.UnsupportedPlugin,
+                else => return error.ParseUnsupportedPlugin,
             };
         }
         return .{ .ss = n };
@@ -548,7 +577,7 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
             .name = name,
             .server = server,
             .port = port,
-            .password = jsonGetStr(obj, "password") orelse return error.MissingField,
+            .password = jsonGetStr(obj, "password") orelse return error.ParseMissingField,
             .servername = server_name,
             .skip_cert_verify = insecure,
             .obfs = obfs,
@@ -575,8 +604,8 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
             .name = name,
             .server = server,
             .port = port,
-            .uuid = jsonGetStr(obj, "uuid") orelse return error.MissingField,
-            .password = jsonGetStr(obj, "password") orelse return error.MissingField,
+            .uuid = jsonGetStr(obj, "uuid") orelse return error.ParseMissingField,
+            .password = jsonGetStr(obj, "password") orelse return error.ParseMissingField,
             .servername = server_name,
             .skip_cert_verify = insecure,
             .congestion_controller = jsonGetStr(obj, "congestion_control"),
@@ -585,13 +614,13 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
         } };
     }
     // non-node outbounds (direct/block/selector/dns/...)
-    return error.UnsupportedType;
+    return error.ParseUnsupportedType;
 }
 
 /// v2rayN JSON node (with "add"/"ps" fields) -> Node
 fn jsonNodeToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_name: []const u8, sep: []const u8) ParseError!node.Node {
-    const server = jsonGetStr(obj, "add") orelse return error.MissingField;
-    const port = try uri.parsePort(jsonGetStr(obj, "port") orelse return error.MissingField);
+    const server = jsonGetStr(obj, "add") orelse return error.ParseMissingField;
+    const port = try uri.parsePort(jsonGetStr(obj, "port") orelse return error.ParseMissingField);
     const raw_name = jsonGetStr(obj, "ps") orelse "";
     const name = try uri.makeName(arena, raw_name, sub_name, sep, server, port);
 
@@ -600,7 +629,7 @@ fn jsonNodeToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_name: [
         .name = name,
         .server = server,
         .port = port,
-        .uuid = jsonGetStr(obj, "id") orelse return error.MissingField,
+        .uuid = jsonGetStr(obj, "id") orelse return error.ParseMissingField,
         .alter_id = if (jsonGetStr(obj, "aid")) |v| std.fmt.parseInt(u16, v, 10) catch 0 else 0,
         .network = net,
         .tls = std.mem.eql(u8, jsonGetStr(obj, "tls") orelse "", "tls"),
@@ -617,10 +646,10 @@ fn wsOpts(m: []const yaml.MappingEntry, net: node.Network) ParseError!?node.WsOp
     const get = yaml.mappingGetScalar;
     const wv = yaml.mappingGet(m, "ws-opts");
     if (wv) |w| {
-        const wm = yaml.mappingOf(w) orelse return error.MissingField;
+        const wm = yaml.mappingOf(w) orelse return error.ParseMissingField;
         var host: ?[]const u8 = null;
         if (yaml.mappingGet(wm, "headers")) |hv| {
-            const hm = yaml.mappingOf(hv) orelse return error.MissingField;
+            const hm = yaml.mappingOf(hv) orelse return error.ParseMissingField;
             host = get(hm, "Host");
         }
         return .{ .path = get(wm, "path") orelse "/", .host = host };
@@ -634,7 +663,7 @@ fn grpcOpts(m: []const yaml.MappingEntry, net: node.Network) ParseError!?node.Gr
     const get = yaml.mappingGetScalar;
     const gv = yaml.mappingGet(m, "grpc-opts");
     if (gv) |g| {
-        const gm = yaml.mappingOf(g) orelse return error.MissingField;
+        const gm = yaml.mappingOf(g) orelse return error.ParseMissingField;
         return .{ .service_name = get(gm, "grpc-service-name") orelse "" };
     }
     return .{ .service_name = get(m, "grpc-service-name") orelse "" };
@@ -801,7 +830,7 @@ test "parse clash yaml alpn list" {
 
 test "parse errors propagate" {
     try std.testing.expectError(
-        error.SniffError,
+        error.SniffHtmlPage,
         parseSubscription(std.testing.allocator, "airport-a", "<html>error</html>", "@", &node.default_info_keywords),
     );
 }

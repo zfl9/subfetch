@@ -57,7 +57,7 @@ CLI 与 .zon 一一对应：
 | 订阅（带名） | `--url name=<url>` | `.subscriptions` 里写 name |
 | 订阅（匿名） | `--url <url>` | `.subscriptions` 里省略 name |
 | 节点 URI | `--node <uri>` | `.nodes = .{ ... }` |
-| 节点列表文件 | `--node-file <path>` | `.node_files = .{ ... }` |
+| 节点列表文件 | `--url <本地路径>` | `.subscriptions` 里写本地路径 |
 
 所有 CLI 参数都能写进 .zon，优先级 CLI > .zon > 默认值：
 
@@ -135,9 +135,8 @@ Config:
 -c, --config <path>      配置 zon（默认 ./config.zon）
 
 Input:
-    --url <[name=]url>   订阅 URL（可多次；省略 [name=] 即匿名）
+    --url <[name=]url>   订阅 URL（可多次；省略 [name=] 即匿名）；本地文件路径或 file:// 也会读取
     --node <uri>         直接粘贴节点 URI（可多次）
-    --node-file <path>   节点列表文件（每行一个 URI）
 
 Output:
 -o, --output <fmt>[:<tmpl>][=<path>]

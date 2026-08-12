@@ -36,7 +36,8 @@ pub fn urlDecode(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
 }
 
 /// split text into URI lines: trim whitespace, skip empty lines and '#' comment lines.
-/// shared by --node-file (main) and subscription sniffing, so both behave identically.
+/// shared by subscription sniffing and local node files (--url <path>); both
+/// behave identically: trim, skip empty lines and '#' comments
 pub fn splitUriLines(arena: std.mem.Allocator, text: []const u8) ![][]const u8 {
     var lines = std.mem.splitScalar(u8, text, '\n');
     var out: std.ArrayListUnmanaged([]const u8) = .empty;

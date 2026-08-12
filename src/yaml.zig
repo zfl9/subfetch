@@ -26,8 +26,8 @@ pub const MappingEntry = struct {
 
 pub const ParseError = error{
     OutOfMemory,
-    InitFailed,
-    ParseFailed,
+    YamlInitFailed,
+    YamlParseFailed,
 };
 
 /// max nesting depth of the value tree (libyaml parses flat; our recursive
@@ -37,15 +37,15 @@ const max_depth = 64;
 /// parse YAML text into a value tree. strings are duped into the allocator (arena recommended).
 pub fn parse(allocator: std.mem.Allocator, source: []const u8) ParseError!YamlValue {
     var parser: c.yaml_parser_t = undefined;
-    if (c.yaml_parser_initialize(&parser) == 0) return error.InitFailed;
+    if (c.yaml_parser_initialize(&parser) == 0) return error.YamlInitFailed;
     defer c.yaml_parser_delete(&parser);
     c.yaml_parser_set_input_string(&parser, source.ptr, source.len);
 
     var doc: c.yaml_document_t = undefined;
-    if (c.yaml_parser_load(&parser, &doc) == 0) return error.ParseFailed;
+    if (c.yaml_parser_load(&parser, &doc) == 0) return error.YamlParseFailed;
     defer c.yaml_document_delete(&doc);
 
-    const root = c.yaml_document_get_root_node(&doc) orelse return error.ParseFailed;
+    const root = c.yaml_document_get_root_node(&doc) orelse return error.YamlParseFailed;
     return buildValueDepth(allocator, &doc, root, 0);
 }
 
@@ -55,7 +55,7 @@ fn buildValueDepth(
     node: [*c]c.yaml_node_t,
     depth: usize,
 ) ParseError!YamlValue {
-    if (depth > max_depth) return error.ParseFailed;
+    if (depth > max_depth) return error.YamlParseFailed;
     return switch (node.*.type) {
         yaml_scalar_node => blk: {
             const ptr: [*c]const u8 = node.*.data.scalar.value;
@@ -69,7 +69,7 @@ fn buildValueDepth(
             const top = node.*.data.sequence.items.top;
             var it = start;
             while (it != top) : (it += 1) {
-                const child = c.yaml_document_get_node(doc, it.*) orelse return error.ParseFailed;
+                const child = c.yaml_document_get_node(doc, it.*) orelse return error.YamlParseFailed;
                 try items.append(allocator, try buildValueDepth(allocator, doc, child, depth + 1));
             }
             break :blk .{ .sequence = try items.toOwnedSlice(allocator) };
@@ -81,9 +81,9 @@ fn buildValueDepth(
             const top = node.*.data.mapping.pairs.top;
             var it = start;
             while (it != top) : (it += 1) {
-                const key_node = c.yaml_document_get_node(doc, it.*.key) orelse return error.ParseFailed;
-                const val_node = c.yaml_document_get_node(doc, it.*.value) orelse return error.ParseFailed;
-                if (key_node.*.type != yaml_scalar_node) return error.ParseFailed;
+                const key_node = c.yaml_document_get_node(doc, it.*.key) orelse return error.YamlParseFailed;
+                const val_node = c.yaml_document_get_node(doc, it.*.value) orelse return error.YamlParseFailed;
+                if (key_node.*.type != yaml_scalar_node) return error.YamlParseFailed;
                 const kptr: [*c]const u8 = key_node.*.data.scalar.value;
                 const klen: usize = @intCast(key_node.*.data.scalar.length);
                 try entries.append(allocator, .{
@@ -210,7 +210,7 @@ test "parse clash subscription yaml" {
 
 test "parse error on invalid yaml" {
     try std.testing.expectError(
-        error.ParseFailed,
+        error.YamlParseFailed,
         parse(std.testing.allocator, "a: [unclosed\n"),
     );
 }
@@ -222,7 +222,7 @@ test "reject deeply nested yaml" {
     const deep = try std.fmt.allocPrint(arena.allocator(), "{s}x{s}", .{
         "a: {" ** 200, "}" ** 200,
     });
-    try std.testing.expectError(error.ParseFailed, parse(arena.allocator(), deep));
+    try std.testing.expectError(error.YamlParseFailed, parse(arena.allocator(), deep));
     // sane nesting depth still parses
     const ok = "a: {b: {c: x}}";
     _ = try parse(arena.allocator(), ok);
