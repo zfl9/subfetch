@@ -150,6 +150,16 @@ test "sniff uris list" {
     try std.testing.expectEqual(@as(usize, 2), s.uris.len);
 }
 
+test "sniff strips BOM prefix" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    // UTF-8 BOM (\u{feff}) is stripped by the sniff layer so BOM-prefixed
+    // node files behave like plain ones (fixtures/bom_uris.txt pipeline)
+    const s = try sniff(arena.allocator(), "\u{feff}trojan://a@h1:443#n1\n");
+    try std.testing.expect(s == .uris);
+    try std.testing.expectEqualStrings("trojan://a@h1:443#n1", s.uris[0]);
+}
+
 test "sniff base64 uris" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

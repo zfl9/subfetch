@@ -768,6 +768,17 @@ test "parse hysteria1" {
     try std.testing.expectEqualStrings("200", h.down.?);
 }
 
+test "parse hysteria1 default bandwidth" {
+    // upmbps/downmbps omitted: hysteria 1 defaults to 100 Mbps both ways;
+    // renderers (clash/sing-box) require explicit values, so the parse
+    // layer fills the defaults (see parseHysteria)
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const n = try parseUri(arena.allocator(), "hysteria://hy3.example.com:36712?protocol=udp&auth=a#JP-03-hy1", "", "@");
+    try std.testing.expectEqualStrings("100", n.hysteria.up.?);
+    try std.testing.expectEqualStrings("100", n.hysteria.down.?);
+}
+
 test "parse tuic" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

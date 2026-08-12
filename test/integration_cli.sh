@@ -8,8 +8,9 @@ set -eu
 
 echo "=== integration-cli ==="
 
-EXE=$1
-WORK=$2
+EXE=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
+# absolute: the no -c case cd's into a subdir and $TMP must stay valid there
+WORK=$(cd "$2" && pwd)
 mkdir -p "$WORK"
 TMP=$(mktemp -d "$WORK/cli.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
@@ -37,6 +38,22 @@ echo "ok: --version -> $OUT"
 # --url accepts local file paths directly (no file:// needed): a plain
 # URI list file is sniffed as a uri-list subscription, like node files used to
 expect_exit 0 "url local file input" "$EXE" --url fixtures/plain_uris.txt --dry-run -o raw
+
+# explicit -c beats implicit: without -c the config file is NOT read at all,
+# so a broken config.zon in cwd must not fail a run that never asked for it
+expect_exit 0 "--node success" "$EXE" --node "trojan://pass@cli1.example.com:443#n" --dry-run -o raw
+mkdir -p "$TMP/nocfg"
+printf 'not { zon' > "$TMP/nocfg/config.zon"
+(
+    cd "$TMP/nocfg"
+    expect_exit 0 "no -c ignores broken cwd config.zon" "$EXE" --url "$OLDPWD/fixtures/plain_uris.txt" --dry-run -o raw
+)
+
+# logs go to stdout, stderr stays clean (log stream contract)
+OUT=$("$EXE" -c fixtures/config.zon --dry-run -o raw 2>"$TMP/stderr") || { echo "FAIL: log-stream run exit"; exit 1; }
+echo "$OUT" | grep -q "ok, .* nodes" || { echo "FAIL: log line missing on stdout"; echo "$OUT"; exit 1; }
+[ -s "$TMP/stderr" ] && { echo "FAIL: stderr not empty: $(cat "$TMP/stderr")"; exit 1; }
+echo "ok: logs on stdout, stderr clean"
 
 # 2: CLI usage errors
 expect_exit 2 "unknown option" "$EXE" -x
