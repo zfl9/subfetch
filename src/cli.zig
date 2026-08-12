@@ -10,7 +10,7 @@ const version = build_options.version;
 const Output = config.Output;
 
 pub const Options = struct {
-    config: []const u8 = "config.zon",
+    config: ?[]const u8 = null,
     outputs: std.ArrayListUnmanaged(Output) = .empty,
     dry_run: bool = false,
     /// --reset-state: drop the persisted api secret (next run generates a fresh one)
@@ -149,9 +149,10 @@ pub fn parseUrlArg(arg: []const u8) !struct { name: ?[]const u8, url: []const u8
     return .{ .name = null, .url = arg };
 }
 
-/// parse -o/--output value: format[:template][=path]
+/// parse -o/--output value: format[:template][=path]; a missing path
+/// means stdout (same as an explicit "=-")
 pub fn parseOutput(v: []const u8) !Output {
-    var path: ?[]const u8 = null;
+    var path: ?[]const u8 = "-";
     var rest = v;
     if (std.mem.indexOfScalar(u8, v, '=')) |eq| {
         path = v[eq + 1 ..];
@@ -232,10 +233,10 @@ const usage_sections = [_]Section{
     } },
     .{ .title = "Output", .options = &.{
         .{ .opt = "-o, --output <fmt>[:<tmpl>][=<path>]", .desc = &.{
-            "output target (repeatable; default raw)",
+            "output target (repeatable; required unless .outputs is set)",
             "fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw",
             "tmpl: custom template file (clash/singbox)",
-            "path: output file or directory; '-' = stdout",
+            "path: output file or directory; omitted or '-' = stdout",
         } },
     } },
     .{ .title = "Client config (built-in templates only)", .options = &.{
@@ -300,16 +301,16 @@ fn printUsageOpt(o: Opt) void {
 }
 
 test "parseOutput grammar" {
-    // format only
+    // format only: stdout by default
     const o1 = try parseOutput("clash");
     try std.testing.expectEqual(render.Format.clash, o1.fmt);
     try std.testing.expect(o1.tmpl == null);
-    try std.testing.expect(o1.path == null);
+    try std.testing.expectEqualStrings("-", o1.path.?);
     // format + template
     const o2 = try parseOutput("clash:tmpl.yaml");
     try std.testing.expectEqual(render.Format.clash, o2.fmt);
     try std.testing.expectEqualStrings("tmpl.yaml", o2.tmpl.?);
-    try std.testing.expect(o2.path == null);
+    try std.testing.expectEqualStrings("-", o2.path.?);
     // format + path
     const o3 = try parseOutput("singbox=/etc/sing-box/config.json");
     try std.testing.expectEqual(render.Format.singbox, o3.fmt);

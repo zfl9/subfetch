@@ -77,7 +77,7 @@ CLI 与 .zon 一一对应：
     .controller = "127.0.0.1:65501",       // clash external-controller / sing-box clash_api（需 .singbox_clash_api）
     .singbox_clash_api = true,             // sing-box 输出启用 clash_api
     .reload_cmd = "systemctl restart clash", // 所有输出的默认重载命令
-    .outputs = .{                          // 输出目标，默认 raw
+    .outputs = .{                          // 输出目标（必须至少一个）
         .{
             .fmt = .clash,
             .path = "/etc/clash/config.yaml",
@@ -99,10 +99,10 @@ crontab / systemd timer 中只需执行：`subfetch -c /path/to/config.zon`。
 | `singbox` | sing-box 聚合配置 | `sing-box check` |
 | `xray` | xray 配置，每节点一个文件 | `xray -test` |
 | `trojan` `hysteria` `hysteria2` `ss` `ssr` | 原生客户端配置，每节点一个文件 | 语法检查 |
-| `raw` | 节点列表（JSON，默认格式） | — |
+| `raw` | 节点列表（JSON） | — |
 
-- `-o` 语法：`-o <fmt>[:模板路径]=<输出路径>`，可多次
-- 路径写 `-` 则输出到终端（配合 `--dry-run` 预览）
+- `-o` 语法：`-o <fmt>[:模板路径][=<输出路径>]`，可多次
+- 不写输出路径、或路径写 `-`，则输出到终端（配合 `--dry-run` 预览）
 
 ## 模板
 
@@ -140,7 +140,7 @@ Input:
 
 Output:
 -o, --output <fmt>[:<tmpl>][=<path>]
-                          输出目标（可多次；默认 raw）
+                          输出目标（可多次；不指定则报错，除非配置了 .outputs）
                           fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw
                           tmpl: 自定义模板文件（clash/singbox）
                           path: 输出文件或目录；'-' = 终端

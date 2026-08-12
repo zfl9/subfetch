@@ -54,7 +54,7 @@
       "tls": { "enabled": true, "server_name": "kr1.example.com" },
       "obfs": { "type": "salamander", "password": "obfs-pass" }
     },
-    { "type": "direct", "tag": "direct-out" },
-    { "type": "block", "tag": "block-out" }
+    { "type": "direct", "tag": "bad-direct" },
+    { "type": "block", "tag": "bad-block" }
   ]
 }

@@ -134,7 +134,7 @@ pub fn verifyContent(
     // client-command layer first (skippable via --no-verify): when a bin is
     // available it is the authoritative check; without a bin we fall through
     // to the mandatory syntax layer below
-    const cmd = switch (fmt) {
+    const cmd: ?u8 = switch (fmt) {
         .clash => blk: {
             const bin = findBin(arena, "clash") orelse findBin(arena, "mihomo") orelse break :blk null;
             const dir = std.fs.path.dirname(tmp_path) orelse ".";

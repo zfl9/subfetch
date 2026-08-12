@@ -34,89 +34,33 @@ fn localTimestamp(buf: []u8) []const u8 {
     return buf[0..n];
 }
 
-/// Colorize summary keywords (ok/OK/failed/skipped) in the message body, with word boundaries.
-fn colorizeKeywords(file: std.fs.File, text: []const u8) void {
-    const Keyword = struct { word: []const u8, color: []const u8 };
-    const keywords = [_]Keyword{
-        .{ .word = "OK", .color = "\x1b[32m" },
-        .{ .word = "ok", .color = "\x1b[32m" },
-        .{ .word = "failed", .color = "\x1b[31m" },
-        .{ .word = "skipped", .color = "\x1b[33m" },
-    };
-    var pos: usize = 0;
-    while (pos < text.len) {
-        var best: ?Keyword = null;
-        var best_idx: usize = text.len;
-        for (keywords) |kw| {
-            // keep searching past a boundary-violating match: "XOK OK" must
-            // still color the second OK (indexOfPos returns the first hit only)
-            var search = pos;
-            while (std.mem.indexOfPos(u8, text, search, kw.word)) |idx| {
-                // word boundary: not glued to alphanumeric characters
-                if (idx > 0 and std.ascii.isAlphanumeric(text[idx - 1])) {
-                    search = idx + 1;
-                    continue;
-                }
-                if (idx + kw.word.len < text.len and std.ascii.isAlphanumeric(text[idx + kw.word.len])) {
-                    search = idx + 1;
-                    continue;
-                }
-                if (idx < best_idx) {
-                    best = kw;
-                    best_idx = idx;
-                }
-                break; // earliest boundary-clean match for this kw
-            }
-        }
-        if (best) |kw| {
-            file.writeAll(text[pos..best_idx]) catch {};
-            file.writeAll(kw.color) catch {};
-            file.writeAll(kw.word) catch {};
-            file.writeAll("\x1b[0m") catch {};
-            pos = best_idx + kw.word.len;
-        } else {
-            file.writeAll(text[pos..]) catch {};
-            break;
-        }
-    }
-}
-
 pub fn log(level: LogLevel, comptime fmt: []const u8, args: anytype) void {
     // silent under zig build test: unit tests assert on return values, not
     // on stderr noise (same pattern as config.zig diagnostics)
     if (builtin.is_test) return;
     // all diagnostics go to stderr (unix convention); stdout is reserved for data
     // (e.g. `-o clash=-` pipe output must be clean for scripts)
+    const a = std.heap.page_allocator;
     const file = std.fs.File.stderr();
-    const text = std.fmt.allocPrint(std.heap.page_allocator, fmt, args) catch return;
-    defer std.heap.page_allocator.free(text);
+    const text = std.fmt.allocPrint(a, fmt, args) catch return;
+    defer a.free(text);
     const color = file.isTty() and std.posix.getenv("NO_COLOR") == null;
+
+    // assemble the whole line in memory, then one writeAll (single syscall):
+    // "<time> (pid) L <body>\n"; time/pid/level share the level color so the
+    // prefix stays uniform (pid tells overlapping runs apart, flock)
     const lc = levelColor(level);
-
-    // prefix: <time> (pid) L - time/pid/level share the level color
-    // so the prefix stays uniform; pid tells overlapping runs apart (flock).
-    // message bodies carry their own context ("[node] ...", "[{s}] ...")
     var tbuf: [32]u8 = undefined;
-    writeColored(file, color, lc, localTimestamp(&tbuf));
-    file.writeAll(" ") catch {};
     var pbuf: [18]u8 = undefined;
-    writeColored(file, color, lc, std.fmt.bufPrint(&pbuf, "({d})", .{getPid()}) catch unreachable);
-    file.writeAll(" ") catch {};
-    writeColored(file, color, lc, &.{levelChar(level)});
-    file.writeAll(" ") catch {};
-    if (color) {
-        colorizeKeywords(file, text);
-    } else {
-        file.writeAll(text) catch {};
-    }
-    file.writeAll("\n") catch {};
-}
-
-/// write `text` wrapped in color code `code` (no-op coloring when !color)
-fn writeColored(file: std.fs.File, color: bool, code: []const u8, text: []const u8) void {
-    if (color) file.writeAll(code) catch {};
-    file.writeAll(text) catch {};
-    if (color) file.writeAll("\x1b[0m") catch {};
+    const ts = localTimestamp(&tbuf);
+    const pid = std.fmt.bufPrint(&pbuf, "({d})", .{getPid()}) catch unreachable;
+    const lv = levelChar(level);
+    const line = if (color)
+        std.fmt.allocPrint(a, "{s}{s}\x1b[0m {s}{s}\x1b[0m {s}{c}\x1b[0m {s}\n", .{ lc, ts, lc, pid, lc, lv, text }) catch return
+    else
+        std.fmt.allocPrint(a, "{s} {s} {c} {s}\n", .{ ts, pid, lv, text }) catch return;
+    defer a.free(line);
+    file.writeAll(line) catch {};
 }
 
 /// process id for the log line; libc getpid (musl already linked, POSIX-wide);

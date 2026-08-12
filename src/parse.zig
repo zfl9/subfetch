@@ -249,9 +249,9 @@ fn clashYamlToNode(arena: std.mem.Allocator, m: []const yaml.MappingEntry, sub_n
     if (std.mem.eql(u8, type_str, "vless")) {
         const net = uri.parseNetwork(get(m, "network")) catch .tcp;
         const reality_v = yaml.mappingGet(m, "reality-opts");
-        const reality = if (reality_v) |rv| blk: {
+        const reality: ?node.RealityOpts = if (reality_v) |rv| blk: {
             const rm = yaml.mappingOf(rv) orelse return error.ParseMissingField;
-            break :blk node.RealityOpts{
+            break :blk .{
                 .public_key = get(rm, "public-key") orelse return error.ParseMissingField,
                 .short_id = get(rm, "short-id"),
                 .spider_x = get(rm, "spider-x"),
@@ -439,7 +439,7 @@ fn singboxOutboundToNode(arena: std.mem.Allocator, obj: std.json.ObjectMap, sub_
     const tls_enabled = if (tls) |t| jsonGetBool(t, "enabled") else false;
     const server_name = if (tls) |t| jsonGetStr(t, "server_name") else null;
     const insecure = if (tls) |t| jsonGetBool(t, "insecure") else false;
-    const fingerprint = if (tls) |t| blk: {
+    const fingerprint: ?[]const u8 = if (tls) |t| blk: {
         if (jsonGetObj(t, "utls")) |u| break :blk jsonGetStr(u, "fingerprint");
         break :blk null;
     } else null;

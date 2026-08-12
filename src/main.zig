@@ -71,26 +71,20 @@ fn run() !ExitCode {
 
     // read config (optional): missing default config.zon -> pure CLI usage with
     // defaults; an explicitly passed -c path that does not exist is a user error
-    const cfg = blk: {
-        const text = std.fs.cwd().readFileAlloc(arena, opts.config, 1 << 20) catch |e| {
-            switch (e) {
-                error.FileNotFound => {
-                    if (std.mem.eql(u8, opts.config, "config.zon")) {
-                        log.info("config: none, using defaults", .{});
-                        break :blk config.Config{};
-                    }
-                    // an explicitly passed -c path that does not exist is a user error
-                    return abort(.config_err, "failed to read config {s}: {s}", .{ opts.config, @errorName(e) });
-                },
-                else => {
-                    return abort(.config_err, "failed to read config {s}: {s}", .{ opts.config, @errorName(e) });
-                },
+    // (an explicit "-c config.zon" is not the default: it must exist)
+    const cfg_path = opts.config orelse "config.zon";
+    const cfg: config.Config = blk: {
+        const text = std.fs.cwd().readFileAlloc(arena, cfg_path, 1 << 20) catch |e| {
+            if (e == error.FileNotFound and opts.config == null) {
+                log.info("config: none, using defaults", .{});
+                break :blk .{};
             }
+            return abort(.config_err, "failed to read config {s}: {s}", .{ cfg_path, @errorName(e) });
         };
         const parsed = config.parse(arena, text) catch |e| {
-            return abort(.config_err, "failed to parse config {s}: {s}", .{ opts.config, @errorName(e) });
+            return abort(.config_err, "failed to parse config {s}: {s}", .{ cfg_path, @errorName(e) });
         };
-        log.info("config: {s}", .{opts.config});
+        log.info("config: {s}", .{cfg_path});
         break :blk parsed;
     };
 
@@ -119,14 +113,6 @@ fn run() !ExitCode {
     opts.tproxy_port = opts.tproxy_port orelse cfg.tproxy_port;
     opts.log_level = opts.log_level orelse cfg.log_level;
 
-    // output targets: CLI -o/--output > .zon outputs > default raw (replace, never merge)
-    if (opts.outputs.items.len == 0) {
-        if (cfg.outputs) |os| {
-            for (os) |o| try opts.outputs.append(arena, o);
-        } else {
-            try opts.outputs.append(arena, .{ .fmt = .raw });
-        }
-    }
     // collect all nodes: direct nodes first, then node files, then subscriptions
     // (within each category: CLI first, then .zon)
     var all_nodes: std.ArrayListUnmanaged(node.Node) = .empty;
@@ -170,6 +156,16 @@ fn run() !ExitCode {
             return abort(.partial_ok, "no usable nodes, aborting ({d} source(s) failed)", .{fail_cnt});
         }
         return abort(.config_err, "no usable nodes, aborting", .{});
+    }
+    // output targets: CLI -o/--output > .zon outputs (replace, never merge);
+    // no implicit default: running without a target must not dump configs to
+    // stdout (the user asked for nothing, nothing is emitted)
+    if (opts.outputs.items.len == 0) {
+        if (cfg.outputs) |os| {
+            for (os) |o| try opts.outputs.append(arena, o);
+        } else {
+            return abort(.usage_err, "no output target (use -o <fmt>[=<path>] or .outputs in the config)", .{});
+        }
     }
     // node-name dedupe + reserved-name protection now lives inside render()
     // (renderer layer); raw keeps original names. count unsupported protocols
@@ -224,25 +220,20 @@ fn run() !ExitCode {
         try rendered.append(arena, .{ .out = o, .files = files });
     }
 
-    // dry-run: verify all; content only when path == "-"
+    // dry-run: verify all outputs; "-" content is printed to stdout after
+    // the summary below (logs finish first, clean config data comes last)
     if (opts.dry_run) {
         for (rendered.items) |r| {
-            if (r.out.path) |p| {
-                if (std.mem.eql(u8, p, "-")) {
-                    for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
-                }
-            }
             const code = verifyDryRunFiles(arena, r.out.fmt, r.files, !(r.out.verify orelse true));
             if (code != .ok) return code;
         }
     } else {
         // real mode: verify all first (atomic), then install all
         for (rendered.items) |r| {
-            if (r.out.path) |p| {
-                if (std.mem.eql(u8, p, "-")) continue; // stdout: nothing to install
-                const code = verifyAll(arena, r.out.fmt, r.files, p, !(r.out.verify orelse !opts.no_verify));
-                if (code != .ok) return code;
-            }
+            const p = r.out.path orelse "-";
+            if (std.mem.eql(u8, p, "-")) continue; // stdout: nothing to install
+            const code = verifyAll(arena, r.out.fmt, r.files, p, !(r.out.verify orelse !opts.no_verify));
+            if (code != .ok) return code;
         }
         // any source failure -> keep the last good configs: installing a
         // "slimmed" set would delete the failed subscription's nodes from the
@@ -254,22 +245,15 @@ fn run() !ExitCode {
             log.warn("{d} source(s) failed, skip install (configs unchanged)", .{fail_cnt});
         } else {
             for (rendered.items) |r| {
-                if (r.out.path) |p| {
-                    if (std.mem.eql(u8, p, "-")) {
-                        // stdout output
-                        for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
-                    } else {
-                        const code = installAll(arena, r.out.fmt, r.files, p, ropts, r.out.verify orelse !opts.no_verify, r.out.reload orelse !opts.no_reload, opts.reload_cmd orelse r.out.reload_cmd orelse cfg.reload_cmd);
-                        if (code != .ok) return code;
-                    }
-                } else {
-                    return abort(.usage_err, "output path required for {s} (use -o {s}=<path> or --dry-run)", .{ @tagName(r.out.fmt), @tagName(r.out.fmt) });
-                }
+                const p = r.out.path orelse "-";
+                if (std.mem.eql(u8, p, "-")) continue; // stdout: printed after the summary
+                const code = installAll(arena, r.out.fmt, r.files, p, ropts, r.out.verify orelse !opts.no_verify, r.out.reload orelse !opts.no_reload, opts.reload_cmd orelse r.out.reload_cmd orelse cfg.reload_cmd);
+                if (code != .ok) return code;
             }
         }
     }
 
-    const fmt_part = if (opts.outputs.items.len == 1)
+    const fmt_part: []const u8 = if (opts.outputs.items.len == 1)
         try std.fmt.allocPrint(arena, "format {s}", .{@tagName(opts.outputs.items[0].fmt)})
     else blk: {
         var fmts: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -279,6 +263,18 @@ fn run() !ExitCode {
     log.info("subscriptions {d}/{d} ok, {d} failed, {d} nodes, {s}", .{
         ok_cnt, subs.items.len, fail_cnt, nodes.len, fmt_part,
     });
+    // "-" (or omitted) outputs are emitted after the summary: stderr logs
+    // finish first, stdout carries only clean config data (scripts pipe it
+    // straight on). real mode with failed sources keeps stdout silent too
+    // (nothing installed).
+    if (opts.dry_run or fail_cnt == 0) {
+        for (rendered.items) |r| {
+            const p = r.out.path orelse "-";
+            if (std.mem.eql(u8, p, "-")) {
+                for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
+            }
+        }
+    }
     if (opts.secret == null and opts.verbose and !opts.dry_run) {
         var need_secret = false;
         for (opts.outputs.items) |o| {
@@ -644,21 +640,21 @@ fn processSubscription(
         try all_nodes.append(arena, n);
     }
     ok_cnt.* += 1;
-    // summary line is identical in normal and verbose mode: "OK, N nodes (M skipped, B bytes)"
+    // summary line is identical in normal and verbose mode: "N nodes (M skipped, B bytes)"
     const noun = if (result.nodes.len == 1) "node" else "nodes";
-    var msg = try std.fmt.allocPrint(arena, "OK, {d} {s}", .{ result.nodes.len, noun });
+    var msg = try std.fmt.allocPrint(arena, "{d} {s}", .{ result.nodes.len, noun });
     var extras: std.ArrayListUnmanaged([]const u8) = .empty;
     if (result.skipped > 0) {
         try extras.append(arena, try std.fmt.allocPrint(arena, "{d} skipped", .{result.skipped}));
         // warn: skipped entries with their failure reason. a subscription
         // containing bad lines is a data problem worth seeing by default;
-        // the summary line below still gives the total count.
+        // the summary line above still gives the total count.
         for (result.skipped_lines) |l| {
             if (l.text.len == 0) continue;
             if (l.reason.len == 0) {
-                log.warn("  ! {s} (parse failed)", .{l.text});
+                log.warn("[{s}] {s} (parse failed)", .{ sub_label, l.text });
             } else {
-                log.warn("  ! {s} (parse failed: {s})", .{ l.text, l.reason });
+                log.warn("[{s}] {s} (parse failed: {s})", .{ sub_label, l.text, l.reason });
             }
         }
     }

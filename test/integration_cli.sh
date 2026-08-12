@@ -44,13 +44,17 @@ echo "ok: raw=- stdout is data-only"
 
 # --url accepts local file paths directly (no file:// needed): a plain
 # URI list file is sniffed as a uri-list subscription, like node files used to
-expect_exit 0 "url local file input" "$EXE" --url fixtures/plain_uris.txt --dry-run
+expect_exit 0 "url local file input" "$EXE" --url fixtures/plain_uris.txt --dry-run -o raw
 
 # 2: CLI usage errors
 expect_exit 2 "unknown option" "$EXE" -x
 expect_exit 2 "empty --url" "$EXE" --url "" --dry-run
 expect_exit 2 "dry-run + reset-state" "$EXE" --dry-run --reset-state
-expect_exit 2 "-o without path" "$EXE" -c fixtures/config.zon --node "trojan://pass@cli1.example.com:443#n" -o clash
+# -o without =path defaults to stdout (same as "=-"): data-only output, exit 0
+OUT=$("$EXE" -c fixtures/config.zon --node "trojan://pass@cli1.example.com:443#n" -o clash 2>/dev/null) || {
+    echo "FAIL: -o without path should exit 0"; exit 1; }
+echo "$OUT" | grep -q "^proxies:" || { echo "FAIL: -o clash stdout must start with proxies:"; exit 1; }
+echo "ok: -o without path prints to stdout"
 
 # 3: config & data errors
 expect_exit 3 "missing config" "$EXE" -c /nonexistent/config.zon
@@ -62,7 +66,7 @@ expect_exit 3 "duplicate name" "$EXE" -c "$TMP/dup.zon" --dry-run
 
 # 4: source failures (install still runs from the healthy sources)
 expect_exit 4 "all sources failed" "$EXE" --url fixtures/html_error.html --url fixtures/html_error.html --dry-run
-OUT=$("$EXE" -c fixtures/config.zon --url fixtures/html_error.html --dry-run 2>&1) || {
+OUT=$("$EXE" -c fixtures/config.zon --url fixtures/html_error.html --dry-run -o raw 2>&1) || {
     got=$?
     [ "$got" -eq 4 ] || { echo "FAIL: partial failure: want 4, got $got"; echo "$OUT"; exit 1; }
 }

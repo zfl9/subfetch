@@ -40,7 +40,8 @@ proxies:
       path: /vmess
       headers:
         Host: de1.example.com
-  - name: SOCKS-test
+  # intentionally bad node: unsupported protocol keeps the skip path exercised
+  - name: bad-socks5
     type: socks5
     server: 1.2.3.4
     port: 1080
