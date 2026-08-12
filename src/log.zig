@@ -36,12 +36,12 @@ fn localTimestamp(buf: []u8) []const u8 {
 
 pub fn log(level: LogLevel, comptime fmt: []const u8, args: anytype) void {
     // silent under zig build test: unit tests assert on return values, not
-    // on stderr noise (same pattern as config.zig diagnostics)
+    // on log noise (same pattern as config.zig diagnostics)
     if (builtin.is_test) return;
-    // all diagnostics go to stderr (unix convention); stdout is reserved for data
-    // (e.g. `-o clash=-` pipe output must be clean for scripts)
+    // logs go to stdout: no data output occupies it anymore (the stdout
+    // output mode was removed), and errors are carried by exit codes
     const a = std.heap.page_allocator;
-    const file = std.fs.File.stderr();
+    const file = std.fs.File.stdout();
     const text = std.fmt.allocPrint(a, fmt, args) catch return;
     defer a.free(text);
     const color = file.isTty() and std.posix.getenv("NO_COLOR") == null;

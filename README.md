@@ -21,8 +21,8 @@
 cp config.example.zon config.zon
 vim config.zon
 
-# 2. 预览：输出到终端，不写文件
-subfetch -c config.zon -o clash=- --dry-run
+# 2. 预演：渲染并验证配置，不写文件
+subfetch -c config.zon -o clash=/etc/clash/config.yaml --dry-run
 
 # 3. 安装并重载
 subfetch -c config.zon -o clash=/etc/clash/config.yaml \
@@ -101,8 +101,8 @@ crontab / systemd timer 中只需执行：`subfetch -c /path/to/config.zon`。
 | `trojan` `hysteria` `hysteria2` `ss` `ssr` | 原生客户端配置，每节点一个文件 | 语法检查 |
 | `raw` | 节点列表（JSON） | — |
 
-- `-o` 语法：`-o <fmt>[:模板路径][=<输出路径>]`，可多次
-- 不写输出路径、或路径写 `-`，则输出到终端（配合 `--dry-run` 预览）
+- `-o` 语法：`-o <fmt>[:模板路径]=<输出路径>`，可多次
+- 不指定 `-o` 且配置里没有 `.outputs`，会报错；`--dry-run` 预演时不写文件
 
 ## 模板
 
@@ -139,11 +139,11 @@ Input:
     --node <uri>         直接粘贴节点 URI（可多次）
 
 Output:
--o, --output <fmt>[:<tmpl>][=<path>]
+-o, --output <fmt>[:<tmpl>]=<path>
                           输出目标（可多次；不指定则报错，除非配置了 .outputs）
                           fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw
                           tmpl: 自定义模板文件（clash/singbox）
-                          path: 输出文件或目录；'-' = 终端
+                          path: 输出文件或目录（真实运行必填）
 
 Client config（仅内置模板生效）:
     --listen <addr>      socks5 监听地址（默认 127.0.0.1）

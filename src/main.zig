@@ -113,6 +113,25 @@ fn run() !ExitCode {
     opts.tproxy_port = opts.tproxy_port orelse cfg.tproxy_port;
     opts.log_level = opts.log_level orelse cfg.log_level;
 
+    // output targets: CLI -o/--output > .zon outputs (replace, never merge).
+    // checked before any fetch: a run without a usable target is a usage
+    // error, and it must fail fast (no wasted network requests).
+    if (opts.outputs.items.len == 0) {
+        if (cfg.outputs) |os| {
+            for (os) |o| try opts.outputs.append(arena, o);
+        }
+    }
+    if (!opts.dry_run) {
+        if (opts.outputs.items.len == 0) {
+            return abort(.usage_err, "no output target (use -o <fmt>=<path> or .outputs in the config)", .{});
+        }
+        for (opts.outputs.items) |o| {
+            if (o.path == null) {
+                return abort(.usage_err, "output path required for {s} (use -o {s}=<path>)", .{ @tagName(o.fmt), @tagName(o.fmt) });
+            }
+        }
+    }
+
     // collect all nodes: direct nodes first, then node files, then subscriptions
     // (within each category: CLI first, then .zon)
     var all_nodes: std.ArrayListUnmanaged(node.Node) = .empty;
@@ -156,16 +175,6 @@ fn run() !ExitCode {
             return abort(.partial_ok, "no usable nodes, aborting ({d} source(s) failed)", .{fail_cnt});
         }
         return abort(.config_err, "no usable nodes, aborting", .{});
-    }
-    // output targets: CLI -o/--output > .zon outputs (replace, never merge);
-    // no implicit default: running without a target must not dump configs to
-    // stdout (the user asked for nothing, nothing is emitted)
-    if (opts.outputs.items.len == 0) {
-        if (cfg.outputs) |os| {
-            for (os) |o| try opts.outputs.append(arena, o);
-        } else {
-            return abort(.usage_err, "no output target (use -o <fmt>[=<path>] or .outputs in the config)", .{});
-        }
     }
     // node-name dedupe + reserved-name protection now lives inside render()
     // (renderer layer); raw keeps original names. count unsupported protocols
@@ -220,8 +229,7 @@ fn run() !ExitCode {
         try rendered.append(arena, .{ .out = o, .files = files });
     }
 
-    // dry-run: verify all outputs; "-" content is printed to stdout after
-    // the summary below (logs finish first, clean config data comes last)
+    // dry-run: verify all outputs, write nothing (same checks as install)
     if (opts.dry_run) {
         for (rendered.items) |r| {
             const code = verifyDryRunFiles(arena, r.out.fmt, r.files, !(r.out.verify orelse true));
@@ -230,8 +238,8 @@ fn run() !ExitCode {
     } else {
         // real mode: verify all first (atomic), then install all
         for (rendered.items) |r| {
-            const p = r.out.path orelse "-";
-            if (std.mem.eql(u8, p, "-")) continue; // stdout: nothing to install
+            // path is non-null: enforced by the early output check above
+            const p = r.out.path.?;
             const code = verifyAll(arena, r.out.fmt, r.files, p, !(r.out.verify orelse !opts.no_verify));
             if (code != .ok) return code;
         }
@@ -245,36 +253,25 @@ fn run() !ExitCode {
             log.warn("{d} source(s) failed, skip install (configs unchanged)", .{fail_cnt});
         } else {
             for (rendered.items) |r| {
-                const p = r.out.path orelse "-";
-                if (std.mem.eql(u8, p, "-")) continue; // stdout: printed after the summary
+                const p = r.out.path.?;
                 const code = installAll(arena, r.out.fmt, r.files, p, ropts, r.out.verify orelse !opts.no_verify, r.out.reload orelse !opts.no_reload, opts.reload_cmd orelse r.out.reload_cmd orelse cfg.reload_cmd);
                 if (code != .ok) return code;
             }
         }
     }
 
-    const fmt_part: []const u8 = if (opts.outputs.items.len == 1)
-        try std.fmt.allocPrint(arena, "format {s}", .{@tagName(opts.outputs.items[0].fmt)})
-    else blk: {
-        var fmts: std.ArrayListUnmanaged([]const u8) = .empty;
-        for (opts.outputs.items) |o| try fmts.append(arena, @tagName(o.fmt));
-        break :blk try std.fmt.allocPrint(arena, "formats {s}", .{try std.mem.join(arena, ",", fmts.items)});
+    const fmt_part: []const u8 = switch (opts.outputs.items.len) {
+        0 => "",
+        1 => try std.fmt.allocPrint(arena, ", format {s}", .{@tagName(opts.outputs.items[0].fmt)}),
+        else => blk: {
+            var fmts: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (opts.outputs.items) |o| try fmts.append(arena, @tagName(o.fmt));
+            break :blk try std.fmt.allocPrint(arena, ", formats {s}", .{try std.mem.join(arena, ",", fmts.items)});
+        },
     };
-    log.info("subscriptions {d}/{d} ok, {d} failed, {d} nodes, {s}", .{
+    log.info("subscriptions {d}/{d} ok, {d} failed, {d} nodes{s}", .{
         ok_cnt, subs.items.len, fail_cnt, nodes.len, fmt_part,
     });
-    // "-" (or omitted) outputs are emitted after the summary: stderr logs
-    // finish first, stdout carries only clean config data (scripts pipe it
-    // straight on). real mode with failed sources keeps stdout silent too
-    // (nothing installed).
-    if (opts.dry_run or fail_cnt == 0) {
-        for (rendered.items) |r| {
-            const p = r.out.path orelse "-";
-            if (std.mem.eql(u8, p, "-")) {
-                for (r.files) |f| try std.fs.File.stdout().writeAll(f.content);
-            }
-        }
-    }
     if (opts.secret == null and opts.verbose and !opts.dry_run) {
         var need_secret = false;
         for (opts.outputs.items) |o| {

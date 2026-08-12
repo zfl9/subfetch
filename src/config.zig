@@ -102,6 +102,7 @@ pub const ParseError = error{
     ConfigEmptySubscriptionName,
     ConfigDuplicateSubscriptionName,
     ConfigMissingSubscriptionUrl,
+    ConfigOutputPathRequired,
 };
 
 /// parse the config .zon file.
@@ -118,13 +119,13 @@ pub fn parse(allocator: std.mem.Allocator, source: []const u8) ParseError!Config
         // OOM passes through (the arena is page-backed, so this is a degenerate
         // state anyway; folding it into ConfigParseZon would misreport the cause)
         if (e == error.OutOfMemory) return error.OutOfMemory;
-        // detailed diagnostics (position, message, notes) go to stderr, then the error name;
+        // detailed diagnostics (position, message, notes) join the log stream on stdout;
         // skipped under zig build test: unit tests deliberately feed broken input and must
         // not touch stdio. the specific std.zon error (ParseZon & friends) is folded into
         // ConfigParseZon: the diag block above already carries the exact position/message.
         if (!builtin.is_test) {
             var buf: [8192]u8 = undefined;
-            var w = std.fs.File.stderr().writer(&buf);
+            var w = std.fs.File.stdout().writer(&buf);
             diag.format(&w.interface) catch {};
             w.interface.flush() catch {};
         }
@@ -147,6 +148,17 @@ pub fn parse(allocator: std.mem.Allocator, source: []const u8) ParseError!Config
             if (t.name) |tn| {
                 if (std.mem.eql(u8, sn, tn)) return error.ConfigDuplicateSubscriptionName;
             }
+        }
+    }
+    // outputs in a .zon must always name a real path: unlike a one-off CLI
+    // preview (-o <fmt> without path is fine for --dry-run), the .zon is the
+    // persistent install config - a pathless output could never run in real
+    // mode. "-" is rejected too: it was the stdout sentinel of the removed
+    // stdout mode (the CLI folds it into no path for compatibility, but a
+    // .zon must not name a non-file as its target).
+    if (cfg.outputs) |os| {
+        for (os) |o| {
+            if (o.path == null or std.mem.eql(u8, o.path.?, "-")) return error.ConfigOutputPathRequired;
         }
     }
     return cfg;
@@ -289,6 +301,25 @@ test "parse render/deploy config fields" {
     try std.testing.expectEqualStrings("/etc/singbox.tmpl.json", cfg.outputs.?[1].tmpl.?);
     try std.testing.expectEqualStrings("/etc/sing-box/config.json", cfg.outputs.?[1].path.?);
     try std.testing.expect(cfg.outputs.?[1].reload_cmd == null);
+}
+
+test "zon output without path is rejected" {
+    const source =
+        \\.{
+        \\    .outputs = .{ .{ .fmt = .clash } },
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    try std.testing.expectError(error.ConfigOutputPathRequired, parse(arena.allocator(), source));
+
+    // the "-" stdout sentinel of the removed stdout mode is not a path either
+    const dash =
+        \\.{
+        \\    .outputs = .{ .{ .fmt = .raw, .path = "-" } },
+        \\}
+    ;
+    try std.testing.expectError(error.ConfigOutputPathRequired, parse(arena.allocator(), dash));
 }
 
 test "parse sep and secret config fields" {

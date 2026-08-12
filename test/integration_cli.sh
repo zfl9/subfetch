@@ -34,14 +34,6 @@ OUT=$("$EXE" --version) || { echo "FAIL: --version exit"; exit 1; }
 echo "$OUT" | grep -q "^subfetch 0\." || { echo "FAIL: --version output: $OUT"; exit 1; }
 echo "ok: --version -> $OUT"
 
-# stdout purity: -o raw=- streams pure data (stdout is reserved for output,
-# log lines go to stderr; scripts pipe stdout to files/tools)
-OUT=$("$EXE" -c fixtures/config.zon -o raw=- --dry-run 2>/dev/null)
-echo "$OUT" | grep -q "^\[" || { echo "FAIL: raw=- stdout must start with [ (got: $(echo "$OUT" | head -1))"; exit 1; }
-echo "$OUT" | grep -q '"type": "trojan"' || { echo "FAIL: raw=- stdout missing node data"; exit 1; }
-echo "$OUT" | grep -q "2026-" && { echo "FAIL: log line leaked into stdout"; exit 1; }
-echo "ok: raw=- stdout is data-only"
-
 # --url accepts local file paths directly (no file:// needed): a plain
 # URI list file is sniffed as a uri-list subscription, like node files used to
 expect_exit 0 "url local file input" "$EXE" --url fixtures/plain_uris.txt --dry-run -o raw
@@ -50,16 +42,15 @@ expect_exit 0 "url local file input" "$EXE" --url fixtures/plain_uris.txt --dry-
 expect_exit 2 "unknown option" "$EXE" -x
 expect_exit 2 "empty --url" "$EXE" --url "" --dry-run
 expect_exit 2 "dry-run + reset-state" "$EXE" --dry-run --reset-state
-# -o without =path defaults to stdout (same as "=-"): data-only output, exit 0
-OUT=$("$EXE" -c fixtures/config.zon --node "trojan://pass@cli1.example.com:443#n" -o clash 2>/dev/null) || {
-    echo "FAIL: -o without path should exit 0"; exit 1; }
-echo "$OUT" | grep -q "^proxies:" || { echo "FAIL: -o clash stdout must start with proxies:"; exit 1; }
-echo "ok: -o without path prints to stdout"
+expect_exit 2 "-o without path" "$EXE" -c fixtures/config.zon --node "trojan://pass@cli1.example.com:443#n" -o clash
+expect_exit 2 "no output target" "$EXE" -c fixtures/config.zon --url fixtures/plain_uris.txt
 
 # 3: config & data errors
 expect_exit 3 "missing config" "$EXE" -c /nonexistent/config.zon
 printf 'not { zon' > "$TMP/bad.zon"
 expect_exit 3 "unparseable config" "$EXE" -c "$TMP/bad.zon"
+printf '.{ .outputs = .{ .{ .fmt = .clash } } }' > "$TMP/pathless.zon"
+expect_exit 3 "zon output without path" "$EXE" -c "$TMP/pathless.zon" --dry-run
 expect_exit 3 "no input at all" "$EXE" --dry-run
 printf 'subscriptions = .{ .{ .name = "x", .url = "fixtures/plain_uris.txt" }, .{ .name = "x", .url = "fixtures/plain_uris.txt" } }' > "$TMP/dup.zon"
 expect_exit 3 "duplicate name" "$EXE" -c "$TMP/dup.zon" --dry-run

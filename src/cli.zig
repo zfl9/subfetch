@@ -71,8 +71,7 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
             opts.reset_state = true;
         } else if (std.mem.eql(u8, a, "-v") or std.mem.eql(u8, a, "--verbose")) {
             // -v/--verbose: single verbose level (node list, api secret). -vv/-vvv
-            // were removed: their old stdout semantics were replaced by -o fmt=-,
-            // and no deeper verbose level exists (strict parsing, no -verbose)
+            // were removed: no deeper verbose level exists (strict parsing)
             opts.verbose = true;
         } else if (std.mem.eql(u8, a, "--singbox-clash-api")) {
             opts.singbox_clash_api = true;
@@ -149,10 +148,12 @@ pub fn parseUrlArg(arg: []const u8) !struct { name: ?[]const u8, url: []const u8
     return .{ .name = null, .url = arg };
 }
 
-/// parse -o/--output value: format[:template][=path]; a missing path
-/// means stdout (same as an explicit "=-")
+/// parse -o/--output value: format[:template][=path]; path is required for
+/// real runs (dry-run renders without writing, so it may be omitted). the
+/// legacy stdout sentinel "-" is accepted for compatibility but folded into
+/// "no path": the stdout mode is gone.
 pub fn parseOutput(v: []const u8) !Output {
-    var path: ?[]const u8 = "-";
+    var path: ?[]const u8 = null;
     var rest = v;
     if (std.mem.indexOfScalar(u8, v, '=')) |eq| {
         path = v[eq + 1 ..];
@@ -164,6 +165,12 @@ pub fn parseOutput(v: []const u8) !Output {
         rest = rest[0..colon];
     }
     const fmt = render.Format.parse(rest) orelse return error.CliBadArg;
+    // empty and "-" are not real paths: the former is a slip, the latter was
+    // the stdout sentinel of the removed stdout mode; fold both into no path
+    // (real runs then report "output path required", dry-run verifies)
+    if (path) |p| {
+        if (p.len == 0 or std.mem.eql(u8, p, "-")) path = null;
+    }
     return .{ .fmt = fmt, .tmpl = template, .path = path };
 }
 
@@ -232,11 +239,11 @@ const usage_sections = [_]Section{
         .{ .opt = "--node <uri>", .desc = &.{"directly pasted node URI (repeatable)"} },
     } },
     .{ .title = "Output", .options = &.{
-        .{ .opt = "-o, --output <fmt>[:<tmpl>][=<path>]", .desc = &.{
+        .{ .opt = "-o, --output <fmt>[:<tmpl>]=<path>", .desc = &.{
             "output target (repeatable; required unless .outputs is set)",
             "fmt: clash|singbox|trojan|hysteria|hysteria2|xray|ss|ssr|raw",
             "tmpl: custom template file (clash/singbox)",
-            "path: output file or directory; omitted or '-' = stdout",
+            "path: output file or directory (required for real runs)",
         } },
     } },
     .{ .title = "Client config (built-in templates only)", .options = &.{
@@ -301,16 +308,16 @@ fn printUsageOpt(o: Opt) void {
 }
 
 test "parseOutput grammar" {
-    // format only: stdout by default
+    // format only: no path (real runs require one; dry-run renders without writing)
     const o1 = try parseOutput("clash");
     try std.testing.expectEqual(render.Format.clash, o1.fmt);
     try std.testing.expect(o1.tmpl == null);
-    try std.testing.expectEqualStrings("-", o1.path.?);
+    try std.testing.expect(o1.path == null);
     // format + template
     const o2 = try parseOutput("clash:tmpl.yaml");
     try std.testing.expectEqual(render.Format.clash, o2.fmt);
     try std.testing.expectEqualStrings("tmpl.yaml", o2.tmpl.?);
-    try std.testing.expectEqualStrings("-", o2.path.?);
+    try std.testing.expect(o2.path == null);
     // format + path
     const o3 = try parseOutput("singbox=/etc/sing-box/config.json");
     try std.testing.expectEqual(render.Format.singbox, o3.fmt);
@@ -321,10 +328,14 @@ test "parseOutput grammar" {
     try std.testing.expectEqual(render.Format.clash, o4.fmt);
     try std.testing.expectEqualStrings("tmpl.yaml", o4.tmpl.?);
     try std.testing.expectEqualStrings("out/c.yaml", o4.path.?);
-    // stdout path
+    // legacy stdout sentinel folds into no path
     const o5 = try parseOutput("raw=-");
     try std.testing.expectEqual(render.Format.raw, o5.fmt);
-    try std.testing.expectEqualStrings("-", o5.path.?);
+    try std.testing.expect(o5.path == null);
+    // empty path folds into no path too (a slip, not a target)
+    const o7 = try parseOutput("clash=");
+    try std.testing.expectEqual(render.Format.clash, o7.fmt);
+    try std.testing.expect(o7.path == null);
     // unknown format errors
     try std.testing.expectError(error.CliBadArg, parseOutput("bogus"));
     try std.testing.expectError(error.CliBadArg, parseOutput(""));
