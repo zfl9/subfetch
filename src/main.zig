@@ -303,7 +303,7 @@ fn run() !ExitCode {
 /// throwaway /tmp file, and failure returns the exit code (honest:
 /// "verify passed" is never printed after a failed check or temp write).
 /// internal failures go through return abort() like everywhere else; OOM
-/// (allocPrint()) is fatal (see oom()).
+/// (allocFmt()) is fatal (see oom()).
 fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render.Format, files: []const render.File, no_verify: bool) ExitCode {
     for (files) |f| {
         // --no-verify / verify=false: mandatory syntax layer only, no temp file
@@ -319,7 +319,7 @@ fn verifyDryRunFiles(arena: std.mem.Allocator, fmt: render.Format, files: []cons
         };
         // pid in the name: dry-run takes no run lock, concurrent dry-runs must
         // not race on a shared temp file (interleaved atomicWrite -> wrong bytes)
-        const tmp = allocPrint(arena, "/tmp/subfetch-dryrun.{d}.{s}", .{ log.getPid(), ext });
+        const tmp = allocFmt(arena, "/tmp/subfetch-dryrun.{d}.{s}", .{ log.getPid(), ext });
         // a write failure here must not silently degrade into "verify passed":
         // same abort as the install path (verifyAll), honest over pretending.
         // the temp is not registered in verify_tmps yet, so remove it first
@@ -400,19 +400,22 @@ fn oom() noreturn {
     std.process.exit(ExitCode.runtime_err.value());
 }
 
-/// ".new"/".new.json" sibling path for a target (json suffix for dir
-/// formats: xray -test infers the format from the file extension)
-fn tmpName(arena: std.mem.Allocator, target: []const u8, is_dir: bool) []const u8 {
-    return if (is_dir)
-        allocPrint(arena, "{s}.new.json", .{target})
+/// ".new"/".new.json" sibling path for a target. dir formats (one json
+/// file per node) verify via xray -test, which infers the format from the
+/// file extension, so the temp must keep the .json suffix; single-file
+/// formats pass the temp path explicitly to the verifier (-f/-c), so
+/// ".new" suffices.
+fn tmpName(arena: std.mem.Allocator, target: []const u8, is_dir_format: bool) []const u8 {
+    return if (is_dir_format)
+        allocFmt(arena, "{s}.new.json", .{target})
     else
-        allocPrint(arena, "{s}.new", .{target});
+        allocFmt(arena, "{s}.new", .{target});
 }
 
-/// allocPrint that treats OOM as fatal (the arena is page-backed, so OOM is
+/// allocFmt that treats OOM as fatal (the arena is page-backed, so OOM is
 /// a degenerate state with no return path, see oom()): std.fmt.allocPrint
 /// with the catch oom() noise folded in, build.zig b.fmt style.
-fn allocPrint(arena: std.mem.Allocator, comptime f: []const u8, args: anytype) []const u8 {
+fn allocFmt(arena: std.mem.Allocator, comptime f: []const u8, args: anytype) []const u8 {
     return std.fmt.allocPrint(arena, f, args) catch oom();
 }
 
@@ -425,7 +428,7 @@ fn pathJoin(arena: std.mem.Allocator, parts: []const []const u8) []const u8 {
 /// (acme.sh style) then rename
 fn installVerified(arena: std.mem.Allocator, target: []const u8, tmp: []const u8) ExitCode {
     if (deploy.fileExists(target)) {
-        const bak = allocPrint(arena, "{s}.bak", .{target});
+        const bak = allocFmt(arena, "{s}.bak", .{target});
         std.fs.cwd().copyFile(target, std.fs.cwd(), bak, .{}) catch |e| {
             return abort(.runtime_err, "failed to backup {s}: {s}", .{ target, @errorName(e) });
         };
@@ -509,14 +512,14 @@ fn installAll(
             } else {
                 // verify wrote tmpName(...) already; rename it into place with
                 // a backup of the existing config (acme.sh style)
-                const code = installVerified(arena, fpath, tmpName(arena, fpath, true));
+                const code = installVerified(arena, fpath, tmpName(arena, fpath, isDirFormat(fmt)));
                 if (code != .ok) return code;
             }
         }
         // drop the verify .new.json artifacts that were not renamed into place
         // (renamed ones are already gone; deleteFile is a no-op for them).
         // cleanup is best-effort: join/alloc failures are skipped (catch),
-        // unlike pathJoin/allocPrint which treat OOM as fatal
+        // unlike pathJoin/allocFmt which treat OOM as fatal
         for (files) |f| {
             const fpath = std.fs.path.join(arena, &.{ dir, f.path }) catch continue;
             const tmp = std.fmt.allocPrint(arena, "{s}.new.json", .{fpath}) catch continue;
@@ -535,7 +538,7 @@ fn installAll(
         const f = files[0];
         if (!deploy.contentDiffers(arena, path, f.content)) {
             // drop the verify .new temp; nothing installed, nothing reloaded
-            std.fs.cwd().deleteFile(tmpName(arena, path, false)) catch {};
+            std.fs.cwd().deleteFile(tmpName(arena, path, isDirFormat(fmt))) catch {};
             log.info("config unchanged, skip install & reload: {s}", .{path});
             return .ok;
         }
@@ -545,7 +548,7 @@ fn installAll(
             };
             log.info("installed {s}", .{path});
         } else {
-            const code = installVerified(arena, path, tmpName(arena, path, false));
+            const code = installVerified(arena, path, tmpName(arena, path, isDirFormat(fmt)));
             if (code != .ok) return code;
             log.info("installed {s} (verify passed)", .{path});
         }
