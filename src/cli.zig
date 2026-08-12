@@ -232,7 +232,7 @@ const Section = struct { title: []const u8, options: []const Opt };
 /// indented below - the renderer computes this, no hand-padded text.
 const usage_sections = [_]Section{
     .{ .title = "Config", .options = &.{
-        .{ .opt = "-c, --config <path>", .desc = &.{"configuration zon (optional; without -c, no config file is read)"} },
+        .{ .opt = "-c, --config <path>", .desc = &.{"configuration zon"} },
     } },
     .{ .title = "Input", .options = &.{
         .{ .opt = "--url <[name=]url>", .desc = &.{

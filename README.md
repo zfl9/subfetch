@@ -132,7 +132,7 @@ proxies: []
 
 ```
 Config:
--c, --config <path>      配置 zon（不指定则不读配置文件，纯 CLI 模式）
+-c, --config <path>      配置 zon
 
 Input:
     --url <[name=]url>   订阅 URL（可多次；省略 [name=] 即匿名）；本地文件路径或 file:// 也会读取
