@@ -63,7 +63,8 @@ pub const Config = struct {
     reload_cmd: ?[]const u8 = null,
     /// add clash_api to sing-box output (default off; CLI --singbox-clash-api wins)
     singbox_clash_api: ?bool = null,
-    /// output targets (default raw; CLI -o/--output wins)
+    /// output targets (optional; CLI -o/--output wins and replaces, never merges;
+    /// absent here and no CLI -o = usage error "no output target")
     outputs: ?[]const Output = null,
 
     /// free memory allocated by fromSlice (strings + slices).

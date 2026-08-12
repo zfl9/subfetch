@@ -6,7 +6,7 @@
     // # one .{...} each; url required, name optional (anonymous subscription
     // # omits name entirely, so no "name@" prefix is added)
     //   name   : subscription name (node name prefix, Chinese OK, length <= 32)
-    //   url    : subscription URL (https://) or a local file path / file://
+    //   url    : subscription URL (http(s)://) or a local file path / file://
     //   ua     : custom User-Agent (optional, overrides the global .ua)
     //
     .subscriptions = .{
@@ -18,7 +18,7 @@
         // .{ .url = "https://example.com/anon-sub" },
     },
 
-    // ── output targets (default: raw format) ────────────────────────
+    // ── output targets (optional; no -o and no .outputs = usage error) ─
     //
     // # one .{...} each; .fmt required, others optional
     //   fmt        : clash | singbox | trojan | hysteria | hysteria2 | xray | ss | ssr | raw
