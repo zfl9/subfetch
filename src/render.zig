@@ -4,6 +4,7 @@ const render_clash = @import("render_clash.zig");
 const render_singbox = @import("render_singbox.zig");
 const render_native = @import("render_native.zig");
 const render_raw = @import("render_raw.zig");
+const tpl = @import("template.zig");
 const Node = node.Node;
 
 /// client log level; members are the sing-box spellings (warn/err) so
@@ -97,13 +98,18 @@ pub fn supports(fmt: Format, n: Node) bool {
 /// (single-file formats: one element; native formats: one file per node).
 /// node names are deduped + reserved-name protected here (renderer layer
 /// responsibility); raw keeps the original names (data export).
+/// render failure across all formats: template fill-point problems
+/// (clash/singbox user templates) or unsupported protocols (native formats)
+pub const RenderError = tpl.FillError || error{ OutOfMemory, NoSupportedNodes };
+
+/// render every format; template applies to clash/singbox only
 pub fn render(
     arena: std.mem.Allocator,
     fmt: Format,
     nodes: []const Node,
     opts: Options,
     template: ?[]const u8,
-) ![]const File {
+) RenderError![]const File {
     const use_nodes = if (fmt == .raw) nodes else try uniqueNames(arena, nodes);
     return switch (fmt) {
         .clash => render_clash.renderClash(arena, use_nodes, opts, template),
@@ -120,7 +126,7 @@ pub fn render(
 
 /// dedupe node names + guard against reserved names (group names AUTO/PROXY etc.).
 /// returns a new allocated []Node (original name fields untouched; only name slices replaced).
-pub fn uniqueNames(arena: std.mem.Allocator, nodes_in: []const Node) ![]Node {
+pub fn uniqueNames(arena: std.mem.Allocator, nodes_in: []const Node) error{OutOfMemory}![]Node {
     var out: std.ArrayListUnmanaged(Node) = .empty;
     var used: std.StringHashMapUnmanaged(void) = .empty;
 

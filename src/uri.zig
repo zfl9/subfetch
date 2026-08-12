@@ -74,7 +74,7 @@ fn parseUriManual(url: []const u8) ParseError!ManualUri {
     return .{ .scheme = scheme, .userinfo = userinfo, .host = host, .port = port, .query = query, .fragment = fragment, .body = body };
 }
 
-pub fn parsePort(s: []const u8) !u16 {
+pub fn parsePort(s: []const u8) error{UriInvalidPort}!u16 {
     if (s.len == 0 or s.len > 5) return error.UriInvalidPort;
     return std.fmt.parseInt(u16, s, 10) catch error.UriInvalidPort;
 }
@@ -817,7 +817,7 @@ test "parse errors" {
     try std.testing.expectError(error.UriUnsupportedScheme, parseUri(std.testing.allocator, "socks5://1.2.3.4:1080", "", "@"));
 }
 
-fn b64(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
+fn b64(allocator: std.mem.Allocator, s: []const u8) error{OutOfMemory}![]const u8 {
     const enc = std.base64.standard.Encoder;
     const out = try allocator.alloc(u8, enc.calcSize(s.len));
     _ = enc.encode(out, s);

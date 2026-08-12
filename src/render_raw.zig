@@ -6,7 +6,7 @@ const JsonValue = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
 
 /// render raw format: node JSON list (for other tools/scripts)
-pub fn renderRaw(arena: std.mem.Allocator, nodes: []const node.Node) ![]const render.File {
+pub fn renderRaw(arena: std.mem.Allocator, nodes: []const node.Node) error{OutOfMemory}![]const render.File {
     var arr = std.json.Array.init(arena);
     for (nodes) |n| {
         try arr.append(try nodeToJson(arena, n));
@@ -20,7 +20,7 @@ pub fn renderRaw(arena: std.mem.Allocator, nodes: []const node.Node) ![]const re
 
 /// field names follow mihomo/clash YAML naming (mihomo covers all 8 protocols; no native fallback needed).
 /// full field coverage (empty optional values omitted) for downstream scripts.
-fn nodeToJson(arena: std.mem.Allocator, n: node.Node) !JsonValue {
+fn nodeToJson(arena: std.mem.Allocator, n: node.Node) error{OutOfMemory}!JsonValue {
     var o = ObjectMap.init(arena);
     try o.put("type", .{ .string = n.typeName() });
     try o.put("name", .{ .string = n.name() });
@@ -108,7 +108,7 @@ fn nodeToJson(arena: std.mem.Allocator, n: node.Node) !JsonValue {
 }
 
 /// ss plugin: mihomo plugin + plugin-opts (nested object)
-fn putSsPlugin(arena: std.mem.Allocator, o: *ObjectMap, plugin: ?node.SsPlugin) !void {
+fn putSsPlugin(arena: std.mem.Allocator, o: *ObjectMap, plugin: ?node.SsPlugin) error{OutOfMemory}!void {
     const p = plugin orelse return;
     switch (p) {
         .obfs_local => |pl| {
@@ -139,7 +139,7 @@ fn putSsPlugin(arena: std.mem.Allocator, o: *ObjectMap, plugin: ?node.SsPlugin) 
 }
 
 /// ws/grpc transport: mihomo ws-opts / grpc-opts (nested objects)
-fn putWsGrpc(arena: std.mem.Allocator, o: *ObjectMap, network: node.Network, ws: ?node.WsOpts, grpc: ?node.GrpcOpts) !void {
+fn putWsGrpc(arena: std.mem.Allocator, o: *ObjectMap, network: node.Network, ws: ?node.WsOpts, grpc: ?node.GrpcOpts) error{OutOfMemory}!void {
     switch (network) {
         .ws => {
             if (ws) |w| {
@@ -165,7 +165,7 @@ fn putWsGrpc(arena: std.mem.Allocator, o: *ObjectMap, network: node.Network, ws:
 }
 
 /// alpn array
-fn putAlpn(arena: std.mem.Allocator, o: *ObjectMap, alpn: ?[]const []const u8) !void {
+fn putAlpn(arena: std.mem.Allocator, o: *ObjectMap, alpn: ?[]const []const u8) error{OutOfMemory}!void {
     const list = alpn orelse return;
     if (list.len == 0) return;
     var arr = std.json.Array.init(arena);
@@ -174,7 +174,7 @@ fn putAlpn(arena: std.mem.Allocator, o: *ObjectMap, alpn: ?[]const []const u8) !
 }
 
 /// optional string: emitted only when non-empty
-fn putOpt(arena: std.mem.Allocator, o: *ObjectMap, key: []const u8, v: ?[]const u8) !void {
+fn putOpt(arena: std.mem.Allocator, o: *ObjectMap, key: []const u8, v: ?[]const u8) error{OutOfMemory}!void {
     _ = arena;
     const val = v orelse return;
     if (val.len == 0) return;

@@ -48,7 +48,13 @@ fn matchFillLine(line: []const u8, key: []const u8) bool {
     return i == line.len;
 }
 
-pub const FillError = error{ TemplateMissingFillPoint, TemplateFillPointNotEmpty };
+pub const FillError = error{
+    OutOfMemory,
+    TemplateMissingFillPoint,
+    TemplateFillPointNotEmpty,
+    /// the anchor word appears in a non-list-item position (inline/comment)
+    TemplateMisplacedAnchor,
+};
 
 /// outermost key line (smallest indent); nested same-name keys (e.g. a
 /// clash group's inner `proxies:`) are ignored.
@@ -83,7 +89,7 @@ pub fn fillList(
     text: []const u8,
     key: []const u8,
     block: []const u8,
-) ![]const u8 {
+) FillError![]const u8 {
     const unit = detectIndent(text);
     // trim trailing newlines so split does not yield a phantom empty line
     const src = std.mem.trimRight(u8, text, "\n");
@@ -169,7 +175,7 @@ pub fn expandAnchor(
     text: []const u8,
     anchor: []const u8,
     block: []const u8,
-) ![]const u8 {
+) FillError![]const u8 {
     const src = std.mem.trimRight(u8, text, "\n");
     var out: std.ArrayListUnmanaged(u8) = .empty;
     var lines = std.mem.splitScalar(u8, src, '\n');
@@ -202,7 +208,7 @@ pub fn appendBlock(
     text: []const u8,
     key: []const u8,
     block: []const u8,
-) ![]const u8 {
+) FillError![]const u8 {
     const unit = detectIndent(text);
     var out = std.ArrayListUnmanaged(u8).empty;
     try out.appendSlice(arena, text);

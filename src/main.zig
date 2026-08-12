@@ -32,12 +32,16 @@ pub fn main() u8 {
 /// success, the failing stage's code via return abort(), and partial
 /// success (some sources failed) as .partial_ok. errors no call site
 /// handled (OOM in helpers, stdio) propagate to main().
-fn run() !ExitCode {
+fn run() (render.RenderError || error{ OutOfMemory, NoHome })!ExitCode {
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const args = try std.process.argsAlloc(arena);
+    // argsAlloc returns an inferred error set (std internals, not nameable):
+    // fold its OOM into abort here (same outcome as main()'s catch-all)
+    const args = std.process.argsAlloc(arena) catch |e| {
+        return abort(.runtime_err, "fatal: {s}", .{@errorName(e)});
+    };
     var opts = cli.Options{};
     const action = cli.parseArgs(arena, args, &opts) catch |e| {
         // BadArg already logged its specific reason inside parseArgs
@@ -148,9 +152,7 @@ fn run() !ExitCode {
     //    files were folded into this: --url /path/to/nodes.txt works).
     var subs: std.ArrayListUnmanaged(config.Subscription) = .empty;
     for (opts.urls.items) |arg| {
-        const p = cli.parseUrlArg(arg) catch {
-            return abort(.usage_err, "invalid --url: {s}", .{arg});
-        };
+        const p = cli.parseUrlArg(arg);
         if (p.url.len == 0) {
             return abort(.usage_err, "invalid --url: missing url ({s})", .{arg});
         }
@@ -604,7 +606,7 @@ fn addDirectNode(
     fail_cnt: *usize,
     sep: []const u8,
     n: []const u8,
-) !void {
+) error{OutOfMemory}!void {
     const parsed = uri.parseUri(arena, n, "", sep) catch |e| {
         log.warn("[node] parse failed: {s} ({s})", .{ n, @errorName(e) });
         fail_cnt.* += 1;
@@ -633,7 +635,7 @@ const SubscriptionCtx = struct {
 };
 
 /// process one subscription (--url or .zon): fetch + full parse pipeline + logging
-fn processSubscription(ctx: SubscriptionCtx, s: config.Subscription) !void {
+fn processSubscription(ctx: SubscriptionCtx, s: config.Subscription) error{OutOfMemory}!void {
     const a = ctx.arena;
     // anonymous subscription (omitted name): full parse pipeline, just no "name@" prefix.
     // fixed "anonymous" label: short, and never leaks the url (may contain a token)

@@ -16,7 +16,7 @@ pub fn renderSingbox(
     nodes: []const node.Node,
     opts: Options,
     template: ?[]const u8,
-) ![]const render.File {
+) (tpl.FillError || error{OutOfMemory})![]const render.File {
     var root = ObjectMap.init(arena);
 
     // log
@@ -149,7 +149,7 @@ pub fn renderSingbox(
 }
 
 /// node -> sing-box outbound; unsupported protocols return null (caller counts skips)
-fn renderOutbound(arena: std.mem.Allocator, n: node.Node) !?JsonValue {
+fn renderOutbound(arena: std.mem.Allocator, n: node.Node) error{OutOfMemory}!?JsonValue {
     switch (n) {
         .ssr => return null, // sing-box has no ssr support
         else => {},
@@ -244,7 +244,7 @@ fn putTls(
     insecure: bool,
     reality: ?node.RealityOpts,
     alpn: ?[]const []const u8,
-) !void {
+) error{OutOfMemory}!void {
     if (!enabled and servername == null and reality == null and alpn == null) return;
     var tls = ObjectMap.init(arena);
     try tls.put("enabled", .{ .bool = enabled });
@@ -281,7 +281,7 @@ fn putTransport(
     network: node.Network,
     ws: ?node.WsOpts,
     grpc: ?node.GrpcOpts,
-) !void {
+) error{OutOfMemory}!void {
     switch (network) {
         .tcp => {},
         .ws => {
@@ -312,7 +312,7 @@ fn putTransport(
 }
 
 /// upmbps/downmbps number -> sing-box "N Mbps" string
-fn mbps(arena: std.mem.Allocator, v: ?[]const u8) ![]const u8 {
+fn mbps(arena: std.mem.Allocator, v: ?[]const u8) error{OutOfMemory}![]const u8 {
     const s = v orelse return "0 Mbps";
     const n = std.fmt.parseInt(u32, s, 10) catch return "0 Mbps";
     return std.fmt.allocPrint(arena, "{d} Mbps", .{n});

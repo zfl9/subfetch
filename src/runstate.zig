@@ -1,7 +1,7 @@
 const std = @import("std");
 const log = @import("log.zig");
 
-fn genSecret(arena: std.mem.Allocator) ![]const u8 {
+fn genSecret(arena: std.mem.Allocator) error{OutOfMemory}![]const u8 {
     var b: [16]u8 = undefined;
     std.crypto.random.bytes(&b);
     b[6] = (b[6] & 0x0f) | 0x40;
@@ -22,11 +22,20 @@ fn genSecret(arena: std.mem.Allocator) ![]const u8 {
     return arena.dupe(u8, &out);
 }
 
+/// state dir resolution errors (XDG env lookup + path join)
+const StateDirError = (error{ OutOfMemory, NoHome });
+
+/// errors for persisting the api secret (mkdir -p state dir + create + write + sync)
+const StateWriteError = (std.fs.Dir.MakeError || std.fs.File.OpenError || std.fs.File.WriteError || std.fs.File.SyncError || error{BadPath});
+
+/// errors for --reset-state (delete the secret file; NoStateDir when no HOME)
+const StateResetError = (std.fs.Dir.DeleteFileError || error{ OutOfMemory, NoHome, NoStateDir });
+
 /// API secret resolution: explicit --secret / .zon secret wins; otherwise reuse
 /// the persisted secret (stable across runs -> stable rendered bytes -> install
 /// diff stays quiet). first run generates + persists a UUID. with persist=false
 /// (dry-run) the state dir is only read, never written (side-effect free).
-pub fn resolveSecret(arena: std.mem.Allocator, explicit: ?[]const u8, persist: bool) ![]const u8 {
+pub fn resolveSecret(arena: std.mem.Allocator, explicit: ?[]const u8, persist: bool) StateDirError![]const u8 {
     if (explicit) |s| return s;
     const path = stateSecretPath(arena) catch return genSecret(arena); // no HOME: per-run random (degraded)
     if (!persist) {
@@ -44,7 +53,7 @@ fn readPersistedSecret(arena: std.mem.Allocator, path: []const u8) ?[]const u8 {
 }
 
 /// read the persisted secret at `path`; generate + persist a fresh UUID when absent.
-fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
+fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) error{OutOfMemory}![]const u8 {
     if (readPersistedSecret(arena, path)) |s| return s;
     const s = try genSecret(arena);
     writeStateSecret(path, s) catch |e| {
@@ -54,7 +63,7 @@ fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
 }
 
 /// XDG state dir: $XDG_STATE_HOME or ~/.local/state (default per XDG spec)
-fn stateDir(arena: std.mem.Allocator) ![]const u8 {
+fn stateDir(arena: std.mem.Allocator) StateDirError![]const u8 {
     if (std.posix.getenv("XDG_STATE_HOME")) |base| {
         return std.fs.path.join(arena, &.{ base, "subfetch" });
     }
@@ -63,11 +72,11 @@ fn stateDir(arena: std.mem.Allocator) ![]const u8 {
 }
 
 /// state dir + "secret" file name (see stateDir)
-fn stateSecretPath(arena: std.mem.Allocator) ![]const u8 {
+fn stateSecretPath(arena: std.mem.Allocator) StateDirError![]const u8 {
     return std.fs.path.join(arena, &.{ try stateDir(arena), "secret" });
 }
 
-fn writeStateSecret(path: []const u8, secret: []const u8) !void {
+fn writeStateSecret(path: []const u8, secret: []const u8) StateWriteError!void {
     const dir = std.fs.path.dirname(path) orelse return error.BadPath;
     try std.fs.cwd().makePath(dir);
     const f = try std.fs.cwd().createFile(path, .{ .mode = 0o600 });
@@ -127,7 +136,7 @@ pub fn releaseRunLock() void {
 /// returns an error instead of exiting: the caller (main) owns all exits.
 /// a missing secret file is NOT an error (nothing to reset); a missing state
 /// dir folds into NoStateDir (no HOME etc.), other fs errors pass through.
-pub fn resetStateSecret(arena: std.mem.Allocator) !void {
+pub fn resetStateSecret(arena: std.mem.Allocator) StateResetError!void {
     const path = stateSecretPath(arena) catch |e| switch (e) {
         error.NoHome => return error.NoStateDir,
         else => return e, // OutOfMemory

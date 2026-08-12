@@ -5,8 +5,6 @@ const tpl = @import("template.zig");
 const yaml = @import("yaml.zig");
 const Options = render.Options;
 
-const Writer = std.Io.Writer;
-
 /// render mihomo/clash config.yaml.
 /// with a user template: fills the `proxies: []` fill point; proxy-groups/rules
 /// missing -> append defaults, present -> kept as user content (with `__NODES__`
@@ -16,7 +14,7 @@ pub fn renderClash(
     nodes: []const node.Node,
     opts: Options,
     template: ?[]const u8,
-) ![]const render.File {
+) (tpl.FillError || error{OutOfMemory})![]const render.File {
     var text = if (template) |t| try arena.dupe(u8, t) else try defaultClashBase(arena, opts);
 
     // proxies block (relative indent: "- name" at column 0, fields at 2)
@@ -59,7 +57,7 @@ pub fn renderClash(
 }
 
 /// built-in default template: fixed base structure with empty fill points.
-fn defaultClashBase(arena: std.mem.Allocator, opts: Options) ![]const u8 {
+fn defaultClashBase(arena: std.mem.Allocator, opts: Options) error{OutOfMemory}![]const u8 {
     var list: std.ArrayListUnmanaged(u8) = .empty;
     const w = list.writer(arena);
 
@@ -87,7 +85,7 @@ fn defaultClashBase(arena: std.mem.Allocator, opts: Options) ![]const u8 {
 /// proxy-groups block (relative indent): PROXY selector + AUTO url-test.
 /// PROXY select list: AUTO first (default selection = auto speed-test), DIRECT second
 /// (UI can switch to direct connection on the fly), then all nodes.
-fn renderGroupsRel(w: anytype, names: []const []const u8) !void {
+fn renderGroupsRel(w: std.ArrayListUnmanaged(u8).Writer, names: []const []const u8) error{OutOfMemory}!void {
     try w.print("- name: PROXY\n  type: select\n  proxies:\n  - AUTO\n  - DIRECT\n", .{});
     for (names) |nm| {
         try w.print("  - ", .{});
@@ -102,7 +100,7 @@ fn renderGroupsRel(w: anytype, names: []const []const u8) !void {
     }
 }
 
-fn collectNames(arena: std.mem.Allocator, nodes: []const node.Node) ![]const []const u8 {
+fn collectNames(arena: std.mem.Allocator, nodes: []const node.Node) error{OutOfMemory}![]const []const u8 {
     var names: std.ArrayListUnmanaged([]const u8) = .empty;
     for (nodes) |n| {
         try names.append(arena, n.name());
@@ -110,23 +108,23 @@ fn collectNames(arena: std.mem.Allocator, nodes: []const node.Node) ![]const []c
     return names.toOwnedSlice(arena);
 }
 
-fn renderProxyRel(w: anytype, n: node.Node) !void {
+fn renderProxyRel(w: std.ArrayListUnmanaged(u8).Writer, n: node.Node) error{OutOfMemory}!void {
     const S = struct {
-        fn f(w2: anytype, key: []const u8, value: []const u8) !void {
+        fn f(w2: std.ArrayListUnmanaged(u8).Writer, key: []const u8, value: []const u8) error{OutOfMemory}!void {
             try w2.print("  {s}: ", .{key});
             try yamlStr(w2, value);
             try w2.print("\n", .{});
         }
-        fn fi(w2: anytype, key: []const u8, value: u16) !void {
+        fn fi(w2: std.ArrayListUnmanaged(u8).Writer, key: []const u8, value: u16) error{OutOfMemory}!void {
             try w2.print("  {s}: {d}\n", .{ key, value });
         }
-        fn fb(w2: anytype, key: []const u8, value: bool) !void {
+        fn fb(w2: std.ArrayListUnmanaged(u8).Writer, key: []const u8, value: bool) error{OutOfMemory}!void {
             try w2.print("  {s}: {}\n", .{ key, value });
         }
-        fn fo(w2: anytype, key: []const u8, value: ?[]const u8) !void {
+        fn fo(w2: std.ArrayListUnmanaged(u8).Writer, key: []const u8, value: ?[]const u8) error{OutOfMemory}!void {
             if (value) |v| try f(w2, key, v);
         }
-        fn falpn(w2: anytype, alpn: ?[]const []const u8) !void {
+        fn falpn(w2: std.ArrayListUnmanaged(u8).Writer, alpn: ?[]const []const u8) error{OutOfMemory}!void {
             const list = alpn orelse return;
             if (list.len == 0) return;
             try w2.print("  alpn: [", .{});
@@ -273,7 +271,7 @@ fn renderProxyRel(w: anytype, n: node.Node) !void {
     }
 }
 
-fn renderWsGrpc(w: anytype, ws: ?node.WsOpts, grpc: ?node.GrpcOpts) !void {
+fn renderWsGrpc(w: std.ArrayListUnmanaged(u8).Writer, ws: ?node.WsOpts, grpc: ?node.GrpcOpts) error{OutOfMemory}!void {
     if (ws) |o| {
         try w.print("  ws-opts:\n    path: ", .{});
         try yamlStr(w, o.path);
@@ -292,7 +290,7 @@ fn renderWsGrpc(w: anytype, ws: ?node.WsOpts, grpc: ?node.GrpcOpts) !void {
 }
 
 /// YAML scalar output: plain when safe, double-quoted escaping otherwise
-fn yamlStr(w: anytype, s: []const u8) !void {
+fn yamlStr(w: std.ArrayListUnmanaged(u8).Writer, s: []const u8) error{OutOfMemory}!void {
     if (isPlainSafe(s)) {
         try w.writeAll(s);
         return;
@@ -411,7 +409,7 @@ test "yaml scalar quoting" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const q = struct {
-        fn render(a: std.mem.Allocator, s: []const u8) ![]const u8 {
+        fn render(a: std.mem.Allocator, s: []const u8) error{OutOfMemory}![]const u8 {
             var list: std.ArrayListUnmanaged(u8) = .empty;
             try yamlStr(list.writer(a), s);
             return list.toOwnedSlice(a);

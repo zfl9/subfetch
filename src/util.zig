@@ -2,7 +2,7 @@ const std = @import("std");
 
 /// lenient base64 decode: strips whitespace, converts url-safe charset, pads.
 /// returns null (not an error) for invalid base64 input.
-pub fn b64Decode(allocator: std.mem.Allocator, input: []const u8) !?[]u8 {
+pub fn b64Decode(allocator: std.mem.Allocator, input: []const u8) error{OutOfMemory}!?[]u8 {
     var cleaned: std.ArrayListUnmanaged(u8) = .empty;
     defer cleaned.deinit(allocator);
     for (input) |ch| {
@@ -29,7 +29,7 @@ pub fn b64Decode(allocator: std.mem.Allocator, input: []const u8) !?[]u8 {
 }
 
 /// percent decode; returns the original slice zero-copy when no % is present.
-pub fn urlDecode(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
+pub fn urlDecode(allocator: std.mem.Allocator, s: []const u8) error{OutOfMemory}![]const u8 {
     if (std.mem.indexOfScalar(u8, s, '%') == null) return s;
     const buf = try allocator.dupe(u8, s);
     return std.Uri.percentDecodeInPlace(buf);
@@ -38,7 +38,7 @@ pub fn urlDecode(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
 /// split text into URI lines: trim whitespace, skip empty lines and '#' comment lines.
 /// shared by subscription sniffing and local node files (--url <path>); both
 /// behave identically: trim, skip empty lines and '#' comments
-pub fn splitUriLines(arena: std.mem.Allocator, text: []const u8) ![][]const u8 {
+pub fn splitUriLines(arena: std.mem.Allocator, text: []const u8) error{OutOfMemory}![][]const u8 {
     var lines = std.mem.splitScalar(u8, text, '\n');
     var out: std.ArrayListUnmanaged([]const u8) = .empty;
     while (lines.next()) |raw| {
@@ -106,7 +106,7 @@ pub const BoundedWriter = struct {
     exceeded: bool = false,
     writer: std.Io.Writer = .{ .buffer = &.{}, .vtable = &vtable },
 
-    pub fn init(allocator: std.mem.Allocator, limit: usize) !BoundedWriter {
+    pub fn init(allocator: std.mem.Allocator, limit: usize) error{OutOfMemory}!BoundedWriter {
         const buf = try allocator.alloc(u8, limit);
         return .{ .allocator = allocator, .writer = .{ .buffer = buf, .vtable = &vtable } };
     }

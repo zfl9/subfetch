@@ -171,8 +171,14 @@ pub fn verifyContent(
     return syntaxCheck(arena, fmt, content);
 }
 
+/// fs errors for writing a plain file (create + write)
+const FileWriteError = (std.fs.File.OpenError || std.fs.File.WriteError);
+
+/// fs errors for the atomic-write path (write .new temp, rename into place)
+const AtomicWriteError = (FileWriteError || std.fs.Dir.RenameError || error{OutOfMemory});
+
 /// atomic file write (write .new then rename)
-pub fn atomicWrite(arena: std.mem.Allocator, path: []const u8, content: []const u8) !void {
+pub fn atomicWrite(arena: std.mem.Allocator, path: []const u8, content: []const u8) AtomicWriteError!void {
     const tmp = try std.fmt.allocPrint(arena, "{s}.new", .{path});
     try writeFile(tmp, content);
     try std.fs.cwd().rename(tmp, path);
@@ -186,7 +192,7 @@ pub fn contentDiffers(allocator: std.mem.Allocator, path: []const u8, content: [
     return !std.mem.eql(u8, cur, content);
 }
 
-fn writeFile(path: []const u8, content: []const u8) !void {
+fn writeFile(path: []const u8, content: []const u8) FileWriteError!void {
     const f = try std.fs.cwd().createFile(path, .{});
     defer f.close();
     try f.writeAll(content);

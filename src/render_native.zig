@@ -12,7 +12,7 @@ const ObjectMap = std.json.ObjectMap;
 /// Linux only forbids '/' (and NUL), so nothing else needs escaping; in
 /// particular no UTF-8 decoding is required (truncated sequences are harmless
 /// bytes here, not a panic risk).
-fn safeFileName(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
+fn safeFileName(arena: std.mem.Allocator, name: []const u8) error{OutOfMemory}![]const u8 {
     var out: std.ArrayListUnmanaged(u8) = .empty;
     var prev_ws = false;
     for (name) |b| {
@@ -35,7 +35,7 @@ fn safeFileName(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
 }
 
 /// single-node JSON serialization helper: build an object
-fn buildObj(arena: std.mem.Allocator, fields: []const struct { []const u8, JsonValue }) !JsonValue {
+fn buildObj(arena: std.mem.Allocator, fields: []const struct { []const u8, JsonValue }) error{OutOfMemory}!JsonValue {
     var o = ObjectMap.init(arena);
     for (fields) |f| {
         try o.put(f[0], f[1]);
@@ -52,12 +52,12 @@ fn int(v: i64) JsonValue {
 }
 
 /// serialize a node to JSON (std.json.Stringify)
-fn jsonToString(arena: std.mem.Allocator, v: JsonValue) ![]const u8 {
+fn jsonToString(arena: std.mem.Allocator, v: JsonValue) error{OutOfMemory}![]const u8 {
     return std.json.Stringify.valueAlloc(arena, v, .{ .whitespace = .indent_2 });
 }
 
 /// alpn array (skipped when null or empty)
-fn putAlpn(arena: std.mem.Allocator, o: *ObjectMap, key: []const u8, alpn: ?[]const []const u8) !void {
+fn putAlpn(arena: std.mem.Allocator, o: *ObjectMap, key: []const u8, alpn: ?[]const []const u8) error{OutOfMemory}!void {
     const list = alpn orelse return;
     if (list.len == 0) return;
     var arr = std.json.Array.init(arena);
@@ -66,7 +66,7 @@ fn putAlpn(arena: std.mem.Allocator, o: *ObjectMap, key: []const u8, alpn: ?[]co
 }
 
 /// trojan-go / trojan client config.json
-fn trojanJson(arena: std.mem.Allocator, v: node.Trojan, opts: Options) !JsonValue {
+fn trojanJson(arena: std.mem.Allocator, v: node.Trojan, opts: Options) error{OutOfMemory}!JsonValue {
     var ssl = ObjectMap.init(arena);
     try ssl.put("sni", str(v.servername orelse v.server));
     try ssl.put("verify_cert", .{ .bool = !v.skip_cert_verify });
@@ -100,7 +100,7 @@ fn trojanJson(arena: std.mem.Allocator, v: node.Trojan, opts: Options) !JsonValu
 }
 
 /// hysteria 1.x client config.json
-fn hysteriaJson(arena: std.mem.Allocator, v: node.Hysteria, opts: Options) !JsonValue {
+fn hysteriaJson(arena: std.mem.Allocator, v: node.Hysteria, opts: Options) error{OutOfMemory}!JsonValue {
     var fields: std.ArrayListUnmanaged(struct { []const u8, JsonValue }) = .empty;
     const server = try std.fmt.allocPrint(arena, "{s}:{d}", .{ v.server, v.port });
     try fields.append(arena, .{ "server", str(server) });
@@ -131,7 +131,7 @@ fn hysteriaJson(arena: std.mem.Allocator, v: node.Hysteria, opts: Options) !Json
 }
 
 /// hysteria 2.x client config.yaml (hysteria2 native config is yaml)
-fn hysteria2Yaml(arena: std.mem.Allocator, v: node.Hysteria2, opts: Options) ![]const u8 {
+fn hysteria2Yaml(arena: std.mem.Allocator, v: node.Hysteria2, opts: Options) error{OutOfMemory}![]const u8 {
     var list: std.ArrayListUnmanaged(u8) = .empty;
     const w = list.writer(arena);
     const server = try std.fmt.allocPrint(arena, "{s}:{d}", .{ v.server, v.port });
@@ -157,7 +157,7 @@ fn hysteria2Yaml(arena: std.mem.Allocator, v: node.Hysteria2, opts: Options) ![]
 }
 
 /// xray-core client config.json (vless outbound + socks inbound)
-fn xrayJson(arena: std.mem.Allocator, v: node.Vless, opts: Options) !JsonValue {
+fn xrayJson(arena: std.mem.Allocator, v: node.Vless, opts: Options) error{OutOfMemory}!JsonValue {
     var root = ObjectMap.init(arena);
 
     var log = ObjectMap.init(arena);
@@ -240,7 +240,7 @@ fn xrayJson(arena: std.mem.Allocator, v: node.Vless, opts: Options) !JsonValue {
 }
 
 /// shadowsocks-libev/rust client config.json
-fn ssJson(arena: std.mem.Allocator, v: node.SS, opts: Options) !JsonValue {
+fn ssJson(arena: std.mem.Allocator, v: node.SS, opts: Options) error{OutOfMemory}!JsonValue {
     var o = ObjectMap.init(arena);
     try o.put("server", str(v.server));
     try o.put("server_port", int(v.port));
@@ -268,7 +268,7 @@ fn ssJson(arena: std.mem.Allocator, v: node.SS, opts: Options) !JsonValue {
 }
 
 /// TOR_PT-style plugin_opts for v2ray-plugin
-fn v2rayPluginOpts(arena: std.mem.Allocator, pl: node.V2rayPlugin) ![]const u8 {
+fn v2rayPluginOpts(arena: std.mem.Allocator, pl: node.V2rayPlugin) error{OutOfMemory}![]const u8 {
     var parts: std.ArrayListUnmanaged([]const u8) = .empty;
     try parts.append(arena, try std.fmt.allocPrint(arena, "mode={s}", .{pl.mode}));
     if (pl.tls) try parts.append(arena, "tls");
@@ -278,7 +278,7 @@ fn v2rayPluginOpts(arena: std.mem.Allocator, pl: node.V2rayPlugin) ![]const u8 {
 }
 
 /// shadowsocksr-libev client config.json
-fn ssrJson(arena: std.mem.Allocator, v: node.SSR, opts: Options) !JsonValue {
+fn ssrJson(arena: std.mem.Allocator, v: node.SSR, opts: Options) error{OutOfMemory}!JsonValue {
     var o = ObjectMap.init(arena);
     try o.put("server", str(v.server));
     try o.put("server_port", int(v.port));
@@ -299,7 +299,7 @@ fn renderNative(
     nodes: []const node.Node,
     opts: Options,
     comptime kind: enum { trojan, hysteria, hysteria2, xray, ss, ssr },
-) ![]const render.File {
+) (error{ OutOfMemory, NoSupportedNodes })![]const render.File {
     var files: std.ArrayListUnmanaged(render.File) = .empty;
 
     for (nodes) |n| {
@@ -340,27 +340,27 @@ fn renderNative(
     return files.toOwnedSlice(arena);
 }
 
-pub fn renderTrojan(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
+pub fn renderTrojan(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) (error{ OutOfMemory, NoSupportedNodes })![]const render.File {
     return renderNative(arena, nodes, opts, .trojan);
 }
 
-pub fn renderHysteria(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
+pub fn renderHysteria(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) (error{ OutOfMemory, NoSupportedNodes })![]const render.File {
     return renderNative(arena, nodes, opts, .hysteria);
 }
 
-pub fn renderHysteria2(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
+pub fn renderHysteria2(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) (error{ OutOfMemory, NoSupportedNodes })![]const render.File {
     return renderNative(arena, nodes, opts, .hysteria2);
 }
 
-pub fn renderXray(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
+pub fn renderXray(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) (error{ OutOfMemory, NoSupportedNodes })![]const render.File {
     return renderNative(arena, nodes, opts, .xray);
 }
 
-pub fn renderSs(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
+pub fn renderSs(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) (error{ OutOfMemory, NoSupportedNodes })![]const render.File {
     return renderNative(arena, nodes, opts, .ss);
 }
 
-pub fn renderSsr(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) ![]const render.File {
+pub fn renderSsr(arena: std.mem.Allocator, nodes: []const node.Node, opts: Options) (error{ OutOfMemory, NoSupportedNodes })![]const render.File {
     return renderNative(arena, nodes, opts, .ssr);
 }
 

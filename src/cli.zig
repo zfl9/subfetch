@@ -139,9 +139,12 @@ pub fn parseArgs(arena: std.mem.Allocator, args: [][:0]u8, opts: *Options) CliEr
 }
 
 /// parse a --url argument: optional [name=] prefix -> subscription name,
-/// rest is the subscription url. (--node / .zon .nodes do NOT go through
-/// here: they are raw node URIs without name prefixes, see addDirectNode)
-pub fn parseUrlArg(arg: []const u8) !struct { name: ?[]const u8, url: []const u8 } {
+/// rest is the subscription url. never fails: any string parses (name=null
+/// when the prefix is absent or an invalid name). the empty-url check lives
+/// in main (it is a usage error there, not a parse error).
+/// (--node / .zon .nodes do NOT go through here: they are raw node URIs
+/// without name prefixes, see addDirectNode)
+pub fn parseUrlArg(arg: []const u8) struct { name: ?[]const u8, url: []const u8 } {
     if (std.mem.indexOfScalar(u8, arg, '=')) |i| {
         if (config.isValidName(arg[0..i])) return .{ .name = arg[0..i], .url = arg[i + 1 ..] };
     }
@@ -152,7 +155,7 @@ pub fn parseUrlArg(arg: []const u8) !struct { name: ?[]const u8, url: []const u8
 /// real runs (dry-run renders without writing, so it may be omitted). the
 /// legacy stdout sentinel "-" is accepted for compatibility but folded into
 /// "no path": the stdout mode is gone.
-pub fn parseOutput(v: []const u8) !Output {
+pub fn parseOutput(v: []const u8) CliError!Output {
     var path: ?[]const u8 = null;
     var rest = v;
     if (std.mem.indexOfScalar(u8, v, '=')) |eq| {
@@ -347,15 +350,15 @@ test "parseOutput grammar" {
 
 test "parseUrlArg name prefix" {
     // [name=] prefix: valid name -> split
-    const p1 = try parseUrlArg("sg=ss://aes@host:8388#SG");
+    const p1 = parseUrlArg("sg=ss://aes@host:8388#SG");
     try std.testing.expectEqualStrings("sg", p1.name.?);
     try std.testing.expectEqualStrings("ss://aes@host:8388#SG", p1.url);
     // no prefix -> anonymous
-    const p2 = try parseUrlArg("trojan://pass@h:443#n");
+    const p2 = parseUrlArg("trojan://pass@h:443#n");
     try std.testing.expect(p2.name == null);
     try std.testing.expectEqualStrings("trojan://pass@h:443#n", p2.url);
     // invalid name (contains chars not allowed) -> whole string treated as url
-    const p3 = try parseUrlArg("bad name=ss://x");
+    const p3 = parseUrlArg("bad name=ss://x");
     try std.testing.expect(p3.name == null);
     try std.testing.expectEqualStrings("bad name=ss://x", p3.url);
 }
