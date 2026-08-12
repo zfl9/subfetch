@@ -333,16 +333,16 @@ test "parseOutput grammar" {
     try std.testing.expectEqual(render.Format.raw, o5.fmt);
     try std.testing.expect(o5.path == null);
     // empty path folds into no path too (a slip, not a target)
-    const o7 = try parseOutput("clash=");
-    try std.testing.expectEqual(render.Format.clash, o7.fmt);
-    try std.testing.expect(o7.path == null);
+    const o6 = try parseOutput("clash=");
+    try std.testing.expectEqual(render.Format.clash, o6.fmt);
+    try std.testing.expect(o6.path == null);
     // unknown format errors
     try std.testing.expectError(error.CliBadArg, parseOutput("bogus"));
     try std.testing.expectError(error.CliBadArg, parseOutput(""));
     // extra '=' belongs to the path (first '=' splits path, then ':' splits template)
-    const o6 = try parseOutput("clash:tmpl=path=extra");
-    try std.testing.expectEqualStrings("tmpl", o6.tmpl.?);
-    try std.testing.expectEqualStrings("path=extra", o6.path.?);
+    const o7 = try parseOutput("clash:tmpl=path=extra");
+    try std.testing.expectEqualStrings("tmpl", o7.tmpl.?);
+    try std.testing.expectEqualStrings("path=extra", o7.path.?);
 }
 
 test "parseUrlArg name prefix" {

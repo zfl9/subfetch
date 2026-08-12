@@ -174,16 +174,7 @@ pub const Node = union(enum) {
     }
 
     pub fn typeName(self: Node) []const u8 {
-        return switch (self) {
-            .ss => "ss",
-            .ssr => "ssr",
-            .vmess => "vmess",
-            .vless => "vless",
-            .trojan => "trojan",
-            .hysteria => "hysteria",
-            .hysteria2 => "hysteria2",
-            .tuic => "tuic",
-        };
+        return @tagName(self);
     }
 
     pub fn server(self: Node) []const u8 {

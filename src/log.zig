@@ -86,7 +86,7 @@ pub fn verbose(comptime fmt: []const u8, args: anytype) void {
     log(.verbose, fmt, args);
 }
 
-/// plain output for generated content (dry-run config text, usage) - no log prefix
+/// plain output for usage/version text (--help/--version) - no log prefix
 pub fn outPrint(comptime fmt: []const u8, args: anytype) void {
     const text = std.fmt.allocPrint(std.heap.page_allocator, fmt, args) catch return;
     defer std.heap.page_allocator.free(text);

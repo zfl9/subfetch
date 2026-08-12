@@ -6,7 +6,6 @@ const util = @import("util.zig");
 
 pub const FetchError = error{
     OutOfMemory,
-    FetchInvalidUrl,
     FetchFileNotFound,
     FetchBodyTooLarge,
     FetchHttpError,

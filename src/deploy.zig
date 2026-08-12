@@ -369,15 +369,6 @@ test "contentDiffers missing/same/different" {
     try std.testing.expect(contentDiffers(arena.allocator(), cfg, ""));
 }
 
-test "reloadCustom runs shell command" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const a = arena.allocator();
-    try std.testing.expectEqual(ReloadResult.custom, reloadCustom(a, "true"));
-    try std.testing.expectEqual(ReloadResult.failed, reloadCustom(a, "false"));
-    try std.testing.expectEqual(ReloadResult.failed, reloadCustom(a, "definitely-not-a-command-xyz"));
-}
-
 test "reloadCustom exit codes" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

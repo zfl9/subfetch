@@ -167,7 +167,16 @@ fn run() !ExitCode {
         try used_names.put(arena, n, {});
     }
     for (subs.items) |s| {
-        try processSubscription(arena, sep, info_keywords, &opts, &cfg, &all_nodes, &ok_cnt, &fail_cnt, s);
+        try processSubscription(.{
+            .arena = arena,
+            .sep = sep,
+            .info_keywords = info_keywords,
+            .opts = &opts,
+            .cfg = &cfg,
+            .all_nodes = &all_nodes,
+            .ok_cnt = &ok_cnt,
+            .fail_cnt = &fail_cnt,
+        }, s);
     }
 
     if (all_nodes.items.len == 0) {
@@ -504,7 +513,9 @@ fn installAll(
             }
         }
         // drop the verify .new.json artifacts that were not renamed into place
-        // (renamed ones are already gone; deleteFile is a no-op for them)
+        // (renamed ones are already gone; deleteFile is a no-op for them).
+        // cleanup is best-effort: join/alloc failures are skipped (catch),
+        // unlike pathJoin/allocPrint which treat OOM as fatal
         for (files) |f| {
             const fpath = std.fs.path.join(arena, &.{ dir, f.path }) catch continue;
             const tmp = std.fmt.allocPrint(arena, "{s}.new.json", .{fpath}) catch continue;
@@ -581,7 +592,6 @@ fn isDirFormat(fmt: render.Format) bool {
     };
 }
 
-/// generate UUID v4 as API secret
 /// add a direct node URI (--node / .zon .nodes): no sniff, no info filtering,
 /// no subscription-name prefix; parse failure counts as a failed source.
 fn addDirectNode(
@@ -604,45 +614,50 @@ fn nodeLessThan(_: void, a: node.Node, b: node.Node) bool {
     return std.mem.lessThan(u8, a.name(), b.name());
 }
 
-/// process one subscription (--url or .zon): fetch + full parse pipeline + logging
-fn processSubscription(
+/// per-subscription processing state (named-field args, see processSubscription)
+const SubscriptionCtx = struct {
     arena: std.mem.Allocator,
+    /// node name separator
     sep: []const u8,
+    /// info-node keyword overrides (CLI > .zon > defaults)
     info_keywords: []const []const u8,
     opts: *const cli.Options,
     cfg: *const config.Config,
     all_nodes: *std.ArrayListUnmanaged(node.Node),
     ok_cnt: *usize,
     fail_cnt: *usize,
-    s: config.Subscription,
-) !void {
+};
+
+/// process one subscription (--url or .zon): fetch + full parse pipeline + logging
+fn processSubscription(ctx: SubscriptionCtx, s: config.Subscription) !void {
+    const a = ctx.arena;
     // anonymous subscription (omitted name): full parse pipeline, just no "name@" prefix.
     // fixed "anonymous" label: short, and never leaks the url (may contain a token)
     const sub_label = if (s.name) |n| n else "anonymous";
-    const ua = s.ua orelse cfg.ua orelse opts.ua;
-    const body = fetch.fetchWithRetry(arena, s.url, ua) catch |e| {
+    const ua = s.ua orelse ctx.cfg.ua orelse ctx.opts.ua;
+    const body = fetch.fetchWithRetry(a, s.url, ua) catch |e| {
         log.warn("[{s}] fetch failed: {s}", .{ sub_label, @errorName(e) });
-        fail_cnt.* += 1;
+        ctx.fail_cnt.* += 1;
         return;
     };
-    const result = parse.parseSubscription(arena, s.name orelse "", body, sep, info_keywords) catch |e| {
+    const result = parse.parseSubscription(a, s.name orelse "", body, ctx.sep, ctx.info_keywords) catch |e| {
         log.warn("[{s}] parse failed ({s})", .{ sub_label, @errorName(e) });
-        fail_cnt.* += 1;
+        ctx.fail_cnt.* += 1;
         return;
     };
     // stable-sort within the subscription: upstream node order is not stable
     // between fetches, deterministic bytes keep the install diff quiet
     std.mem.sort(node.Node, @constCast(result.nodes), {}, nodeLessThan);
     for (result.nodes) |n| {
-        try all_nodes.append(arena, n);
+        try ctx.all_nodes.append(a, n);
     }
-    ok_cnt.* += 1;
+    ctx.ok_cnt.* += 1;
     // summary line is identical in normal and verbose mode: "N nodes (M skipped, B bytes)"
     const noun = if (result.nodes.len == 1) "node" else "nodes";
-    var msg = try std.fmt.allocPrint(arena, "{d} {s}", .{ result.nodes.len, noun });
+    var msg = try std.fmt.allocPrint(a, "{d} {s}", .{ result.nodes.len, noun });
     var extras: std.ArrayListUnmanaged([]const u8) = .empty;
     if (result.skipped > 0) {
-        try extras.append(arena, try std.fmt.allocPrint(arena, "{d} skipped", .{result.skipped}));
+        try extras.append(a, try std.fmt.allocPrint(a, "{d} skipped", .{result.skipped}));
         // warn: skipped entries with their failure reason. a subscription
         // containing bad lines is a data problem worth seeing by default;
         // the summary line above still gives the total count.
@@ -656,20 +671,20 @@ fn processSubscription(
         }
     }
     if (result.info > 0) {
-        try extras.append(arena, try std.fmt.allocPrint(arena, "{d} info", .{result.info}));
+        try extras.append(a, try std.fmt.allocPrint(a, "{d} info", .{result.info}));
         // verbose: list filtered info (notice) nodes for debugging
-        if (opts.verbose) {
+        if (ctx.opts.verbose) {
             for (result.info_names) |nm| {
                 log.verbose("  ! {s} (info node, filtered)", .{nm});
             }
         }
     }
-    try extras.append(arena, try std.fmt.allocPrint(arena, "{d} bytes", .{body.len}));
-    msg = try std.fmt.allocPrint(arena, "{s}, {s}", .{ msg, try std.mem.join(arena, ", ", extras.items) });
+    try extras.append(a, try std.fmt.allocPrint(a, "{d} bytes", .{body.len}));
+    msg = try std.fmt.allocPrint(a, "{s}, {s}", .{ msg, try std.mem.join(a, ", ", extras.items) });
     log.info("[{s}] {s}", .{ sub_label, msg });
     // verbose: short node list (strip the "sub-name<sep>" prefix), indented under the summary
-    if (opts.verbose) {
-        const prefix = try std.fmt.allocPrint(arena, "{s}{s}", .{ s.name orelse "", sep });
+    if (ctx.opts.verbose) {
+        const prefix = try std.fmt.allocPrint(a, "{s}{s}", .{ s.name orelse "", ctx.sep });
         for (result.nodes) |n| {
             const short = if (std.mem.startsWith(u8, n.name(), prefix))
                 n.name()[prefix.len..]

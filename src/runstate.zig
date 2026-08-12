@@ -47,7 +47,7 @@ fn readPersistedSecret(arena: std.mem.Allocator, path: []const u8) ?[]const u8 {
 fn loadOrCreateSecret(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
     if (readPersistedSecret(arena, path)) |s| return s;
     const s = try genSecret(arena);
-    writeStateSecret(arena, path, s) catch |e| {
+    writeStateSecret(path, s) catch |e| {
         log.warn("failed to persist api secret to {s}: {s}", .{ path, @errorName(e) });
     };
     return s;
@@ -62,13 +62,12 @@ fn stateDir(arena: std.mem.Allocator) ![]const u8 {
     return std.fs.path.join(arena, &.{ home, ".local", "state", "subfetch" });
 }
 
-/// XDG state path: $XDG_STATE_HOME or ~/.local/state (default per XDG spec)
+/// state dir + "secret" file name (see stateDir)
 fn stateSecretPath(arena: std.mem.Allocator) ![]const u8 {
     return std.fs.path.join(arena, &.{ try stateDir(arena), "secret" });
 }
 
-fn writeStateSecret(arena: std.mem.Allocator, path: []const u8, secret: []const u8) !void {
-    _ = arena;
+fn writeStateSecret(path: []const u8, secret: []const u8) !void {
     const dir = std.fs.path.dirname(path) orelse return error.BadPath;
     try std.fs.cwd().makePath(dir);
     const f = try std.fs.cwd().createFile(path, .{ .mode = 0o600 });
@@ -197,6 +196,6 @@ test "readPersistedSecret absent/present" {
     // absent -> null
     try std.testing.expect(readPersistedSecret(a, secret_file) == null);
     // present -> content (trimmed)
-    try writeStateSecret(a, secret_file, "abc");
+    try writeStateSecret(secret_file, "abc");
     try std.testing.expectEqualStrings("abc", readPersistedSecret(a, secret_file).?);
 }
