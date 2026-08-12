@@ -73,16 +73,12 @@ fn run() (render.RenderError || error{ OutOfMemory, NoHome })!ExitCode {
         return .ok;
     }
 
-    // read config (optional): missing default config.zon -> pure CLI usage with
-    // defaults; an explicitly passed -c path that does not exist is a user error
-    // (an explicit "-c config.zon" is not the default: it must exist)
-    const cfg_path = opts.config orelse "config.zon";
-    const cfg: config.Config = blk: {
+    // read config (optional, explicit only): without -c no config file is
+    // read at all (explicit beats implicit - a config.zon sitting in the cwd
+    // must not silently change behavior); an explicit -c path that does not
+    // exist or fails to parse is a user error
+    const cfg: config.Config = if (opts.config) |cfg_path| blk: {
         const text = std.fs.cwd().readFileAlloc(arena, cfg_path, 1 << 20) catch |e| {
-            if (e == error.FileNotFound and opts.config == null) {
-                log.info("config: none, using defaults", .{});
-                break :blk .{};
-            }
             return abort(.config_err, "failed to read config {s}: {s}", .{ cfg_path, @errorName(e) });
         };
         const parsed = config.parse(arena, text) catch |e| {
@@ -90,6 +86,9 @@ fn run() (render.RenderError || error{ OutOfMemory, NoHome })!ExitCode {
         };
         log.info("config: {s}", .{cfg_path});
         break :blk parsed;
+    } else blk: {
+        log.info("config: none, using defaults", .{});
+        break :blk .{};
     };
 
     // merge CLI > .zon config: node name separator, API secret, info-node keywords
