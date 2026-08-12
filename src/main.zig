@@ -455,15 +455,15 @@ fn verifyAll(arena: std.mem.Allocator, fmt: render.Format, files: []const render
         }
         return .ok;
     }
-    if (isDirFormat(fmt)) {
+    if (fmt.isDirFormat()) {
         std.fs.cwd().makePath(path) catch |e| {
             return abort(.runtime_err, "failed to create directory {s}: {s}", .{ path, @errorName(e) });
         };
     }
     for (files) |f| {
-        const target = if (isDirFormat(fmt)) pathJoin(arena, &.{ path, f.path }) else path;
+        const target = if (fmt.isDirFormat()) pathJoin(arena, &.{ path, f.path }) else path;
         // note: xray -test infers format from extension, tmp must end with .json
-        const tmp = tmpName(arena, target, isDirFormat(fmt));
+        const tmp = tmpName(arena, target, fmt.isDirFormat());
         deploy.atomicWrite(arena, tmp, f.content) catch |e| {
             // not registered in verify_tmps yet: remove it explicitly so an
             // abort leaves no .new debris (the registration below is skipped)
@@ -494,7 +494,7 @@ fn installAll(
     reload: bool,
     reload_cmd: ?[]const u8,
 ) ExitCode {
-    if (isDirFormat(fmt)) {
+    if (fmt.isDirFormat()) {
         const dir = path;
         std.fs.cwd().makePath(dir) catch |e| {
             return abort(.runtime_err, "failed to create directory {s}: {s}", .{ dir, @errorName(e) });
@@ -513,7 +513,7 @@ fn installAll(
             } else {
                 // verify wrote tmpName(...) already; rename it into place with
                 // a backup of the existing config (acme.sh style)
-                const code = installVerified(arena, fpath, tmpName(arena, fpath, isDirFormat(fmt)));
+                const code = installVerified(arena, fpath, tmpName(arena, fpath, fmt.isDirFormat()));
                 if (code != .ok) return code;
             }
         }
@@ -539,7 +539,7 @@ fn installAll(
         const f = files[0];
         if (!deploy.contentDiffers(arena, path, f.content)) {
             // drop the verify .new temp; nothing installed, nothing reloaded
-            std.fs.cwd().deleteFile(tmpName(arena, path, isDirFormat(fmt))) catch {};
+            std.fs.cwd().deleteFile(tmpName(arena, path, fmt.isDirFormat())) catch {};
             log.info("config unchanged, skip install & reload: {s}", .{path});
             return .ok;
         }
@@ -549,7 +549,7 @@ fn installAll(
             };
             log.info("installed {s}", .{path});
         } else {
-            const code = installVerified(arena, path, tmpName(arena, path, isDirFormat(fmt)));
+            const code = installVerified(arena, path, tmpName(arena, path, fmt.isDirFormat()));
             if (code != .ok) return code;
             log.info("installed {s} (verify passed)", .{path});
         }
@@ -587,14 +587,6 @@ fn reloadAfterInstall(
         .skipped => log.info("no auto-reload for this format; restart manually (or use --reload-cmd)", .{}),
         .failed => log.warn("reload failed; restart manually", .{}),
     }
-}
-
-/// multi-file formats output to a directory; single-file formats output to a file path
-fn isDirFormat(fmt: render.Format) bool {
-    return switch (fmt) {
-        .clash, .singbox, .raw => false,
-        .trojan, .hysteria, .hysteria2, .xray, .ss, .ssr => true,
-    };
 }
 
 /// add a direct node URI (--node / .zon .nodes): no sniff, no info filtering,
@@ -708,5 +700,4 @@ test "compile-check" {
     _ = &verifyAll;
     _ = &installAll;
     _ = &reloadAfterInstall;
-    _ = &isDirFormat;
 }

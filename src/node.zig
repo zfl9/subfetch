@@ -161,15 +161,9 @@ pub const Node = union(enum) {
     tuic: Tuic,
 
     pub fn name(self: Node) []const u8 {
+        // inline else: every variant must carry a `name` field (compile-enforced)
         return switch (self) {
-            .ss => |n| n.name,
-            .ssr => |n| n.name,
-            .vmess => |n| n.name,
-            .vless => |n| n.name,
-            .trojan => |n| n.name,
-            .hysteria => |n| n.name,
-            .hysteria2 => |n| n.name,
-            .tuic => |n| n.name,
+            inline else => |n| n.name,
         };
     }
 
@@ -179,27 +173,13 @@ pub const Node = union(enum) {
 
     pub fn server(self: Node) []const u8 {
         return switch (self) {
-            .ss => |n| n.server,
-            .ssr => |n| n.server,
-            .vmess => |n| n.server,
-            .vless => |n| n.server,
-            .trojan => |n| n.server,
-            .hysteria => |n| n.server,
-            .hysteria2 => |n| n.server,
-            .tuic => |n| n.server,
+            inline else => |n| n.server,
         };
     }
 
     pub fn port(self: Node) u16 {
         return switch (self) {
-            .ss => |n| n.port,
-            .ssr => |n| n.port,
-            .vmess => |n| n.port,
-            .vless => |n| n.port,
-            .trojan => |n| n.port,
-            .hysteria => |n| n.port,
-            .hysteria2 => |n| n.port,
-            .tuic => |n| n.port,
+            inline else => |n| n.port,
         };
     }
 };

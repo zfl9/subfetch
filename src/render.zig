@@ -45,6 +45,14 @@ pub const Format = enum {
     pub fn parse(s: []const u8) ?Format {
         return std.meta.stringToEnum(Format, s);
     }
+
+    /// multi-file formats output to a directory; single-file formats output to a file path
+    pub fn isDirFormat(self: Format) bool {
+        return switch (self) {
+            .clash, .singbox, .raw => false,
+            .trojan, .hysteria, .hysteria2, .xray, .ss, .ssr => true,
+        };
+    }
 };
 
 /// render options (output customization fields)
@@ -154,48 +162,12 @@ pub fn uniqueNames(arena: std.mem.Allocator, nodes_in: []const Node) error{OutOf
 
 /// copy a node with the name replaced
 fn renameNode(n: Node, new_name: []const u8) Node {
-    return switch (n) {
-        .ss => |v| blk: {
-            var x = v;
-            x.name = new_name;
-            break :blk .{ .ss = x };
-        },
-        .ssr => |v| blk: {
-            var x = v;
-            x.name = new_name;
-            break :blk .{ .ssr = x };
-        },
-        .vmess => |v| blk: {
-            var x = v;
-            x.name = new_name;
-            break :blk .{ .vmess = x };
-        },
-        .vless => |v| blk: {
-            var x = v;
-            x.name = new_name;
-            break :blk .{ .vless = x };
-        },
-        .trojan => |v| blk: {
-            var x = v;
-            x.name = new_name;
-            break :blk .{ .trojan = x };
-        },
-        .hysteria => |v| blk: {
-            var x = v;
-            x.name = new_name;
-            break :blk .{ .hysteria = x };
-        },
-        .hysteria2 => |v| blk: {
-            var x = v;
-            x.name = new_name;
-            break :blk .{ .hysteria2 = x };
-        },
-        .tuic => |v| blk: {
-            var x = v;
-            x.name = new_name;
-            break :blk .{ .tuic = x };
-        },
-    };
+    var copy = n;
+    // inline else: every variant must carry a `name` field (compile-enforced)
+    switch (copy) {
+        inline else => |*v| v.name = new_name,
+    }
+    return copy;
 }
 
 test "uniqueNames dedupe and reserved names" {
