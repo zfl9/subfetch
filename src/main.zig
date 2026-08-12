@@ -143,8 +143,8 @@ fn run() (render.RenderError || error{ OutOfMemory, NoHome })!ExitCode {
     var fail_cnt: usize = 0;
 
     // 1. direct node URIs: --node, then .zon .nodes (no sniff, no info filtering, no prefix)
-    for (opts.nodes.items) |n| try addDirectNode(arena, &all_nodes, &fail_cnt, sep, n);
-    for (cfg.nodes) |n| try addDirectNode(arena, &all_nodes, &fail_cnt, sep, n);
+    for (opts.nodes.items) |node_uri| try addDirectNode(arena, &all_nodes, &fail_cnt, sep, node_uri);
+    for (cfg.nodes) |node_uri| try addDirectNode(arena, &all_nodes, &fail_cnt, sep, node_uri);
 
     // 2. subscriptions: --url first, then .zon subscriptions (full pipeline:
     //    sniff + info filtering + "name@" prefix; anonymous = no prefix). local
@@ -158,17 +158,17 @@ fn run() (render.RenderError || error{ OutOfMemory, NoHome })!ExitCode {
         }
         try subs.append(arena, .{ .name = p.name, .url = p.url });
     }
-    for (cfg.subscriptions) |s| try subs.append(arena, s);
+    for (cfg.subscriptions) |sub| try subs.append(arena, sub);
     // duplicate subscription name check across CLI and .zon (anonymous may repeat)
     var used_names: std.StringHashMapUnmanaged(void) = .empty;
-    for (subs.items) |s| {
-        const n = s.name orelse continue;
-        if (used_names.contains(n)) {
-            return abort(.config_err, "duplicate subscription name: {s}", .{n});
+    for (subs.items) |sub| {
+        const name = sub.name orelse continue;
+        if (used_names.contains(name)) {
+            return abort(.config_err, "duplicate subscription name: {s}", .{name});
         }
-        try used_names.put(arena, n, {});
+        try used_names.put(arena, name, {});
     }
-    for (subs.items) |s| {
+    for (subs.items) |sub| {
         try processSubscription(.{
             .arena = arena,
             .sep = sep,
@@ -178,7 +178,7 @@ fn run() (render.RenderError || error{ OutOfMemory, NoHome })!ExitCode {
             .all_nodes = &all_nodes,
             .ok_cnt = &ok_cnt,
             .fail_cnt = &fail_cnt,
-        }, s);
+        }, sub);
     }
 
     if (all_nodes.items.len == 0) {
@@ -605,10 +605,10 @@ fn addDirectNode(
     all_nodes: *std.ArrayListUnmanaged(node.Node),
     fail_cnt: *usize,
     sep: []const u8,
-    n: []const u8,
+    node_uri: []const u8,
 ) error{OutOfMemory}!void {
-    const parsed = uri.parseUri(arena, n, "", sep) catch |e| {
-        log.warn("[node] parse failed: {s} ({s})", .{ n, @errorName(e) });
+    const parsed = uri.parseUri(arena, node_uri, "", sep) catch |e| {
+        log.warn("[node] parse failed: {s} ({s})", .{ node_uri, @errorName(e) });
         fail_cnt.* += 1;
         return;
     };
@@ -635,18 +635,18 @@ const SubscriptionCtx = struct {
 };
 
 /// process one subscription (--url or .zon): fetch + full parse pipeline + logging
-fn processSubscription(ctx: SubscriptionCtx, s: config.Subscription) error{OutOfMemory}!void {
+fn processSubscription(ctx: SubscriptionCtx, sub: config.Subscription) error{OutOfMemory}!void {
     const a = ctx.arena;
     // anonymous subscription (omitted name): full parse pipeline, just no "name@" prefix.
     // fixed "anonymous" label: short, and never leaks the url (may contain a token)
-    const sub_label = if (s.name) |n| n else "anonymous";
-    const ua = s.ua orelse ctx.cfg.ua orelse ctx.opts.ua;
-    const body = fetch.fetchWithRetry(a, s.url, ua) catch |e| {
+    const sub_label = if (sub.name) |name| name else "anonymous";
+    const ua = sub.ua orelse ctx.cfg.ua orelse ctx.opts.ua;
+    const body = fetch.fetchWithRetry(a, sub.url, ua) catch |e| {
         log.warn("[{s}] fetch failed: {s}", .{ sub_label, @errorName(e) });
         ctx.fail_cnt.* += 1;
         return;
     };
-    const result = parse.parseSubscription(a, s.name orelse "", body, ctx.sep, ctx.info_keywords) catch |e| {
+    const result = parse.parseSubscription(a, sub.name orelse "", body, ctx.sep, ctx.info_keywords) catch |e| {
         log.warn("[{s}] parse failed ({s})", .{ sub_label, @errorName(e) });
         ctx.fail_cnt.* += 1;
         return;
@@ -690,7 +690,7 @@ fn processSubscription(ctx: SubscriptionCtx, s: config.Subscription) error{OutOf
     log.info("[{s}] {s}", .{ sub_label, msg });
     // verbose: short node list (strip the "sub-name<sep>" prefix), indented under the summary
     if (ctx.opts.verbose) {
-        const prefix = try std.fmt.allocPrint(a, "{s}{s}", .{ s.name orelse "", ctx.sep });
+        const prefix = try std.fmt.allocPrint(a, "{s}{s}", .{ sub.name orelse "", ctx.sep });
         for (result.nodes) |n| {
             const short = if (std.mem.startsWith(u8, n.name(), prefix))
                 n.name()[prefix.len..]
