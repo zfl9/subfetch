@@ -56,6 +56,12 @@ fn parseUriManual(url: []const u8) ParseError!ManualUri {
 
     var host = hostport;
     var port: ?u16 = null;
+    // the path part (after '/') belongs to .body for scheme parsers (ss/ssr
+    // read it there); strip it before host:port splitting so a real-world
+    // "host:443/?query#frag" does not feed "443/" into parsePort
+    if (std.mem.indexOfScalar(u8, hostport, '/')) |slash| {
+        hostport = hostport[0..slash];
+    }
     if (hostport.len > 0 and hostport[0] == '[') {
         // IPv6 literal [::1]:443
         if (std.mem.indexOfScalar(u8, hostport, ']')) |close| {
@@ -754,6 +760,20 @@ test "parse hysteria2" {
     try std.testing.expect(h.skip_cert_verify);
     try std.testing.expectEqualStrings("salamander", h.obfs.?);
     try std.testing.expectEqualStrings("obfs123", h.obfs_password.?);
+}
+
+test "parse hysteria2 trailing slash before query" {
+    // real-world URIs write \"host:443/?query#frag\" (path separator before
+    // the query); regression: the slash leaked into parsePort and every hy2
+    // node from such a source failed with UriInvalidPort
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const u = "hysteria2://hy2-pass@hk2.example.com:443/?insecure=1&sni=hk2.example.com#frag";
+    const n = try parseUri(arena.allocator(), u, "", "@");
+    const h = n.hysteria2;
+    try std.testing.expectEqual(@as(?u16, 443), h.port);
+    try std.testing.expectEqualStrings("hk2.example.com", h.servername.?);
+    try std.testing.expect(h.skip_cert_verify);
 }
 
 test "parse hysteria1" {
